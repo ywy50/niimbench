@@ -1,0 +1,32 @@
+# Niimbench boot list. Keep this file identical to src/default.patch.yml,
+# which is the copy embedded in the binary. A cordis.patch.yml in the
+# current directory overrides that embedded copy. `inject` must match
+# the plugin declaration.
+- id: printer
+  plugin: printer
+
+- id: transports
+  plugin: transports
+
+- id: serial
+  plugin: serial
+  inject: [transports]
+
+- id: bluetooth
+  plugin: bluetooth
+  inject: [transports]
+
+- id: sources
+  plugin: sources
+
+- id: json-source
+  plugin: json-source
+  inject: [sources]
+
+- id: http
+  plugin: http
+  inject: [printer, transports, sources]
+
+- id: editor
+  plugin: editor
+  inject: [http]
