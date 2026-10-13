@@ -1,6 +1,6 @@
 # Sources
 
-A source is a named JSON object whose properties a field can draw through the HTTP API. The `sources` plugin publishes the registry as `"sources"`. `json-source` adds the record `example`:
+A source is a named JSON object whose properties a field can draw. The `sources` plugin publishes the registry as `"sources"`. `json-source` adds the record `example`:
 
 ```json
 {"title":"Niimbench","sku":"NB-1"}
@@ -29,6 +29,6 @@ Records installed this way are owned by a `RuntimeSources` list on the `http` pl
 
 A field with a `key` draws the value of that property, and a field with only `text` draws that literal. A field with both draws the source value, because `label.resolve` prefers `key`. This is the API's own behaviour: `POST /api/render` and `POST /api/print` take `key` on a field, and a layout file can use it.
 
-The editor does not offer it. Its rows are plain text fields, with no source chooser and no per-row key, and it sends no `source` with a render, so a field with a `key` — one a loaded layout brought in — draws empty in the editor.
+The editor offers the same thing: its **Source** menu is the body's `source`, each row's key menu is that field's `key`, and **Fill from source** lays one row per key on an empty label. The editor's guide is [../user/guide/index.md](../user/guide/index.md#draw-values-from-a-source).
 
 Another integration is another plugin with `inject: ["sources"]` that adds records in `apply` and removes them from its effect. Fetching a network service belongs in that plugin's `apply` or in the handler it registers, not in the page.

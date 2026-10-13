@@ -130,6 +130,10 @@ function judge(report) {
   // whose handler throws leaves the field as it was.
   check("editing a row's text, size and font changes its field",
     Boolean(report.edit) && report.edit.ok === true, JSON.stringify(report.edit));
+  // The source menu, Fill from source and a row's key menu draw a record's
+  // value, the way the API does.
+  check("picking a source and a key draws the record's value",
+    Boolean(report.source) && report.source.ok === true, JSON.stringify(report.source));
   // Every font the renderer carries is offered in the row's font menu.
   check("a row offers every font the server carries",
     Boolean(report.fonts) && report.fonts.served > 1 && report.fonts.offered === report.fonts.served,

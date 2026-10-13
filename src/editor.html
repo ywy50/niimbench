@@ -222,6 +222,10 @@
     .field textarea { flex: 1 1 6rem; }
     .field select { flex: 0 0 auto; }
     .field .font { flex: 0 1 8.5rem; }
+    .field .key { flex: 0 1 7rem; }
+    .field [hidden] { display: none; }
+    .source-admin label { margin-bottom: 0.5rem; }
+    .source-admin textarea { font: inherit; font-size: 0.84rem; min-height: 3.5rem; }
     .field input[type="number"] { flex: 0 0 4.6rem; }
     .field .degrees { flex: 0 0 5rem; }
     .field .actions { margin-left: auto; }
@@ -362,6 +366,19 @@
       <span class="spacer"></span>
       <button type="submit" class="primary">Print</button>
     </div>
+    <div class="tools sources">
+      <label class="toggle">Source <select id="source"><option value="">(no source)</option></select></label>
+      <button type="button" id="fill" title="one row per key of the picked record on an empty label, else fill the rows' key menus">Fill from source</button>
+    </div>
+    <details class="source-admin">
+      <summary>Add or remove a source</summary>
+      <label>Name <input id="source-name" type="text" placeholder="stock"></label>
+      <label>JSON object <textarea id="source-json" rows="3">{"title": "Niimbench", "sku": "NB-2"}</textarea></label>
+      <div class="tools">
+        <button type="button" id="install-source">Add source</button>
+        <button type="button" id="remove-source" title="remove the source picked above; a built-in source cannot be removed">Remove picked source</button>
+      </div>
+    </details>
     <div class="tools">
       <button type="button" id="save">Save layout</button>
       <label class="file">Load layout <input id="load" type="file" accept="application/json,.json"></label>
@@ -432,7 +449,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "source"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -952,6 +969,14 @@
       const grow = () => { text.rows = Math.min(blockLines(text.value).length, 8); };
       grow();
 
+      // The record property this row draws instead of its own text, once a
+      // source is picked. Hidden while there is no key to pick and the row has
+      // none, so a plain label shows only what it uses.
+      const key = document.createElement("select");
+      key.className = "key";
+      key.title = "draw this key of the picked source instead of the text";
+      fillKeySelect(key, field.key);
+      key.hidden = sourceKeys.length === 0 && !field.key;
       const font = fontOptions(field.font);
       const size = sizeInput(field.size);
       const align = alignOptions(field.align_mode);
@@ -999,12 +1024,13 @@
       rotation.step = "1";
       rotation.value = String(normalizeDegrees(field.rotation));
 
-      row.append(text, font, size, align, x, y, rotation, actions, note);
+      row.append(text, key, font, size, align, x, y, rotation, actions, note);
       list.append(row);
 
       const sync = () => {
         record();
         field.text = text.value;
+        field.key = key.value;
         field.font = font.value;
         field.size = sizeOf({ size: size.value });
         size.value = String(field.size);
@@ -1028,7 +1054,7 @@
         // reaching the form and submitting it.
         event.stopPropagation();
       });
-      for (const control of [font, size, align, x, y, rotation]) control.addEventListener("change", sync);
+      for (const control of [key, font, size, align, x, y, rotation]) control.addEventListener("change", sync);
       for (const control of [x, y]) {
         control.addEventListener("keydown", (event) => {
           nudge(event, field, x, y);
@@ -1087,12 +1113,12 @@
       });
       remove.addEventListener("click", () => {
         record();
-        removeRow({ model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } });
+        removeRow({ model: field, row, controls: { text, key, font, size, align, x, y, rotation, note, remove } });
         refresh();
       });
       // What the rest of the page needs to read back or rewrite this row.
       note.textContent = "";
-      return { model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } };
+      return { model: field, row, controls: { text, key, font, size, align, x, y, rotation, note, remove } };
     }
 
     /// Where a new line starts so the text sits in the middle of what the view
@@ -1184,9 +1210,8 @@
     }
 
     // A field with a key draws the source value, so the box measures that.
-    /// The record the label draws values from, or an empty name. The chooser is
-    /// part of the record feature and is not on the page unless that feature is
-    /// in use, so the rest of the page asks here instead of reading the element.
+    /// The record the label draws values from, or an empty name: the source
+    /// menu's value. The rest of the page asks here instead of reading it.
     function sourceName() {
       const select = document.querySelector("#source");
       return select ? select.value : "";
@@ -2260,10 +2285,42 @@
         option.value = name;
         select.append(option);
       }
-      select.value = body.sources.includes(keep) ? keep : (body.sources[0] || "");
+      // Nothing is picked until someone picks it: a label of plain text does
+      // not quietly read a record.
+      select.value = body.sources.includes(keep) ? keep : "";
+      await loadKeys();
     }
 
-    document.querySelector("#fill")?.addEventListener("click", async () => {
+    /// What the source menu has started and not finished: loading a record's
+    /// keys and drawing the label with them. The self-check waits on it.
+    let sourceReady = Promise.resolve();
+
+    /// The keys of the picked record, into every row's key menu.
+    async function loadKeys() {
+      const record = await currentSource();
+      sourceKeys = record && typeof record === "object" ? Object.keys(record) : [];
+      for (const row of rows) showKeys(row);
+    }
+
+    /// A row's key menu lists the picked record's keys, and is shown once there
+    /// is a key to pick or the row already draws one.
+    function showKeys(row) {
+      const select = row.controls.key;
+      fillKeySelect(select, row.model.key);
+      select.hidden = sourceKeys.length === 0 && !row.model.key;
+    }
+
+    document.querySelector("#source").addEventListener("change", () => {
+      sourceReady = loadKeys().then(() => refresh());
+    });
+
+    document.querySelector("#fill").addEventListener("click", () => {
+      sourceReady = fillFromSource();
+    });
+
+    /// One row per key of the picked record when the label has nothing on it
+    /// yet; otherwise the rows keep their text and their key menus fill.
+    async function fillFromSource() {
       const name = sourceName();
       if (!name) { status.textContent = "no source selected"; return; }
       const response = await api("/api/sources/" + encodeURIComponent(name));
@@ -2277,13 +2334,15 @@
         const origins = centeredOrigins(sourceKeys.map((key) => String(body[key] ?? "")));
         sourceKeys.forEach((key, index) => addRow({ key, ...origins[index] }));
       } else {
-        for (const select of list.querySelectorAll(".key")) fillKeySelect(select, select.value);
+        for (const row of rows) showKeys(row);
       }
+      // After the render: `refresh` writes its own line to the status, and the
+      // one that says what the button did would otherwise never be seen.
+      await refresh();
       status.textContent = "filled from " + name;
-      refresh();
-    });
+    }
 
-    document.querySelector("#install-source")?.addEventListener("click", async () => {
+    document.querySelector("#install-source").addEventListener("click", async () => {
       const name = document.querySelector("#source-name").value.trim();
       let json;
       try {
@@ -2302,10 +2361,10 @@
       await loadSources();
       // Select the record just installed. `sourceName()` reads the menu; it
       // cannot be assigned to.
-      const chooser = document.querySelector("#source");
-      if (chooser) chooser.value = name;
-      status.textContent = "added source " + name;
-      refresh();
+      document.querySelector("#source").value = name;
+      sourceReady = loadKeys().then(() => refresh()).then(() => {
+        status.textContent = "added source " + name;
+      });
     });
 
     // ---- found printers --------------------------------------------------
@@ -2901,15 +2960,15 @@
       refresh();
     });
 
-    document.querySelector("#remove-source")?.addEventListener("click", async () => {
+    document.querySelector("#remove-source").addEventListener("click", async () => {
       const name = sourceName();
       if (!name) { status.textContent = "no source selected"; return; }
       const response = await api("/api/sources/" + encodeURIComponent(name), { method: "DELETE" });
       const payload = await readJson(response);
       if (!response.ok) { status.textContent = payload.error || "remove failed"; return; }
-      status.textContent = "removed source " + name;
       await loadSources();
-      refresh();
+      await refresh();
+      status.textContent = "removed source " + name;
     });
 
     traceStep("boot: asking for the label sizes");
@@ -3200,9 +3259,45 @@
       return verdict;
     }
 
+    /// Draw a record value the way a person does: pick the `example` source in
+    /// the menu, press **Fill from source**, and pick the `sku` key in the
+    /// first row's key menu. Report whether the row then draws the record's
+    /// value, and put the source and the key back.
+    async function selfCheckSource() {
+      const menu = document.querySelector("#source");
+      const fill = document.querySelector("#fill");
+      const row = rows[0];
+      const verdict = { menu: Boolean(menu), fill: Boolean(fill), row: Boolean(row) };
+      if (!menu || !fill || !row || !row.controls.key) return { ...verdict, ok: false };
+      const before = { source: menu.value, key: row.controls.key.value };
+      verdict.example = Array.from(menu.options).some((option) => option.value === "example");
+      menu.value = "example";
+      menu.dispatchEvent(new Event("change", { bubbles: true }));
+      await sourceReady;
+      fill.click();
+      await sourceReady;
+      verdict.filled = status.textContent === "filled from example";
+      const keys = row.controls.key;
+      verdict.keys = Array.from(keys.options).map((option) => option.value).filter(Boolean);
+      verdict.shown = !keys.hidden;
+      keys.value = "sku";
+      keys.dispatchEvent(new Event("change", { bubbles: true }));
+      await refresh();
+      verdict.drawn = row.model.placed_text;
+      verdict.ok = verdict.example && verdict.filled && verdict.shown &&
+        verdict.keys.includes("sku") && row.model.key === "sku" && verdict.drawn === "NB-1";
+      keys.value = before.key;
+      keys.dispatchEvent(new Event("change", { bubbles: true }));
+      menu.value = before.source;
+      menu.dispatchEvent(new Event("change", { bubbles: true }));
+      await sourceReady;
+      await refresh();
+      return verdict;
+    }
+
     /// Write the report into the page, where `--dump-dom` can read it. A
     /// `--dump-dom` run is a plain subprocess with no protocol to time out.
-    window.__niimbenchSelfCheck = function selfCheck() {
+    window.__niimbenchSelfCheck = async function selfCheck() {
       // The drag and the resize move the user's field and render it, so only the harness
       // runs it: it loads the page with `#selfcheck`, which survives the token
       // redirect where a query parameter would not.
@@ -3218,6 +3313,8 @@
         // The fonts the server carries, and the ones a row offers.
         const menu = rows[0] && rows[0].controls.font;
         report.fonts = { served: metrics.fonts.length, offered: menu ? menu.options.length : 0 };
+        // Last, because it renders: the canvas above is the one the boot drew.
+        report.source = harness ? await selfCheckSource() : null;
       }
       const view = viewSize();
       report.view = { width: view.width, height: view.height };
@@ -3255,7 +3352,8 @@
         " drag " + (report.drag ? (report.drag.ok ? "ok" : "JUMPED") + " over " + report.drag.moves + " moves" : "not exercised") +
         " resize " + (report.resize ? (report.resize.ok ? "ok" : "BROKEN") + " " + report.resize.sizes.join("->") : "not exercised") +
         " edit " + (report.edit ? (report.edit.ok ? "ok" : "BROKEN") : "not exercised") +
-        " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none"));
+        " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none") +
+        " source " + (report.source ? (report.source.ok ? "ok" : "BROKEN") : "not exercised"));
     });
   </script>
 </body>

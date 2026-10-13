@@ -92,7 +92,11 @@ The history holds the same JSON that **Save layout** writes, so it does not cove
 
 [../../templates/example-label.json](../../templates/example-label.json) is a file in that shape. It draws a literal title in a bold font and binds `sku` from `example`, on a 384×96 B21 label.
 
-The editor has no controls for sources: it cannot pick, fill from, or install one, and it sends no `source` with a render. A field with a `key` therefore draws empty in the editor. The HTTP routes still take `source` and `key`; how sources are installed and read is [../../subsystems/sources.md](../../subsystems/sources.md).
+## Draw values from a source
+
+A source is a named JSON record, such as the built-in `example` with keys `title` and `sku`. **Source** picks the record the label draws from; nothing is picked until you pick it, so a label of plain text never reads one by accident. Once a source is picked, each row shows a key menu next to its text: choose a key and that row draws the record's value instead of its own text, and the line under the row says `record sku: NB-1`. **Fill from source** on an empty label lays one row per key of the record, stacked in the middle; on a label that already has rows, it fills their key menus instead.
+
+**Add or remove a source** installs a record of your own while the server runs: give it a name and a JSON object, and **Add source** picks it. **Remove picked source** drops a record you added; the built-in `example` cannot be removed. Where records live, and how long they last, is [../../subsystems/sources.md](../../subsystems/sources.md).
 
 ## Pick a printer
 
