@@ -2,19 +2,25 @@
 # cordis.patch.yml in the current directory overrides it and should stay
 # identical unless you mean to patch a local run. `inject` must match
 # the plugin declaration.
+- id: trace
+  plugin: trace
+
 - id: printer
   plugin: printer
 
 - id: transports
   plugin: transports
 
+- id: devices
+  plugin: devices
+
 - id: serial
   plugin: serial
-  inject: [transports]
+  inject: [transports, devices]
 
 - id: bluetooth
   plugin: bluetooth
-  inject: [transports]
+  inject: [transports, devices]
 
 - id: sources
   plugin: sources
@@ -25,7 +31,7 @@
 
 - id: http
   plugin: http
-  inject: [printer, transports, sources]
+  inject: [trace, printer, transports, devices, sources]
 
 - id: editor
   plugin: editor

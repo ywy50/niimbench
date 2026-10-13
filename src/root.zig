@@ -1,5 +1,6 @@
 const std = @import("std");
 
+pub const packet = @import("packet.zig");
 pub const cordis = @import("cordis.zig");
 pub const load = @import("load.zig");
 pub const raster = @import("raster.zig");
@@ -14,8 +15,12 @@ test {
     _ = @import("printer.zig");
     _ = @import("patch.zig");
     _ = @import("device.zig");
+    _ = @import("dbus.zig");
+    _ = @import("discovery.zig");
     _ = @import("plugins.zig");
     _ = @import("server.zig");
+    _ = @import("label.zig");
+    _ = @import("example_source.zig");
 }
 
 pub fn run(init: std.process.Init) !void {
@@ -43,6 +48,45 @@ const help_text =
     \\
 ;
 
+/// One server at a time, per checkout.
+///
+/// A stray server is not harmless: it holds a port, keeps its own session
+/// token, and a page open on it looks like the page just built. Holding an
+/// exclusive lock on a file in the working directory makes a second start fail
+/// with a message that says what is already running, and the lock is released
+/// by the kernel when the process ends however it ends, so there is no stale
+/// lock to clean up.
+const lock_path = ".niimbench.lock";
+
+fn takeServeLock(io: std.Io) !std.Io.File {
+    var file = try std.Io.Dir.cwd().createFile(io, lock_path, .{ .read = true, .truncate = false });
+    errdefer file.close(io);
+    const got = file.tryLock(io, .exclusive) catch |err| switch (err) {
+        error.FileLocksUnsupported => return file,
+        else => return err,
+    };
+    if (!got) {
+        var held: [1024]u8 = undefined;
+        var reader = file.reader(io, &held);
+        const text = reader.interface.allocRemaining(std.heap.page_allocator, .limited(1024)) catch "";
+        defer if (text.len > 0) std.heap.page_allocator.free(text);
+        std.debug.print(
+            "niimbench is already serving{s}{s}\nStop it first, or use it: two servers means two tokens and two ports.\n",
+            .{ if (text.len > 0) ": " else "", text },
+        );
+        return error.AlreadyServing;
+    }
+    try file.setLength(io, 0);
+    var buffer: [128]u8 = undefined;
+    const line = std.fmt.bufPrint(&buffer, "pid {d}\n", .{std.os.linux.getpid()}) catch "running\n";
+    var writer = file.writer(io, &held_write_buffer);
+    try writer.interface.writeAll(line);
+    try writer.interface.flush();
+    return file;
+}
+
+var held_write_buffer: [256]u8 = undefined;
+
 fn runServe(init: std.process.Init, args: []const []const u8) !void {
     var open_browser = true;
     var port: u16 = 0;
@@ -58,6 +102,16 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
             return error.UnknownArgument;
         }
     }
+
+    // Claim the single-server slot before the listener exists, so a second
+    // start cannot get as far as binding. Being told the server is already
+    // running is an answer, not a crash, so it exits quietly with a failure
+    // status rather than unwinding a stack trace at whoever typed the command.
+    var lock = takeServeLock(init.io) catch |err| switch (err) {
+        error.AlreadyServing => std.process.exit(1),
+        else => return err,
+    };
+    defer lock.close(init.io);
 
     var ctx = cordis.Context.init(init.gpa);
     defer ctx.deinit();
@@ -108,11 +162,21 @@ fn runPrint(init: std.process.Init, args: []const []const u8) !void {
     const gray = try readPgm(init.gpa, init.io, path);
     defer init.gpa.free(gray.pixels);
 
+    // A raw PGM has no fields to turn, so `--rotate` turns the page itself.
+    // That is the one place a whole page is rotated: a label body turns its
+    // fields, each around its own centre, and the roll is never asked to turn.
+    const turned = try server.rotated(init.gpa, .{
+        .pixels = gray.pixels,
+        .width = gray.width,
+        .height = gray.height,
+    }, degrees);
+    defer init.gpa.free(turned.pixels);
+
     var ctx = cordis.Context.init(init.gpa);
     defer ctx.deinit();
     try load.loadDefault(&ctx, init.io);
     const http = ctx.require(server.HttpService, "http");
-    try http.printer.submit(init.io, http.transports.*, init.gpa, model, conn, addr, gray.pixels, gray.width, gray.height, density, degrees);
+    try http.printer.submit(init.io, http.transports.*, init.gpa, model, conn, addr, turned.pixels, turned.width, turned.height, density);
 }
 
 const Pgm = struct { pixels: []u8, width: usize, height: usize };
@@ -168,4 +232,8 @@ test "parse a binary PGM" {
     defer gpa.free(gray.pixels);
     try std.testing.expectEqual(@as(usize, 2), gray.width);
     try std.testing.expectEqualSlices(u8, &[_]u8{ 0, 255 }, gray.pixels);
+}
+
+test {
+    _ = @import("labels_catalogue.zig");
 }

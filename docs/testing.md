@@ -1,19 +1,76 @@
 # Testing
 
-`zig build test` runs the module tests and the executable tests.
+`make test` runs the lint, the node checks and the browser checks, then `zig build test`, which runs the module tests and the executable tests.
 
 What the tests lock in:
 
 - Packet bytes round-trip, and a flipped checksum is rejected.
-- Black grayscale packs to burned bits, white packs to zeros, and a clockwise turn matches the paper rotation used by niimprint's Pillow call.
+- Black grayscale packs to burned bits, white packs to zeros, and a clockwise turn turns the page the way the paper leaves the head.
 - A plugin with a missing coeffect stays inactive, then applies when the service appears.
 - Disposing the providing fiber removes the service, the dependent service, and the event listener.
 - Duplicate mount ids fail.
 - The patch parser keeps `inject` order.
 - Bluetooth addresses are stored in the BlueZ `str2ba` byte order.
 - The editor route is gone after its fiber is disposed.
-- `/api/health` without a token is unauthorized.
-- A scripted transport records the print command sequence: density, label type, start, page, dimension, image row, end page, end print.
+- `/api/health` without a token is unauthorized. `GET /?token=` is a redirect that sets the `niimbench` cookie, and that cookie authorizes a later request that has no query token.
+- A scripted transport records the print command sequence: density, label type, start, page, dimension, image row, end page, end print. The dimension packet's four payload bytes are checked, so putting the length where the width belongs fails even though the sequence of packet types is unchanged.
+- A composed page stops short of the roll by the model's page margin, which is 16 dots on the D-series and 0 elsewhere, and a body that carries raw `pixels_b64` keeps the size it sent.
+- A roll's barcode resolves from the compiled-in catalogue whether or not the caller allowed the cloud, and a barcode the catalogue does not carry is `unknown roll` unless the caller opted in, in which case it is the cloud that answers.
+- A D-Bus call with arguments is byte-compared against a message captured from a client the bus accepts, which pins the header field order, the encoding of the signature field, and the padding an empty option dictionary needs.
 - A binary PGM header parses.
+- A source key draws the same pixels as the literal value of that key, a different key draws a different label, and text sits at the field's y position.
+- A numeric source value draws as decimal text, and text stamps onto a background without erasing it.
+- Every embedded font parses, maps `A` and `é`, measures a width that grows with `size`, and has an id no other font has; an unknown id finds nothing. A proportional font makes an `M` wider than an `i`, and a monospaced one does not.
+- Every font draws its ink inside the measured line, and draws a composite glyph such as `é` with its accent.
+- **No broken strokes and no white specks.** Every letter and digit of every font, at sizes from 16 to 48 dots and at four sub-dot starting positions, has no more ink pieces and no more enclosed holes than the same letter drawn at 200 dots. A stroke that breaks adds a piece and a speck inside a stroke adds a hole, which is what lower-case text did when a dot needed half its area covered to be inked.
+- A field is drawn in the font it names, every other font draws the same text differently inside its own measured block, and a font the build does not carry is `UnknownFont` from both `render` and `alignedX`.
+- Text past an edge is clipped rather than wrapped, and `rect` outlines without filling.
+- The example source registers with its fiber and is gone, name and body both, after `dispose`.
+- `POST /api/render` for the installed `example` source returns those pixels.
+- `POST /api/print` of a label with fields opens the named transport. A missing USB tty is `FileNotFound`, which means render already succeeded.
+- The same print, through the USB opener and through the Bluetooth opener, sends the rows `render` drew. Each image packet is checked against `raster.packRow` of that page, so a blank page fails on either connection.
+- Disposing the serial fiber clears the USB opener and the Bluetooth opener stays, and the USB finder goes with the opener. Disposing the Bluetooth fiber clears that opener and its finder.
+- A printer model id maps onto the head this bench prints to, a 300 dpi Pro id maps to nothing, and a name resolves whole model words only, so `b1` does not answer for `b18` and `pro` answers with nothing.
+- A found list copies the address and the name into itself, reports a duplicate only through `has`, and clears.
+- A scripted transport answers `PrinterInfo` with a model id, even when the frame arrives in pieces, and a port that stays silent reports none.
+- The trace keeps the newest entries in a fixed ring, reads them back oldest first, and clips a message that is too long for its line instead of dropping it. A mounted trace records a failed print and answers `GET /api/trace`, a line posted from the page is in the log, and `?clear=1` empties everything but the note that it was cleared.
+- A Bluetooth device whose name is not a Niimbot printer is skipped, one that names a model carries it, and the same address twice is one device.
+- `GET /api/devices` before a scan answers `{"scanned":false,"devices":[]}`; `POST /api/devices/scan` fills the list from the finders; `{"discover":true}` is what reaches the Bluetooth finder; a finder that fails does not hide the other transport; a body that is not JSON is the passive scan; and `GET` then serves the cached answer.
+- Disposing the `devices` fiber removes the registry from the context.
+- The D-Bus walk reads a hand-built `a{oa{sa{sv}}}` answer into a device and an adapter, and a live check against the system bus skips when this machine has no BlueZ.
+- `POST /api/sources` installs a record that renders and lists, a non-object body is rejected, and disposing the `http` fiber drops the record.
+- A runtime record can be replaced and then deleted, deleting it twice is a 404, and the delete route refuses a record a plugin owns.
+- A method the `/api/sources/<name>` prefix does not serve is a 404.
+- `/api/label/track` reports `record`, `literal`, `missing-key`, `unknown-source`, and `dynamic` from the same resolution the renderer uses.
+- A failed render reports the label size. `/api/label/metrics` lists every embedded font in order, and the editor's arithmetic on each font's run-encoded table gives the width `label.lineWidth` draws, at several sizes.
+- `POST /api/render` and `POST /api/label/track` answer 400 `UnknownFont` for a font the build does not carry, and render a font it does.
+- A field's `direction` is accepted and ignored: two bodies that differ only in `direction` draw the same page, while a different `rotation` does not.
+- `POST /api/render` keeps the roll's width and height. A field's `rotation` of 90 draws its letters along the tape, so the ink is taller than it is wide, and no two quarter turns draw the same page.
+- A newline starts a second line `size` dots down: `lineCount`, `blockWidth`, and `blockHeight` agree with the drawn ink, any whole size works (17 is between 16 and 18), a blank line advances without drawing, and the block decides the clip. A half turn puts the top of the text at the bottom of its block.
+- Each line of a block is aligned on the shared anchor, so a shorter line in a right-aligned block starts further right.
+- A field's own newline is escaped in the `/api/label/track` answer, so the response still parses.
+- Alignment places a line by its own width: `left`, `center`, and `right` draw at three different columns, a line wider than the label clamps to the left edge, `alignedX` agrees with the first inked column, and a `key` value is measured after resolution.
+- `POST /api/render` draws the three modes differently, `/api/label/track` reports the placed `x` for each, and an angle the enum does not name is `BadAlign`.
+- `/api/label/sizes` lists each model's rolls. A 50×30 mm B21 label is 384×240, a 15×30 mm D11 label is 96×240, and a B18 list does not include either series' rolls.
+- The editor page contains the field list, the clip marker, the layout controls, the printer picker named `Found Niimbot devices`, and posts to `/api/render` and `/api/devices/scan`. The Orientation pair, the per-field degrees control, and the degrees travelling to the renderer with their field are all in the page.
+- A turned field keeps its ink: the same text rendered at 0, 30, 45, 90 and 180 degrees holds the same number of dark pixels, give or take the pixel a boundary dot can move by. Forward-mapping each ink dot through the turn used to lose a tenth of them, which reads as white speckles.
+- `make view-test` runs the editor's preview geometry under node: the turned view is the roll's sides swapped, the screen transform inverts exactly, the picture turn agrees cell for cell with the point turn, and it is a rotation rather than a mirror.
+- **The editor is checked by driving it, not by describing it.** `make trace-test` runs the page once; the harness loads it with `#selfcheck`, and only then does the page drag its own box with synthetic pointer events, measure whether the box kept step with the pointer dot for dot, check that the row's x and y followed the drag, drag a corner to check that the text grew while the opposite corner stayed put, type into the first row and pick a size and a font to check that the field followed each control without a page error, and record the verdicts in the trace (`checked: ... drag ok over 6 moves resize ok 32->35 edit ok fonts 15/15`). A normal load never moves or edits a field. `make canvas-test` asserts those verdicts, that the row offers every font the server carries, plus that the box is drawn, around its own text, and on the canvas. A drag that jumps therefore fails `make test` — it is not something to be reported and interpreted.
+- `make trace-test` is the harness, and the first thing to run when the editor misbehaves. It starts a server in a directory of its own, loads the page once in a headless browser, and reads back the trace both sides wrote: the boot's steps, the printer scan, the roll, the view, the field boxes and the canvas self-check. It fails if a step the page declares in `tracedSteps` has no line in the trace, and the failure names the line to add. Because `make test` runs it, a new step in the boot cannot go unrecorded: the build stops until it says what it did.
+- `make canvas-test` loads the page the same way and checks what a person would see: the box is drawn, around its own text, in the view's frame; the drag the page runs on itself kept step with the pointer; and **no two controls in a field row overlap**, and none is outside its row. The overlap check is why a row of four buttons in a 67-pixel column fails the build instead of waiting to be noticed.
+- The page reports its own layout (`row` in the self-check: every control's tag, class, line, x and width), so a mislaid control is numbers in a check rather than something to be judged from a screenshot.
+- `make box-test` runs the field-box geometry under node: a box holds the ink the renderer draws at 0, 15, 30, 45, 90, 180 and 270 degrees, it grows about the block's centre so the text does not move, the anchor sits on the text's top side and outside the box at every angle, a box is measured in its own field's font and an unknown font measures as the default, and a drag moves the field one dot per dot and stops at the label's edge.
+- `make protocol-test` reads the page's source: every boot step it declares is recorded by the page or the server, and every boot phase records a step inside its own code.
+- **Print** is single-flight: two presses while the first answer is in flight make one request and the button comes back afterwards.
+- **Fit** steps a clipped field's size down to the largest that fits, leaves an already-fitting field alone, and does not shrink again on a second press.
+- **Wrap** turns a clipped field into several lines that fit, keeps a deliberate newline as its own paragraph, and loses no word.
+- The printer status mapping is a value: no address is idle, an address is ready, and a problem is the error state, which the page paints on its dot.
+- An imported picture is fitted to the view, and is re-fitted when the view turns, so it stays on the label; a picture the user has placed is left alone.
+- Dragging a corner handle scales the picture about its centre, and scaling it back up re-samples the imported picture rather than magnifying a reduced copy.
+- **Grid** adds its guides to the preview and leaves the render the server produces untouched.
+- Undo records a control's state before the edit: a width typed with real key events leaves the pre-edit state on the stack, and one undo steps back from it.
+- Undo and redo walk a mixed run of edits: adding fields, removing one, and restoring a field's text and position, with the buttons disabled at the baseline.
+- `make lint` runs ESLint on the page script: no name is used that nothing declares, and nothing is declared that nothing uses. A row handler that read a variable no longer declared, and a call assigned to as if it were a variable, both parsed and both threw the first time someone used the control; this is the check that finds them without a browser. A syntax error fails it too.
+- `make lint` also fails when another project is named anywhere but the README's credit line, and when a relative link in any markdown file points at a file or a heading that does not exist.
 
-The HTTP listener and the real serial port are not part of `zig build test`. Print against hardware with `zig build run -- print ...`.
+The HTTP listener and the real serial port are not part of `zig build test`. The one test that talks to the system bus skips itself when the machine has no BlueZ. Two things there are only checked by hand against a running server: printing to hardware (`zig build run -- print ...`), and a request whose method may carry a body but sends none, such as `curl -X PUT "http://127.0.0.1:<port>/api/sources/example?token=<token>"`, which must answer immediately with a 404 rather than hold the connection open.

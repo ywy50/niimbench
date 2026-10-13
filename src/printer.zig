@@ -41,6 +41,17 @@ pub const Client = struct {
         self.transport.close();
     }
 
+    /// The barcode on the roll in the printer. `null` means the tag is absent.
+    /// The printer does not send millimetres; the barcode is what the Niimbot
+    /// app looks up to learn the label size.
+    /// The tag answers `0x1b` to this request, one past it, so the response
+    /// offset is 1. Waiting for `0x1a` reads every answer as a foreign frame
+    /// and ends in `NoResponse`.
+    pub fn readBarcode(self: *Client) !?[]u8 {
+        const response = try self.transceive(@backingInt(packet.Request.get_rfid), &.{1}, 1);
+        return barcodeFromRfid(self.allocator, response.data);
+    }
+
     pub fn printGray(
         self: *Client,
         io: ?std.Io,
@@ -56,14 +67,17 @@ pub const Client = struct {
         _ = try self.command(.set_label_type, &.{1}, 16);
         _ = try self.command(.start_print, &.{1}, 1);
         _ = try self.command(.start_page, &.{1}, 1);
+        // `SetPageSize` is `RR RR CC CC`: the row count first, the column count
+        // second. The row count is the page's length down the tape, so a page
+        // that puts the width here tells the printer its page is 96 rows long
+        // and the rest of the image is dropped: on a 12x40 roll the print stops
+        // about 12 mm in.
         var dim = [_]u8{
             @intCast((height >> 8) & 0xFF),
             @intCast(height & 0xFF),
             @intCast((width >> 8) & 0xFF),
             @intCast(width & 0xFF),
         };
-        // niimprint calls set_dimension(image.height, image.width), so the
-        // first word on the wire is the row count.
         _ = try self.command(.set_dimension, &dim, 1);
         const row_len = raster.packedRowBytes(width);
         const payload_len = row_len + 6;
@@ -88,15 +102,26 @@ pub const Client = struct {
         return error.PrintDidNotFinish;
     }
 
+    pub fn barcodeFromRfid(allocator: std.mem.Allocator, data: []const u8) !?[]u8 {
+        if (data.len < 10 or data[0] == 0) return null;
+        const barcode_len: usize = data[8];
+        if (barcode_len == 0 or data.len < 9 + barcode_len) return error.BadRfid;
+        const barcode = data[9..][0..barcode_len];
+        for (barcode) |c| {
+            if (c < '0' or c > '9') return error.BadRfid;
+        }
+        return try allocator.dupe(u8, barcode);
+    }
+
     fn command(self: *Client, req: packet.Request, data: []const u8, resp_offset: u8) !bool {
-        const response = try self.transceive(@intFromEnum(req), data, resp_offset);
+        const response = try self.transceive(@backingInt(req), data, resp_offset);
         if (response.data.len == 0) return error.ShortResponse;
         return response.data[0] != 0;
     }
 
     fn send(self: *Client, req: packet.Request, data: []const u8) !void {
         var wire: [packet.Packet.max_wire]u8 = undefined;
-        const bytes = try (packet.Packet{ .packet_type = @intFromEnum(req), .data = data }).toBytes(&wire);
+        const bytes = try (packet.Packet{ .packet_type = @backingInt(req), .data = data }).toBytes(&wire);
         try self.transport.write(bytes);
     }
 
@@ -154,7 +179,7 @@ const Script = struct {
     fn push(self: *Script, req: packet.Request, offset: u8, data: []const u8) !void {
         var wire: [packet.Packet.max_wire]u8 = undefined;
         const bytes = try (packet.Packet{
-            .packet_type = @intFromEnum(req) +% offset,
+            .packet_type = @backingInt(req) +% offset,
             .data = data,
         }).toBytes(&wire);
         try self.inbound.appendSlice(self.allocator, bytes);
@@ -184,7 +209,72 @@ fn scriptTransport(script: *Script) Transport {
     };
 }
 
-test "print sends the niimprint command sequence" {
+test "the roll tag is read through the client" {
+    const gpa = std.testing.allocator;
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    // Captured from a D110_M: the tag answering RfidInfo (0x1a).
+    const tag = [_]u8{ 0x88, 0x1d, 0x2a, 0x0f, 0x7a, 0x1e, 0x10, 0x80, 0x08, 0x30, 0x31, 0x32, 0x32, 0x32, 0x32, 0x38, 0x31, 0x10, 0x50, 0x5a, 0x31, 0x49, 0x36, 0x30, 0x39, 0x34, 0x35, 0x30, 0x30, 0x30, 0x30, 0x38, 0x30, 0x39, 0x00, 0xba, 0x00, 0x23, 0x01 };
+    try script.push(.get_rfid, 1, &tag);
+
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    const barcode = (try client.readBarcode()) orelse return error.NoBarcode;
+    defer gpa.free(barcode);
+    try std.testing.expectEqualStrings("01222281", barcode);
+}
+
+test "rfid barcode is the digits after the uuid" {
+    const gpa = std.testing.allocator;
+    var data = [_]u8{ 1, 2, 3, 4, 5, 6, 7, 8, 4, '1', '5', '3', '0' };
+    const barcode = (try printerBarcode(&data)).?;
+    defer gpa.free(barcode);
+    try std.testing.expectEqualStrings("1530", barcode);
+    try std.testing.expect((try printerBarcode(&[_]u8{0})) == null);
+}
+
+fn printerBarcode(data: []const u8) !?[]u8 {
+    return Client.barcodeFromRfid(std.testing.allocator, data);
+}
+
+test "the page size puts the row count first" {
+    // `SetPageSize` is `RR RR CC CC` and the row count is the page's length
+    // down the tape. Sending the width there tells the printer the page is 96
+    // rows long, and it drops the rest of the image.
+    const gpa = std.testing.allocator;
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    const ok = [_]u8{1};
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.start_page, 1, &ok);
+    try script.push(.set_dimension, 1, &ok);
+    try script.push(.end_page, 1, &ok);
+    try script.push(.end_print, 1, &ok);
+
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    // 96 dots across the head, one row long.
+    const pixels = @as([96]u8, @splat(0));
+    try client.printGray(null, &pixels, 96, 1, 3);
+
+    const wire = script.written.items;
+    var off: usize = 0;
+    var found = false;
+    while (off < wire.len) {
+        const len = @as(usize, wire[off + 3]) + 7;
+        if (wire[off + 2] == @backingInt(packet.Request.set_dimension)) {
+            // 96 columns, 1 row: the row count is the first word.
+            try std.testing.expectEqualSlices(u8, &[_]u8{ 0x00, 0x01, 0x00, 0x60 }, wire[off + 4 .. off + 8]);
+            found = true;
+        }
+        off += len;
+    }
+    try std.testing.expect(found);
+}
+
+test "print sends the command sequence a Niimbot print expects" {
     const gpa = std.testing.allocator;
     var script = Script{ .allocator = gpa };
     defer script.deinit();
@@ -212,13 +302,13 @@ test "print sends the niimprint command sequence" {
         off += len;
     }
     try std.testing.expectEqualSlices(u8, &[_]u8{
-        @intFromEnum(packet.Request.set_density),
-        @intFromEnum(packet.Request.set_label_type),
-        @intFromEnum(packet.Request.start_print),
-        @intFromEnum(packet.Request.start_page),
-        @intFromEnum(packet.Request.set_dimension),
-        @intFromEnum(packet.Request.image),
-        @intFromEnum(packet.Request.end_page),
-        @intFromEnum(packet.Request.end_print),
+        @backingInt(packet.Request.set_density),
+        @backingInt(packet.Request.set_label_type),
+        @backingInt(packet.Request.start_print),
+        @backingInt(packet.Request.start_page),
+        @backingInt(packet.Request.set_dimension),
+        @backingInt(packet.Request.image),
+        @backingInt(packet.Request.end_page),
+        @backingInt(packet.Request.end_print),
     }, types[0..count]);
 }

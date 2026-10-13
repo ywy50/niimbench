@@ -1,7 +1,7 @@
 const std = @import("std");
 
 /// Niimbot wire packet: 0x55 0x55, type, length, payload, XOR checksum, 0xAA 0xAA.
-/// The layout matches niimprint and niimprint-rs.
+/// The packet table is docs/manuals/upstream/interfacing/proto.md.
 pub const Packet = struct {
     packet_type: u8,
     data: []const u8,
@@ -9,7 +9,7 @@ pub const Packet = struct {
     pub const max_data: usize = 255;
     pub const max_wire: usize = max_data + 7;
 
-    pub fn toBytes(self: Packet, out: []u8) error{TooLong, NoSpace}![]u8 {
+    pub fn toBytes(self: Packet, out: []u8) error{ TooLong, NoSpace }![]u8 {
         if (self.data.len > max_data) return error.TooLong;
         const n = self.data.len + 7;
         if (out.len < n) return error.NoSpace;

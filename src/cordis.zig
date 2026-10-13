@@ -80,6 +80,10 @@ pub const Context = struct {
     applying: ?*Fiber = null,
     http_host: []const u8 = "127.0.0.1",
     http_port: u16 = 0,
+    /// The process's `Io`, for the few plugins that need to read a clock or
+    /// dial a socket of their own. Set by `load.loadDefault`; a context built
+    /// by hand in a test leaves it empty and those plugins skip that work.
+    io: ?std.Io = null,
 
     pub fn init(allocator: std.mem.Allocator) Context {
         return .{

@@ -12,12 +12,34 @@
 pub fn applyExample(ctx: *cordis.Context) !void {
     const sources = ctx.require(server.Sources, "sources");
     try sources.add("sku", "{\"sku\":\"NB-1\"}");
-    const mark = try ctx.allocator.create(SourceState);
-    mark.* = .{ .sources = sources, .name = "sku" };
-    try ctx.effect(removeSource, mark);
+    const mark = try ctx.allocator.create(Mark);
+    mark.* = .{ .sources = sources, .name = try ctx.allocator.dupe(u8, "sku") };
+    try ctx.effect(removeMark, mark);
+}
+
+fn removeMark(state: *anyopaque) void {
+    const mark: *Mark = @ptrCast(@alignCast(state));
+    mark.sources.remove(mark.name);
+    mark.sources.allocator.free(mark.name);
+    mark.sources.allocator.destroy(mark);
 }
 ```
+
+`src/example_source.zig` is that plugin, complete, including its tests. `Sources.add` copies the name and the body; `Sources.remove` frees what the registry holds. The mark keeps its own copy of the name so the row can still be deleted after the plugin that added it is gone. `Sources.addOwned` skips the copies when the caller built the strings itself.
 
 Do not start the listener or open the printer inside `apply`. Those are process-lifetime and hardware effects. `main` calls `server.serve` after every fiber that can apply has applied.
 
 If `apply` returns an error, the kernel drops effects registered so far and leaves the fiber inactive.
+
+## A plugin that only adds a route
+
+A route is an effect like any other. `addRoute` pushes the inverse onto the calling fiber:
+
+```zig
+pub fn applyBench(ctx: *cordis.Context) !void {
+    const http = ctx.require(server.HttpService, "http");
+    try server.addRoute(http, .GET, "/api/bench", bench);
+}
+```
+
+`inject` gains `"http"`. Disposing the fiber removes the route, and nothing else has to know the route existed.

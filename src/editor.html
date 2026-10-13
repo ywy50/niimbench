@@ -4,137 +4,3259 @@
   <meta charset="utf-8">
   <title>niimbench</title>
   <style>
-    :root { color-scheme: light dark; font-family: sans-serif; }
-    body { margin: 2rem auto; max-width: 52rem; }
-    header { display: flex; justify-content: space-between; align-items: baseline; }
-    form, fieldset { display: grid; gap: 0.6rem; }
-    label { display: grid; gap: 0.2rem; }
-    .row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.6rem; }
-    canvas { width: 100%; background: white; border: 1px solid #888; image-rendering: pixelated; }
-    pre { min-height: 1.2rem; }
-  </style>
+    :root {
+      color-scheme: light dark;
+      accent-color: var(--accent);
+      --ink: #1b1c1f;
+      --muted: #676d78;
+      --bg: #f2f3f6;
+      --surface: #ffffff;
+      --surface-2: #f7f8fa;
+      --surface-3: #eceef2;
+      --line: #dcdfe5;
+      --line-strong: #c4c9d2;
+      --accent: #0b62d4;
+      --accent-ink: #ffffff;
+      --accent-soft: rgba(11, 98, 212, 0.1);
+      --danger: #c62828;
+      --radius: 0.55rem;
+      --shadow: 0 1px 2px rgba(17, 21, 30, 0.05), 0 4px 16px rgba(17, 21, 30, 0.05);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #e7e9ee;
+        --muted: #9aa2ae;
+        --bg: #141517;
+        --surface: #1d1f23;
+        --surface-2: #24272c;
+        --surface-3: #2c3037;
+        --line: #33373e;
+        --line-strong: #474c55;
+        --accent: #6ba6ff;
+        --accent-ink: #0a1220;
+        --accent-soft: rgba(107, 166, 255, 0.16);
+        --danger: #ff8078;
+        --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 18px rgba(0, 0, 0, 0.35);
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      line-height: 1.35;
+    }
+    header, .workspace { width: min(76rem, calc(100% - 2rem)); margin-inline: auto; }
+    header {
+      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+      position: sticky; top: 0; z-index: 5;
+      padding: 0.7rem 0;
+      background: color-mix(in srgb, var(--bg) 88%, transparent);
+      -webkit-backdrop-filter: blur(8px);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 1.12rem; font-weight: 700; letter-spacing: -0.01em; }
+    #status {
+      min-height: 0; margin: 0; max-width: 65%; padding: 0.18rem 0.7rem;
+      font-size: 0.78rem; color: var(--muted); white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis;
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px;
+    }
+    form { display: block; }
+    .workspace { display: grid; gap: 1rem; padding: 1rem 0 2.5rem; }
+    /* The text work is the tall part of the page, so it keeps the left and the
+       narrower column; the image controls sit in their own pane beside it, and
+       stay in view while the field rows scroll. */
+    .panels { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1rem; align-items: start; }
+    /* Swapping is one class on the wrapper: the image pane moves to the first
+       column and the text work takes the rest. */
+    .panels.image-first { grid-template-columns: 19rem minmax(0, 1fr); }
+    .panels.image-first .panel-image { grid-column: 1; grid-row: 1; }
+    .panels.image-first .panel-text { grid-column: 2; grid-row: 1; }
+    .panel { display: grid; gap: 0.7rem; }
+    .panel-image {
+      position: sticky; top: 1rem;
+      padding: 0.8rem; background: var(--surface);
+      border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .panel-text .fields { min-width: 0; }
+    @media (max-width: 60rem) {
+      .panels { grid-template-columns: 1fr; }
+      .panel-image { position: static; }
+    }
+    .top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 21rem;
+      gap: 1rem;
+      align-items: start;
+    }
+    .stage {
+      display: grid; justify-items: center; align-content: center; gap: 0.6rem;
+      min-height: 12rem; padding: 1rem;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .panel {
+      display: grid; gap: 0.7rem; align-content: start; padding: 0.85rem;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .panel .row { grid-template-columns: 1fr 1fr; }
+    /* The connection name is short and the address is not, so this row trades
+       width the other way. */
+    .panel .row.connection { grid-template-columns: 9rem minmax(0, 1fr); }
+    .panel .span { grid-column: 1 / -1; }
+    @media (max-width: 52rem) {
+      .top { grid-template-columns: 1fr; }
+    }
+    label { display: grid; gap: 0.28rem; font-size: 0.78rem; color: var(--muted); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
+    .tools { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
+    .tools .spacer { flex: 1 1 auto; }
+    .state {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      margin: 0.15rem 0 0; font-size: 0.85rem; color: var(--muted);
+    }
+    .state .dot {
+      width: 0.6rem; height: 0.6rem; border-radius: 50%;
+      background: var(--line-strong); flex: none;
+    }
+    /* Blue reads as "connected, nothing running" and red as "needs a look",
+       the same two colours the printer's own indicator uses. */
+    .state.idle .dot { background: #2f6fd0; }
+    .state.ready .dot { background: #1e9e5a; }
+    .state.busy .dot { background: #d08a1e; animation: blink 0.9s steps(2, start) infinite; }
+    .state.error { color: var(--danger); }
+    .state.error .dot { background: var(--danger); animation: blink 0.6s steps(2, start) infinite; }
+    @keyframes blink { 50% { opacity: 0.25; } }
+    @media (prefers-reduced-motion: reduce) { .state .dot { animation: none !important; } }
+    .toggle { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
+    .hint { margin: 0; font-size: 0.78rem; color: var(--muted); }
+    .check { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.6rem; }
+    .degrees { width: 4rem; }
+
+    input, select, textarea {
+      min-width: 0; padding: 0.32rem 0.45rem;
+      font: inherit; font-size: 0.86rem; color: var(--ink);
+      background: var(--surface); border: 1px solid var(--line-strong); border-radius: 0.4rem;
+    }
+    input::placeholder, textarea::placeholder { color: var(--muted); opacity: 0.75; }
+    input[type="file"] { width: 100%; padding: 0.25rem; font-size: 0.78rem; background: var(--surface-2); }
+    input:focus-visible, select:focus-visible, textarea:focus-visible,
+    button:focus-visible, summary:focus-visible, .file:focus-within {
+      outline: 2px solid var(--accent); outline-offset: 1px;
+    }
+    button {
+      padding: 0.34rem 0.7rem; font: inherit; font-size: 0.84rem; color: var(--ink);
+      background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 0.4rem;
+      cursor: pointer; transition: background 0.12s, border-color 0.12s;
+    }
+    button:hover { background: var(--surface-3); border-color: var(--accent); }
+    button:active { transform: translateY(1px); }
+    button:disabled { opacity: 0.5; cursor: progress; }
+    button.primary {
+      font-weight: 600; color: var(--accent-ink);
+      background: var(--accent); border-color: var(--accent);
+    }
+    button.primary:hover { filter: brightness(1.07); background: var(--accent); }
+    .file {
+      display: inline-flex; align-items: center; gap: 0.35rem;
+      padding: 0.34rem 0.7rem; font-size: 0.84rem; color: var(--ink);
+      background: var(--surface-2); border: 1px solid var(--line-strong); border-radius: 0.4rem;
+      cursor: pointer;
+    }
+    .file:hover { background: var(--surface-3); border-color: var(--accent); }
+    .file input { display: none; }
+
+    /* The printer list is one box that grows with what the scan found: no fixed
+       height and no inner scrolling, so the panel below it just moves down. */
+    .printers {
+      display: grid; gap: 0.5rem; padding: 0.6rem 0.65rem;
+      background: var(--surface-2); border: 1px solid var(--line); border-radius: 0.45rem;
+    }
+    .printers-head { display: flex; flex-wrap: wrap; gap: 0.4rem 0.6rem; align-items: center; justify-content: space-between; }
+    .printers-title { font-size: 0.82rem; font-weight: 600; }
+    .device-list { list-style: none; display: grid; gap: 0.35rem; margin: 0; padding: 0; }
+    .device-list .device {
+      display: grid; gap: 0.12rem; width: 100%; padding: 0.42rem 0.55rem;
+      text-align: left; font-size: 0.84rem; color: var(--ink);
+      background: var(--surface); border: 1px solid var(--line); border-radius: 0.4rem;
+      cursor: pointer;
+    }
+    .device-list .device:hover { background: var(--surface-2); border-color: var(--accent); }
+    .device-list .device[aria-pressed="true"] {
+      background: var(--accent-soft); border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+    .device-list .device-name { font-weight: 600; }
+    .device-list .device-detail { font-size: 0.76rem; color: var(--muted); overflow-wrap: anywhere; }
+    .device-empty {
+      padding: 0.45rem 0.55rem; text-align: center; font-size: 0.8rem; color: var(--muted);
+      border: 1px dashed var(--line-strong); border-radius: 0.4rem;
+    }
+    .orient { display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem; }
+    .orient button { width: 100%; }
+    .orient button[aria-pressed="true"] {
+      background: var(--accent-soft); border-color: var(--accent);
+      box-shadow: inset 0 0 0 1px var(--accent);
+    }
+
+    .fields {
+      display: grid; gap: 0.4rem; padding: 0.7rem 0.8rem 0.4rem;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    /* A field row flows and wraps rather than dividing into fixed columns.
+       A grid of seven columns put four buttons in a 4.2rem cell, so they
+       overlapped, and a row too narrow for its controls overlapped whatever the
+       cells were: controls that wrap cannot overlap at any width. */
+    .field {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .field textarea { flex: 1 1 6rem; }
+    .field select { flex: 0 0 auto; }
+    .field .font { flex: 0 1 8.5rem; }
+    .field input[type="number"] { flex: 0 0 4.6rem; }
+    .field .degrees { flex: 0 0 5rem; }
+    .field .actions { margin-left: auto; }
+    .field .note { flex: 1 1 100%; }
+    .fields .head {
+      padding: 0 0.35rem 0.4rem;
+      font-size: 0.66rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--muted); border-bottom: 1px solid var(--line);
+    }
+    #field-list { display: grid; }
+    .field { padding: 0.4rem 0.35rem; border-bottom: 1px solid var(--line); }
+    .field:last-child { border-bottom: 0; }
+    .field:hover { background: var(--surface-2); }
+    .field button { white-space: nowrap; }
+    .field textarea, .field input, .field select { min-width: 0; font: inherit; font-size: 0.84rem; }
+    .field textarea { min-height: 2rem; padding: 0.28rem 0.4rem; resize: vertical; }
+    .field .align { text-transform: capitalize; }
+    .field .actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
+    .field .actions button { padding: 0.22rem 0.45rem; font-size: 0.72rem; }
+    .field .note { grid-column: 1 / -1; font-size: 0.74rem; color: var(--accent); overflow-wrap: anywhere; }
+    .field .note:empty { display: none; }
+    .field .note.warn { color: var(--danger); }
+    .field.clipped textarea { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+    .field.record textarea { color: var(--accent); }
+
+    canvas {
+      display: block;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      /* The label is paper: it stays white in either color scheme. */
+      background: #ffffff;
+      border: 1px solid var(--line-strong);
+      border-radius: 0.2rem;
+      image-rendering: pixelated;
+      touch-action: none;
+    }
+    canvas.dragging { cursor: grabbing; }
+    canvas.placing { cursor: grab; }
+
+    details {
+      padding: 0.65rem 0.8rem;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    summary { cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+    details[open] > summary { margin-bottom: 0.6rem; }
+    details .row { margin-bottom: 0.6rem; }
+
+    @media (max-width: 60rem) {
+      .fields { overflow-x: auto; }
+      .fields .head, .field { min-width: 40rem; }
+    }
+</style>
 </head>
 <body>
   <header>
     <h1>niimbench</h1>
-    <p id="status">idle</p>
+    <p id="status" aria-live="polite">idle</p>
   </header>
   <form id="label">
-    <label>Image <input id="file" type="file" accept="image/*"></label>
-    <canvas id="preview" width="384" height="120"></canvas>
-    <div class="row">
-      <label>Model
-        <select id="model">
-          <option>b21</option><option>b1</option><option>b18</option>
-          <option>d11</option><option>d110</option>
-        </select>
-      </label>
-      <label>Density <input id="density" type="number" min="1" max="5" value="5"></label>
-      <label>Rotate
-        <select id="rotate"><option>0</option><option>90</option><option>180</option><option>270</option></select>
-      </label>
+  <div class="workspace">
+  <div class="top">
+    <div class="stage">
+      <canvas id="preview" width="384" height="240"></canvas>
+      <p class="hint">Drag a box to move it. Drag the round handle to rotate it.
+        <label class="check"><input id="snap" type="checkbox"> Snap 15°</label>
+              <span id="view-note" class="view-note" aria-live="polite"></span>
+      </p>
     </div>
-    <div class="row">
-      <label>Connection
-        <select id="conn"><option>usb</option><option>bluetooth</option></select>
-      </label>
-      <label>Address <input id="addr" placeholder="/dev/ttyACM0 or MAC"></label>
-      <label>Source
-        <select id="source"></select>
-      </label>
+    <div class="panel">
+      <div class="row">
+        <label>Model
+          <select id="model">
+            <option>b21</option><option>b1</option><option>b18</option>
+            <option>d11</option><option>d110</option>
+          </select>
+        </label>
+        <label>Label
+          <select id="label-size" title="Set from the roll when a printer is picked; pick here to override">
+            <option value="">Custom</option>
+          </select>
+        </label>
+        <label>Width <input id="width" type="number" min="1" max="4096" value="384"></label>
+        <label>Height <input id="height" type="number" min="1" max="4096" value="240"></label>
+      </div>
+      <div class="row">
+        <label>Density <input id="density" type="number" min="1" max="5" value="5"></label>
+      </div>
+      <div class="row">
+        <label class="span">Orientation
+          <span class="orient">
+            <button type="button" data-rotate="0" aria-pressed="true">Horizontal</button>
+            <button type="button" data-rotate="90" aria-pressed="false">Vertical</button>
+          </span>
+        </label>
+      </div>
+      <div class="printers span">
+        <div class="printers-head">
+          <span class="printers-title">Found Niimbot devices</span>
+          <button type="button" id="scan-devices">Find nearby</button>
+        </div>
+        <ul id="device" class="device-list"></ul>
+        <span class="hint" id="device-status" aria-live="polite">A scan asks the serial ports and the Bluetooth devices this machine already knows.</span>
+      </div>
+      <div class="row connection">
+        <label>Connection
+          <select id="conn"><option>usb</option><option>bluetooth</option></select>
+        </label>
+        <label>Address <input id="addr" placeholder="/dev/ttyACM0 or MAC"></label>
+        <label class="cloud-opt-in" title="The label catalogue is compiled in. Tick this to let a barcode it does not know be looked up in Niimbot's cloud.">
+          <input id="cloud-lookup" type="checkbox"> Ask the cloud for unknown rolls
+        </label>
+        <div class="span">
+          <span class="printers-title">Printer</span>
+          <p id="printer-state" class="state idle" aria-live="polite"
+             title="This is what niimbench knows: the connection you picked, the printer it found, and whether a job is running. It is not the printer's own light — that is in docs/manuals/d110.md.">
+            <span class="dot" aria-hidden="true"></span>
+            <span id="printer-state-text">No address yet</span>
+          </p>
+        </div>
+      </div>
     </div>
-    <p id="fields"></p>
-    <button type="button" id="fill">Fill from source</button>
-    <button type="submit">Print</button>
-  </form>
-  <script>
-    const token = new URLSearchParams(location.search).get("token") || "";
-    const status = document.querySelector("#status");
-    const canvas = document.querySelector("#preview");
-    const ctx = canvas.getContext("2d");
-    let image = null;
+  </div>
 
-    function api(path, options) {
-      const url = path + (path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
-      return fetch(url, options);
+  <div class="panels">
+  <section class="panel panel-text">
+    <div class="fields">
+        <div id="field-list"></div>
+    </div>
+    <div class="tools">
+      <button type="button" id="add-field">Add text</button>
+      <button type="button" id="clear">Clear text</button>
+      <button type="button" id="undo" title="undo (Ctrl+Z)">Undo</button>
+      <button type="button" id="redo" title="redo (Ctrl+Shift+Z)">Redo</button>
+      <label class="toggle"><input type="checkbox" id="grid"> Grid</label>
+      <button type="button" id="swap-panes" title="put the image controls on the other side">Swap sides</button>
+      <span class="spacer"></span>
+      <button type="submit" class="primary">Print</button>
+    </div>
+    <div class="tools">
+      <button type="button" id="save">Save layout</button>
+      <label class="file">Load layout <input id="load" type="file" accept="application/json,.json"></label>
+      <button type="button" id="reset">Reset</button>
+    </div>
+  </section>
+  <section class="panel panel-image">
+    <label>Image <input id="file" type="file" accept="image/*"></label>
+    <label>Image threshold
+    <input id="image-threshold" type="range" min="0" max="255" value="160">
+    </label>
+    <span class="printers-title">Image <span id="image-readout" class="hint">no image</span></span>
+        <div class="tools">
+          <button type="button" id="image-fit">Fit</button>
+          <button type="button" id="image-fill">Fill</button>
+          <button type="button" id="image-reset">Reset image</button>
+          <button type="button" id="image-180">Turn 180&deg;</button>
+        </div>
+        <div class="row">
+          <label>Scale % <input id="image-scale" type="number" min="5" max="800" value="100"></label>
+          <label>Rotation <input id="image-rotation" type="number" min="-180" max="180" step="1" value="0"></label>
+          <label>Left <input id="image-x" type="number" value="0"></label>
+          <label>Top <input id="image-y" type="number" value="0"></label>
+        </div>
+    <span class="hint">Drag the picture to move it, a square handle to scale, and the round handle to turn it.</span>
+  </section>
+  </div>
+  </div>
+  </form>
+
+  <script>
+    /// Everything the page does that is worth knowing later goes to the
+    /// server's trace, including its own errors: a browser console is not
+    /// readable after the fact, and a screenshot cannot show an exception.
+    /// `GET /api/trace` reads the whole log back.
+    function traceLine(level, message) {
+      try {
+        const url = "/api/trace?token=" + encodeURIComponent(sessionToken);
+        // `sessionToken` is written into this page by the server; see `api`.
+        // sendBeacon survives a page that is being unloaded; fetch is the
+        // fallback where it is not available.
+        const body = JSON.stringify({ level, source: "page", message: String(message).slice(0, 400) });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(url, new Blob([body], { type: "application/json" }));
+          return;
+        }
+        fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body, keepalive: true });
+      } catch (error) { /* tracing must never be the thing that breaks the page */ }
     }
 
-    document.querySelector("#file").addEventListener("change", (event) => {
-      const file = event.target.files[0];
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => { image = img; draw(); URL.revokeObjectURL(url); };
-      img.src = url;
+    // Kept on the window as well as sent to the trace: a diagnostic that only
+    // exists somewhere else cannot be read by a test that is looking at this
+    // page, and a page that throws before its first render is the failure that
+    // costs the most time to find.
+    window.__niimbenchErrors = [];
+    window.addEventListener("error", (event) => {
+      const line = (event.message || "error") + " at " + (event.filename || "?") + ":" + (event.lineno || 0);
+      window.__niimbenchErrors.push(line);
+      traceLine("error", line);
+    });
+    window.addEventListener("unhandledrejection", (event) => {
+      const line = "unhandled rejection: " + (event.reason && event.reason.message ? event.reason.message : event.reason);
+      window.__niimbenchErrors.push(line);
+      traceLine("error", line);
     });
 
-    function draw() {
-      if (!image) return;
-      const degrees = Number(document.querySelector("#rotate").value);
-      const swap = degrees === 90 || degrees === 270;
-      const width = swap ? image.height : image.width;
-      const height = swap ? image.width : image.height;
-      canvas.width = width;
-      canvas.height = height;
-      ctx.fillStyle = "white";
-      ctx.fillRect(0, 0, width, height);
-      ctx.save();
-      ctx.translate(width / 2, height / 2);
-      ctx.rotate(degrees * Math.PI / 180);
-      ctx.drawImage(image, -image.width / 2, -image.height / 2);
-      ctx.restore();
-    }
-    document.querySelector("#rotate").addEventListener("change", draw);
+    /// What the self-check reports and the harness must therefore assert on.
+    /// `tools/canvas.test.js` reads this list out of the page and fails when a
+    /// name on it has no check there, so a new fact about the page cannot
+    /// arrive without something watching it.
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts"];
 
-    async function loadSources() {
-      const response = await api("/api/sources");
-      const body = await response.json();
-      const select = document.querySelector("#source");
-      select.replaceChildren();
-      for (const name of body.sources) {
-        const option = document.createElement("option");
-        option.textContent = name;
-        select.append(option);
+    /// The protocol: every step a boot must record, and the reason it cannot
+    /// fall behind. `tools/trace-test.js` reads this array out of the page and
+    /// fails if the trace is missing one. A step is declared by *being traced*:
+    /// `traceStep` below writes the line and adds its prefix here, so a step
+    /// cannot run without declaring itself. The list used to be hand-kept
+    /// beside the boot, which is a rule to remember, and a rule to remember is
+    /// a rule that gets forgotten.
+    const tracedSteps = [
+      // The server's own line. The page cannot write it: it is not running yet.
+      "opened",
+    ];
+
+    /// Record a protocol step. The message goes to the trace; its first two
+    /// words become part of the protocol, which is what `tracedSteps` is read
+    /// for. New behaviour that traces itself this way is enforced by `make test`
+    /// on the next run with no second place to remember.
+    function traceStep(message) {
+      const prefix = String(message).split(" ").slice(0, 2).join(" ");
+      if (!tracedSteps.includes(prefix)) tracedSteps.push(prefix);
+      traceLine("info", message);
+    }
+
+    const status = document.querySelector("#status");
+    const canvas = document.querySelector("#preview");
+    const list = document.querySelector("#field-list");
+    const previewCtx = canvas.getContext("2d");
+    // Filled from /api/label/metrics: every font the renderer carries, with its
+    // advance table, so the boxes here are measured the way the ink is. Until
+    // it answers, one stand-in font measures each character as six tenths of a
+    // line.
+    let metrics = {
+      default: "dejavu-sans",
+      max_size: 1024,
+      fonts: [{ id: "dejavu-sans", name: "DejaVu Sans", line_units: 10, missing: 6, advances: [] }],
+    };
+    let fontTables = tablesFrom(metrics);
+    let rows = [];
+    // Undo works on the same JSON that Save layout writes: the label and the
+    // printer fields. A source record and the background image are not part of
+    // it, so they do not change under Undo.
+    let history = [];
+    let future = [];
+    let deep = 0;
+    let lastPushed = null;
+    let boxes = [];
+    /// The last box layout written to the trace, so a drag or a refresh does not
+    /// repeat a line that has not changed.
+    let lastShape = "";
+    let sourceKeys = [];
+    // The uploaded picture and where it sits on the roll. The transform is
+    // stored in label pixels, not canvas pixels, so it survives a zoom or an
+    // orientation change, and the same numbers draw the preview and the bytes.
+    let backgroundImage = null;
+    let imageTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
+    // True once the user has moved, scaled or turned the picture. Until then a
+    // fitting is redone whenever the view changes shape, so a picture imported
+    // into the vertical view is not left hanging off the label.
+    let imageTouched = false;
+    let drag = null;
+    let sizeCatalog = null;
+    let refreshTimer = null;
+    // The bitmap of the last render, so dragging can redraw the boxes without
+    // asking the server again on every pointer event.
+    let lastImage = null;
+    /// The last render as the server sent it, so turning the view redraws the
+    /// picture here instead of asking for it again.
+    let lastPayload = null;
+
+    /// The JSON in a response.
+    ///
+    /// `response.json()` waits for the stream to end before it parses, and on
+    /// this server that wait never finishes: the body arrives whole but the
+    /// end never reaches the reader. `text()` resolves at end of body, so this
+    /// reads the bytes and parses them, which needs no end-of-stream signal and
+    /// cannot hang a caller that only wants the answer.
+    async function readJson(response) {
+      const text_ = await response.text();
+      if (!text_) return null;
+      try {
+        return JSON.parse(text_);
+      } catch (error) {
+        throw new Error("bad json from " + response.url + ": " + String(text_).slice(0, 80));
       }
     }
 
-    document.querySelector("#fill").addEventListener("click", async () => {
-      const name = document.querySelector("#source").value;
+    /// Every call to our own API carries the session token in the query.
+    ///
+    /// The cookie the boot sets is `HttpOnly` and normally enough, but a POST
+    /// with a body has its cookie dropped somewhere between the browser and the
+    /// server, which answered `bad token` and left the preview empty — the
+    /// upload looked like it did nothing. The token in the URL cannot be lost
+    /// that way, and it is already in the address bar of the page that is
+    /// making the call.
+    /// The session token, written into this page by the server.
+    ///
+    /// It cannot come from the URL: the boot is `GET /?token=`, which redirects
+    /// to `/`, so `location.search` is empty by the time this runs. It cannot
+    /// rely on the cookie either — a POST with a body had that cookie dropped
+    /// and the server answered `bad token`, which cleared the preview and made
+    /// an uploaded picture look like nothing happened.
+    const sessionToken = "%%NIIMBENCH_TOKEN%%";
+
+    function api(path, options) {
+      const token = sessionToken.indexOf("%%") === 0
+        ? new URLSearchParams(location.search).get("token")
+        : sessionToken;
+      if (!token || path.indexOf("token=") >= 0) return fetch(path, options);
+      return fetch(path + (path.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(token), options);
+    }
+
+    function post(path, body) {
+      return api(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    }
+
+    /// The server sends each font's advances as runs, `[first, a0, a1, ...]`:
+    /// the advance of code point `first`, then of `first + 1`, and so on. This
+    /// keys them by code point once, so measuring a line is a lookup per
+    /// character.
+    function tablesFrom(body) {
+      const tables = {};
+      for (const font of body.fonts || []) {
+        const advances = new Map();
+        for (const run of font.advances) {
+          for (let i = 1; i < run.length; i++) advances.set(run[0] + i - 1, run[i]);
+        }
+        tables[font.id] = { name: font.name, line_units: font.line_units, missing: font.missing, advances };
+      }
+      return tables;
+    }
+
+    /// Width in dots of one line at `size` in `font`, measured the way
+    /// `font.lineWidth` does: the advances of its code points summed, then
+    /// `ceil(units * size / line_units)`. Same table, same integer, so a box
+    /// is exactly as wide as the ink the server lays down. A font id this
+    /// build does not carry measures as the default font.
+    function textWidth(text, size, font) {
+      const table = fontTables[font] || fontTables[metrics.default];
+      let units = 0;
+      for (const ch of String(text)) units += table.advances.get(ch.codePointAt(0)) ?? table.missing;
+      return Math.ceil(units * size / table.line_units);
+    }
+
+    /// A newline starts the next line, so a field is a block of lines. These
+    /// mirror `blockWidth` and `blockHeight` in `label.zig`.
+    function blockLines(text) {
+      return String(text ?? "").split("\n");
+    }
+
+    /// Break one paragraph so every line fits: `fits(line)` says whether a
+    /// line is narrow enough, which with a proportional font is a width and
+    /// not a character count. Words are kept whole when they fit; a word longer
+    /// than the line is cut, because clipping is what the warning is for and
+    /// there is no hyphen to insert that the renderer would draw.
+    function wrapParagraph(paragraph, fits) {
+      const words = paragraph.trim().split(/\s+/).filter((word) => word.length > 0);
+      if (words.length === 0) return [""];
+      const lines = [];
+      let line = "";
+      for (let word of words) {
+        while (!fits(word)) {
+          const chars = Array.from(word);
+          let cut = 1;
+          while (cut < chars.length && fits(chars.slice(0, cut + 1).join(""))) cut += 1;
+          if (cut >= chars.length) break;
+          if (line) { lines.push(line); line = ""; }
+          lines.push(chars.slice(0, cut).join(""));
+          word = chars.slice(cut).join("");
+        }
+        if (!line) line = word;
+        else if (fits(line + " " + word)) line += " " + word;
+        else { lines.push(line); line = word; }
+      }
+      if (line) lines.push(line);
+      return lines;
+    }
+
+    /// Wrap a whole field: an existing newline is a paragraph the user asked
+    /// for, so those are kept and each is wrapped on its own.
+    function wrapText(text, fits) {
+      return blockLines(text).flatMap((paragraph) => wrapParagraph(paragraph, fits));
+    }
+
+    function blockWidth(text, size, font) {
+      return blockLines(text).reduce((widest, line) => Math.max(widest, textWidth(line, size, font)), 0);
+    }
+
+    /// Lines stack `size` dots apart, and a line is `size` dots tall.
+    function blockHeight(text, size) {
+      return blockLines(text).length * size;
+    }
+
+    /// The box a field occupies. `left` is where the line starts after its
+    /// alignment: the server reports that position in the track answer, so an
+    /// aligned line is drawn and checked where it will really land. Dragging
+    /// still moves the anchor, which is what the x input holds.
+    /// The rotation a new field starts with, which the Orientation buttons set.
+    /// Every field also carries its own rotation, so this is a starting point
+    /// rather than a mode: a field can still be turned to any angle after.
+    let orientation = 0;
+
+    /// Orientation is the view and nothing else: it decides which way the page
+    /// is drawn in the window. A field's own angle is how its letters are
+    /// drawn, and that is the only thing the printer is told about, so the
+    /// button must not touch it.
+    ///
+    /// Turning both is what a preview at 180 degrees looks like: the picture
+    /// turns once for the view and the letters turn again, while the boxes turn
+    /// only for the view, so nothing on screen agrees with anything else.
+    function setOrientation(degrees) {
+      const turn = normalizeDegrees(degrees) === 90 ? 90 : 0;
+      orientation = turn;
+      for (const button of document.querySelectorAll(".orient button")) {
+        button.setAttribute("aria-pressed", Number(button.dataset.rotate) === turn ? "true" : "false");
+      }
+      // A field's own degrees are untouched, so the picture on screen can be
+      // turned again here without another render, the same way the rest of the
+      // preview is redrawn locally.
+      if (lastPayload) showImage(lastPayload);
+      drawBoxes();
+    }
+
+    function normalizeDegrees(value) {
+      const n = Math.round(Number(value) || 0);
+      return ((n % 360) + 360) % 360;
+    }
+
+    function snapDegrees(value) {
+      const n = normalizeDegrees(value);
+      if (!document.querySelector("#snap").checked) return n;
+      return normalizeDegrees(Math.round(n / 15) * 15);
+    }
+
+    /// Printer coordinates: width across the head, height along the tape.
+    function rollSize() {
+      return {
+        width: Number(document.querySelector("#width").value) || 1,
+        height: Number(document.querySelector("#height").value) || 1,
+      };
+    }
+
+    /// The page size and the picture of it always move together. A caller that
+    /// learns a roll's size — the tag, a preset, a saved layout — sets the page
+    /// here rather than only one of the two, because a form that says 320 while
+    /// the picture is 304 lays the fields out against a label the printer will
+    /// not accept, and they come out clipped.
+    function usePage(width, height) {
+      document.querySelector("#width").value = String(width);
+      document.querySelector("#height").value = String(height);
+      refitIfUntouched();
+      syncImageControls();
+      const view = viewSize();
+      canvas.width = view.width;
+      canvas.height = view.height;
+      lastImage = null;
+      previewCtx.fillStyle = "white";
+      previewCtx.fillRect(0, 0, canvas.width, canvas.height);
+      noteView();
+      fitCanvas();
+    }
+
+    /// A field's box, in the frame the view draws in. Everything about a box
+    /// comes from here, so the box cannot disagree with the letters: one centre,
+    /// one size and one angle, put through one turn.
+    ///
+    /// `anchor` is the field's own `x` and `y` — the value the row shows and
+    /// that the server's alignment resolves — and never the block's left edge.
+    /// Both callers pass that, which is the point: taking a left edge here and
+    /// an anchor there shifted every box by half a block, and the box then sat
+    /// beside its text or off the canvas entirely.
+    function boxRect(field, left, top) {
+      const size = sizeOf(field);
+      const text = field.text || "";
+      const block_w = Math.max(blockWidth(text, size, field.font), 1);
+      const block_h = blockHeight(text, size);
+      // Not rounded: a block's own left edge can fall on a half dot — half of
+      // an odd width is not whole — and a box that rounds one way while the
+      // text rounds the other is a box beside its text.
+      const x0 = Number.isFinite(left) ? left : 0;
+      const y0 = Number.isFinite(top) ? top : (field.y || 0);
+      const angle = normalizeDegrees(field.rotation || 0);
+      const radians = angle * Math.PI / 180;
+      const cos = Math.abs(Math.cos(radians));
+      const sin = Math.abs(Math.sin(radians));
+      // The turned block's footprint, centred on the block's own centre, which
+      // is where the renderer turns its glyphs.
+      const w = Math.ceil(block_w * cos + block_h * sin) + 1;
+      const h = Math.ceil(block_w * sin + block_h * cos) + 1;
+      return {
+        field,
+        left: { x: x0, y: y0 },
+        angle,
+        rotation: angle,
+        block_w,
+        block_h,
+        centre: { x: x0 + block_w / 2, y: y0 + block_h / 2 },
+        x: x0 - (w - block_w) / 2,
+        y: y0 - (h - block_h) / 2,
+        w,
+        h,
+      };
+    }
+
+    /// Where the renderer puts a block's left edge: the anchor less the
+    /// alignment, and never left of the page. This is `label.alignedX` and the
+    /// clamp after it, written once, so the page never has to ask and never has
+    /// to apply the alignment twice.
+    function placedLeft(field, source) {
+      const text = previewText(field, source);
+      const block_w = Math.max(blockWidth(text, sizeOf(field), field.font), 1);
+      // Whole dots: the printer draws on them and the server reports them, so a
+      // placed edge is one. The box is then the same edge, not a half dot away
+      // from the line the renderer actually drew.
+      return Math.round(field.x - shiftFor(field, block_w));
+    }
+
+    /// How far the anchor is to the right of the block's left edge, given the
+    /// alignment: the amount `x` is moved left to place the block. This is the
+    /// server's rule, measured: a centred 53-dot block with `x` at 48 is placed
+    /// at 22, and a right-aligned one at -5.
+    function shiftFor(field, block_w) {
+      const mode = field.align_mode || "left";
+      if (mode === "right") return block_w;
+      if (mode === "center") return block_w / 2;
+      return 0;
+    }
+
+    /// A field's box, in the frame the view draws in. `left` is the block's own
+    /// left edge on the roll and `top` its first row. One centre, one size, one
+    /// angle, one turn: everything about a box comes from here.
+
+    /// The four corners of a box rect, turned by the field's angle.
+    /// Rebuild a box from its field and put the result back on it, so the thing
+    /// drawn, the thing hit-tested and the thing dragged are one box.
+    function showBox(box) {
+      const field = box.field;
+      const rect = boxRect(field, placedLeft(field, null), field.y);
+      box.rect = rect;
+      box.quad = boxQuad(rect);
+      box.handle = handleOf(rect);
+      box.centre = rect.centre;
+      box.screen_centre = quadCentre(box.quad);
+      return box;
+    }
+
+    function boxCorners(box) {
+      const radians = box.angle * Math.PI / 180;
+      const cos = Math.cos(radians);
+      const sin = Math.sin(radians);
+      const hw = box.block_w / 2;
+      const hh = box.block_h / 2;
+      return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([lx, ly]) => ({
+        x: box.centre.x + lx * cos - ly * sin,
+        y: box.centre.y + lx * sin + ly * cos,
+      }));
+    }
+
+    /// Those corners as the view shows them: turned once for the field, and
+    /// once more for the view only when the view itself is turned. The guard
+    /// matters — `toView` always turns, so calling it unconditionally put every
+    /// box off the right edge of an upright canvas.
+    function boxQuad(box) {
+      const corners = boxCorners(box);
+      if (orientation !== 90) return corners;
+      return corners.map((corner) => toView(corner.x, corner.y));
+    }
+
+    function quadCentre(quad) {
+      return {
+        x: (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4,
+        y: (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4,
+      };
+    }
+
+    /// Inside a view quadrilateral? Convex, so every edge agrees.
+    function inQuad(quad, point) {
+      let sign = 0;
+      for (let i = 0; i < 4; i++) {
+        const a = quad[i];
+        const b = quad[(i + 1) % 4];
+        const cross = (b.x - a.x) * (point.y - a.y) - (b.y - a.y) * (point.x - a.x);
+        if (cross === 0) continue;
+        if (sign === 0) sign = cross > 0 ? 1 : -1;
+        else if ((cross > 0 ? 1 : -1) !== sign) return false;
+      }
+      return true;
+    }
+
+    /// Move a field by whole pixels from the keyboard. The arrow keys work on
+    /// the x and y inputs: a number input would otherwise step by its own
+    /// amount and lose the label's bounds.
+    function nudge(event, field, x_input, y_input) {
+      const step = event.shiftKey ? 10 : 1;
+      const before = { x: field.x, y: field.y };
+      switch (event.key) {
+        case 'ArrowLeft': field.x = Math.max(0, field.x - step); break;
+        case 'ArrowRight': field.x = field.x + step; break;
+        case 'ArrowUp': field.y = Math.max(0, field.y - step); break;
+        case 'ArrowDown': field.y = field.y + step; break;
+        default: return false;
+      }
+      // The form holds the size the server actually renders, which may be
+      // swapped by a quarter turn.
+      const limitX = Math.max(0, Number(document.querySelector("#width").value) || 0);
+      const limitY = Math.max(0, Number(document.querySelector("#height").value) || 0);
+      field.x = Math.min(field.x, limitX);
+      field.y = Math.min(field.y, limitY);
+      if (field.x === before.x && field.y === before.y) {
+        event.preventDefault();
+        return true;
+      }
+      x_input.value = String(field.x);
+      y_input.value = String(field.y);
+      scheduleRefresh();
+      event.preventDefault();
+      return true;
+    }
+
+    /// A field's line height in dots: a whole number from 1 to the renderer's
+    /// largest, which is what `label.zig` clamps it to as well.
+    function sizeOf(field) {
+      const size = Math.round(Number(field.size));
+      if (!Number.isFinite(size)) return 16;
+      return Math.min(Math.max(size, 1), metrics.max_size || 1024);
+    }
+
+    /// A layout saved before the font had sizes in dots says `scale` instead:
+    /// a multiple of the old 5×7 bitmap, whose capitals were `7 * scale` dots
+    /// tall. A line of this font is about one and a half times its capitals.
+    function sizeFromLayout(field) {
+      if (field.size != null && Number.isFinite(Number(field.size))) return sizeOf(field);
+      const scale = Number(field.scale);
+      return sizeOf({ size: Number.isFinite(scale) && scale > 0 ? Math.round(scale * 11) : 16 });
+    }
+
+    function scheduleRefresh() {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => { refreshTimer = null; refresh(); }, 60);
+    }
+
+    // ---- field rows -------------------------------------------------------
+
+    const alignModes = ["left", "center", "right"];
+
+    function alignOptions(selected) {
+      const select = document.createElement("select");
+      select.className = "align";
+      select.title = "alignment: x is the left edge, the centre, or the right edge";
+      for (const mode of alignModes) {
+        const option = document.createElement("option");
+        option.value = mode;
+        option.textContent = mode;
+        select.append(option);
+      }
+      select.value = alignModes.includes(selected) ? selected : "center";
+      return select;
+    }
+
+    /// The fonts this build carries, as a select, named the way the server
+    /// names them. A row's letters are drawn in the one picked here.
+    function fontOptions(selected) {
+      const select = document.createElement("select");
+      select.className = "font";
+      for (const font of metrics.fonts) {
+        const option = document.createElement("option");
+        option.value = font.id;
+        option.textContent = font.name;
+        select.append(option);
+      }
+      select.value = selected;
+      select.title = "typeface this row is drawn in";
+      return select;
+    }
+
+    /// A row's size: the line height in dots, any whole number. Dragging a
+    /// corner of the field's box on the preview sets the same number.
+    function sizeInput(value) {
+      const input = document.createElement("input");
+      input.type = "number";
+      input.className = "size";
+      input.min = "1";
+      input.max = String(metrics.max_size || 1024);
+      input.step = "1";
+      input.value = String(value);
+      input.title = "line height in dots; drag a corner of the text's box to resize it";
+      return input;
+    }
+
+    function createFieldRow(values) {
+      const field = {
+        text: values.text || "",
+        key: values.key || "",
+        x: values.x ?? 4,
+        y: values.y ?? 4,
+        size: sizeOf({ size: values.size ?? 16 }),
+        // A font this build does not carry is drawn in the default one, and
+        // the renderer is never sent a name it would refuse.
+        font: fontTables[values.font] ? values.font : metrics.default,
+        align_mode: values.align_mode || "center",
+        rotation: Number.isFinite(values.rotation) ? values.rotation : orientation,
+      };
+
+      const row = document.createElement("div");
+      row.className = "field";
+
+      const text = document.createElement("textarea");
+      text.placeholder = "literal text";
+      // One line to start, and it grows: a newline in the value is a second
+      // line on the label.
+      text.rows = 1;
+      text.wrap = "off";
+      text.value = field.text;
+      const grow = () => { text.rows = Math.min(blockLines(text.value).length, 8); };
+      grow();
+
+      const font = fontOptions(field.font);
+      const size = sizeInput(field.size);
+      const align = alignOptions(field.align_mode);
+
+      const copy = document.createElement("button");
+      copy.type = "button";
+      copy.textContent = "Copy";
+      copy.title = "add another field with this text, size, and alignment";
+
+      const wrap = document.createElement("button");
+      wrap.type = "button";
+      wrap.textContent = "Wrap";
+      wrap.title = "break this text into lines that fit the label";
+
+      const fit = document.createElement("button");
+      fit.type = "button";
+      fit.textContent = "Fit";
+      fit.title = "use the largest size that still fits the roll";
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "Remove";
+
+      const actions = document.createElement("span");
+      actions.className = "actions";
+      actions.append(wrap, fit, copy, remove);
+
+      // One extra line under the controls. `markRows` puts the clip warning
+      // here and `report` puts the resolved record value here.
+      const note = document.createElement("span");
+      note.className = "note";
+
+      const x = document.createElement("input");
+      x.type = "number";
+      x.min = "0";
+      x.value = String(field.x);
+      const y = document.createElement("input");
+      y.type = "number";
+      y.min = "0";
+      y.value = String(field.y);
+
+      const rotation = document.createElement("input");
+      rotation.type = "number";
+      rotation.className = "degrees";
+      rotation.step = "1";
+      rotation.value = String(normalizeDegrees(field.rotation));
+
+      row.append(text, font, size, align, x, y, rotation, actions, note);
+      list.append(row);
+
+      const sync = () => {
+        record();
+        field.text = text.value;
+        field.font = font.value;
+        field.size = sizeOf({ size: size.value });
+        size.value = String(field.size);
+        field.align_mode = align.value;
+        field.x = Math.max(0, Number(x.value) || 0);
+        field.y = Math.max(0, Number(y.value) || 0);
+        field.rotation = normalizeDegrees(rotation.value);
+        rotation.value = String(field.rotation);
+        scheduleRefresh();
+      };
+      text.addEventListener("input", () => { grow(); sync(); });
+      // Enter belongs to the label: it starts a new line. Ctrl+Enter prints.
+      text.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter") return;
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          document.querySelector("#label").requestSubmit();
+          return;
+        }
+        // The default already inserts the newline; this keeps the key from
+        // reaching the form and submitting it.
+        event.stopPropagation();
+      });
+      for (const control of [font, size, align, x, y, rotation]) control.addEventListener("change", sync);
+      for (const control of [x, y]) {
+        control.addEventListener("keydown", (event) => {
+          nudge(event, field, x, y);
+        });
+      }
+      wrap.addEventListener("click", () => {
+        const size = sizeOf(field);
+        // Wrap into the space from the field's anchor to the roll's edge, so a
+        // field placed right of centre does not grow under the one beside it.
+        // `rollSize` is printer coordinates, which is what x and the preview use.
+        const roll = rollSize();
+        const limit = Math.max(1, roll.width - Math.min(field.x, roll.width));
+        const wrapped = wrapText(text.value, (line) => textWidth(line, size, field.font) <= limit).join("\n");
+        if (wrapped === text.value) return;
+        record();
+        text.value = wrapped;
+        grow();
+        sync();
+      });
+      fit.addEventListener("click", () => {
+        // Wrap is the better answer when the text can break; Fit is for a word
+        // or a value that cannot, so it steps the size down and stops at the
+        // largest one whose block, placed by its alignment, stays on the roll.
+        const roll = rollSize();
+        const fits = (candidate) => {
+          const w = Math.max(blockWidth(text.value, candidate, field.font), 1);
+          const left = Math.round(field.x - shiftFor(field, w));
+          return left >= 0 && left + w <= roll.width && field.y + blockHeight(text.value, candidate) <= roll.height;
+        };
+        const wanted = sizeOf(field);
+        // Walk down from the current size so a press never enlarges a field.
+        for (let candidate = wanted; candidate >= 1; candidate -= 1) {
+          if (!fits(candidate)) continue;
+          if (candidate === wanted) return;
+          record();
+          size.value = String(candidate);
+          sync();
+          return;
+        }
+        // Nothing fits even at one dot; leave the field alone rather than
+        // shrink it to something unreadable.
+      });
+      copy.addEventListener("click", () => {
+        record();
+        const made = addRow({
+          text: field.text,
+          size: field.size,
+          align_mode: field.align_mode,
+          x: field.x,
+          // Below the original's last line.
+          y: field.y + blockHeight(field.text, sizeOf(field)),
+        });
+        // The copy lands directly under the row it came from.
+        row.after(made.row);
+        refresh();
+      });
+      remove.addEventListener("click", () => {
+        record();
+        removeRow({ model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } });
+        refresh();
+      });
+      // What the rest of the page needs to read back or rewrite this row.
+      note.textContent = "";
+      return { model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } };
+    }
+
+    /// Where a new line starts so the text sits in the middle of what the view
+    /// is showing. `texts` are the strings that will be drawn, one per field.
+    /// A turned view leaves the page in printer coordinates, so a stack that
+    /// runs across the roll would run down the screen there; lines are stepped
+    /// the way the view shows them.
+    /// Where a stack of lines sits when it is centred on the label.
+    ///
+    /// The label is the sticker, so its own width and height are what centring
+    /// means. Centring in the view instead puts a field in a different place as
+    /// soon as the window is turned, and then the print does not match the
+    /// preview.
+    function centeredOrigins(texts, size = 16) {
+      const roll = rollSize();
+      const count = Math.max(texts.length, 1);
+      const x = Math.round(roll.width / 2);
+      const y0 = Math.max(0, Math.round((roll.height - count * size) / 2));
+      return texts.map((_, index) => ({
+        x,
+        y: y0 + index * size,
+        size,
+        align_mode: "center",
+      }));
+    }
+
+    /// The largest size up to `most` at which `text` fits across the label,
+    /// leaving `extra` dots spare, or 1 when even that is too wide. A label is
+    /// 96 dots across on a 12 mm roll, so a long word has to start small.
+    function sizeThatFits(text, extra, most = 32, font = metrics.default) {
+      const room = Math.max(1, rollSize().width - (extra ?? 8));
+      for (let size = most; size > 1; size -= 1) {
+        if (blockWidth(text, size, font) <= room) return size;
+      }
+      return 1;
+    }
+
+    function addRow(values) {
+      const row = createFieldRow(values);
+      rows.push(row);
+      return row;
+    }
+
+    /// Take one row out of the list and the model. The canvas boxes are rebuilt
+    /// from `rows`, so a stale box cannot outlive its row.
+    function removeRow(row) {
+      // Match on the row element or the model, not only on the wrapper object.
+      // A handler that was closed over a replaced wrapper would otherwise
+      // silently do nothing, which looks like a dead button.
+      let at = rows.indexOf(row);
+      if (at < 0) at = rows.findIndex((item) => item.row === row.row);
+      if (at < 0) at = rows.findIndex((item) => item.model === row.model);
+      if (at < 0) return false;
+      const held = rows[at];
+      rows.splice(at, 1);
+      held.row.remove();
+      boxes = boxes.filter((box) => box.row !== held);
+      return true;
+    }
+
+    function clearRows() {
+      for (const row of rows) row.row.remove();
+      rows = [];
+      boxes = [];
+    }
+
+    function fillKeySelect(select, selected) {
+      select.replaceChildren();
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "source key";
+      select.append(blank);
+      for (const key of sourceKeys) {
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = key;
+        select.append(option);
+      }
+      // A loaded layout can name a key the current record does not carry. Show
+      // it rather than silently clearing the field, so the row keeps saying
+      // what the layout asked for.
+      if (selected && !sourceKeys.includes(selected)) {
+        const extra = document.createElement("option");
+        extra.value = selected;
+        extra.textContent = selected + " (not in this source)";
+        select.append(extra);
+      }
+      select.value = selected || "";
+    }
+
+    // A field with a key draws the source value, so the box measures that.
+    /// The record the label draws values from, or an empty name. The chooser is
+    /// part of the record feature and is not on the page unless that feature is
+    /// in use, so the rest of the page asks here instead of reading the element.
+    function sourceName() {
+      const select = document.querySelector("#source");
+      return select ? select.value : "";
+    }
+
+    function previewText(field, source) {
+      if (typeof field.placed_text === "string") return field.placed_text;
+      if (field.key && source && field.key in source) return String(source[field.key]);
+      return field.text || "";
+    }
+
+    /// The printer settings every request shares. The render route reads these
+    /// too, so a preview is made with the same head and density the print will
+    /// use. Turning is per field and travels with each field instead.
+    function printerFields() {
+      return {
+        density: Number(document.querySelector("#density").value),
+        model: document.querySelector("#model").value,
+        conn: document.querySelector("#conn").value,
+        addr: document.querySelector("#addr").value,
+      };
+    }
+
+    /// The part of the page that Undo restores. `label` is the size preset id,
+    /// which Save layout also writes.
+    function snapshot() {
+      return JSON.stringify({
+        width: Number(document.querySelector("#width").value),
+        height: Number(document.querySelector("#height").value),
+        source: sourceName(),
+        fields: rows.map(({ model }) => ({
+          text: model.text,
+          key: model.key,
+          x: model.x,
+          y: model.y,
+          size: model.size,
+          font: model.font,
+          align_mode: model.align_mode,
+          rotation: model.rotation || 0,
+        })),
+        ...printerFields(),
+        label: document.querySelector("#label-size").value,
+      });
+    }
+
+    /// Remember the state before a change. Called from the event that is about
+    /// to change something, so the stack is "the state before each edit".
+    function record() {
+      if (deep > 0) return;
+      const now = snapshot();
+      if (now === lastPushed) return;
+      history.push(now);
+      if (history.length > 100) history.shift();
+      lastPushed = now;
+      future.length = 0;
+      updateHistoryButtons();
+    }
+
+    function updateHistoryButtons() {
+      for (const [id, stack] of [["undo", history], ["redo", future]]) {
+        const button = document.querySelector("#" + id);
+        if (button) button.disabled = stack.length === 0;
+      }
+    }
+
+    /// Put a snapshot back on the page. Every control it writes is guarded by
+    /// the `deep` counter so restoring does not itself become an edit.
+    function restore(json) {
+      deep += 1;
+      try {
+        applyLayout(JSON.parse(json));
+      } finally {
+        deep -= 1;
+      }
+      lastPushed = json;
+      updateHistoryButtons();
+      refresh();
+    }
+
+    function undo() {
+      const previous = history.pop();
+      if (previous === undefined) return;
+      // A snapshot is the state before an edit, so the current state is the
+      // redo target.
+      future.push(snapshot());
+      status.textContent = "undo";
+      restore(previous);
+    }
+
+    function redo() {
+      const next = future.pop();
+      if (next === undefined) return;
+      history.push(snapshot());
+      lastPushed = next;
+      status.textContent = "redo";
+      restore(next);
+    }
+
+    function labelBody() {
+      const body = {
+        width: Number(document.querySelector("#width").value),
+        height: Number(document.querySelector("#height").value),
+        source: sourceName(),
+        fields: rows.map(({ model }) => ({
+          text: model.text,
+          key: model.key,
+          x: model.x,
+          y: model.y,
+          size: model.size,
+          font: model.font,
+          align_mode: model.align_mode,
+          rotation: model.rotation || 0,
+        })),
+        ...printerFields(),
+      };
+      const background = backgroundPixels();
+      if (background) body.background_b64 = background;
+      return body;
+    }
+
+    /// Where an image of `source` size lands on a `target` label, per mode.
+    /// `fit` keeps the whole picture, `fill` covers the label and crops the
+    /// overflowing side, `stretch` ignores the aspect ratio.
+    function imagePlacement(source, target, mode) {
+      const scale = mode === "fit"
+        ? Math.min(target.width / source.width, target.height / source.height)
+        : mode === "fill"
+          ? Math.max(target.width / source.width, target.height / source.height)
+          : 0;
+      if (mode === "stretch") return { x: 0, y: 0, width: target.width, height: target.height };
+      const width = Math.max(1, Math.round(source.width * scale));
+      const height = Math.max(1, Math.round(source.height * scale));
+      return {
+        x: Math.round((target.width - width) / 2),
+        y: Math.round((target.height - height) / 2),
+        width,
+        height,
+      };
+    }
+
+    /// How big the picture is drawn, in roll pixels. `scale` is the one
+    /// multiplier, applied to the picture's own pixels, and it is always read
+    /// from `backgroundImage` — never from a smaller copy of it — so scaling
+    /// back up re-samples the original instead of magnifying a reduced one.
+    function imageSize() {
+      const width = backgroundImage.naturalWidth || backgroundImage.width;
+      const height = backgroundImage.naturalHeight || backgroundImage.height;
+      return {
+        width: Math.max(1, Math.round(width * imageTransform.scale)),
+        height: Math.max(1, Math.round(height * imageTransform.scale)),
+      };
+    }
+
+    /// The picture's box on the roll, centred on its transform.
+    function imageBox() {
+      if (!backgroundImage) return null;
+      const size = imageSize();
+      return {
+        x: imageTransform.x,
+        y: imageTransform.y,
+        width: size.width,
+        height: size.height,
+        rotation: (imageTransform.rotation * Math.PI) / 180,
+        scale: imageTransform.scale,
+      };
+    }
+
+    /// The grip and corner handles on the roll. Small pictures get a floor on
+    /// the drawn size so the handles stay apart enough to aim at.
+    function imageHandles(box) {
+      const half = { x: Math.max(box.width, 24) / 2, y: Math.max(box.height, 24) / 2 };
+      const c = Math.cos(box.rotation);
+      const sn = Math.sin(box.rotation);
+      const at = (lx, ly) => ({ x: box.x + (lx * c - ly * sn), y: box.y + (lx * sn + ly * c) });
+      const out = [["nw", -half.x, -half.y], ["ne", half.x, -half.y], ["se", half.x, half.y], ["sw", -half.x, half.y]]
+        .map(([name, lx, ly]) => ({ name, ...at(lx, ly) }));
+      out.push({ name: "rotate", ...at(0, -half.y - 16) });
+      return out;
+    }
+
+    /// Which handle a roll-space point is near, "move" inside the picture, or
+    /// null. Everything here is roll space, which is where the transform lives.
+    function imageHit(point, box) {
+      if (!box) return null;
+      const c = Math.cos(-box.rotation);
+      const sn = Math.sin(-box.rotation);
+      const dx = point.x - box.x;
+      const dy = point.y - box.y;
+      const local = { x: dx * c - dy * sn, y: dx * sn + dy * c };
+      const reach = 12;
+      for (const handle of imageHandles(box)) {
+        const hdx = handle.x - box.x;
+        const hdy = handle.y - box.y;
+        const hx = hdx * c - hdy * sn;
+        const hy = hdx * sn + hdy * c;
+        if (Math.abs(local.x - hx) <= reach && Math.abs(local.y - hy) <= reach) return handle.name;
+      }
+      if (Math.abs(local.x) <= box.width / 2 && Math.abs(local.y) <= box.height / 2) return "move";
+      return null;
+    }
+
+    /// Keep the numbers and the picture in step with the controls.
+    function syncImageControls() {
+      const set = (id, value) => { const el = document.querySelector("#" + id); if (el) el.value = String(value); };
+      set("image-scale", Math.round(imageTransform.scale * 100));
+      set("image-rotation", Math.round(imageTransform.rotation));
+      set("image-x", Math.round(imageTransform.x));
+      set("image-y", Math.round(imageTransform.y));
+      const shown = document.querySelector("#image-readout");
+      if (shown) {
+        shown.textContent = backgroundImage
+          ? Math.round(imageTransform.scale * 100) + "% · " + Math.round(imageTransform.rotation) + "°"
+          : "no image";
+      }
+    }
+
+    /// Re-place a picture the user has not touched, so it stays on the label
+    /// when the view changes shape.
+    function refitIfUntouched(mode) {
+      if (!backgroundImage || imageTouched) return;
+      placeImage(mode || "fit");
+    }
+
+    /// Drop the picture in centred at a size that fits, or fills.
+    function placeImage(mode) {
+      if (!backgroundImage) return;
+      // Fit to the view, which is the shape on screen. Fitting to the roll
+      // leaves the picture off the label as soon as the view is turned.
+      const view = viewSize();
+      const source = { width: backgroundImage.naturalWidth || backgroundImage.width, height: backgroundImage.naturalHeight || backgroundImage.height };
+      const place = imagePlacement(source, { width: view.width, height: view.height }, mode);
+      // The placement is a size; the transform stores the multiplier that
+      // produces it, so the two never disagree.
+      imageTransform = {
+        x: place.x + place.width / 2,
+        y: place.y + place.height / 2,
+        scale: place.width / source.width,
+        rotation: 0,
+      };
+      syncImageControls();
+    }
+
+    function backgroundPixels() {
+      if (!backgroundImage) return null;
+      const roll = rollSize();
+      const width = Math.max(1, roll.width);
+      const height = Math.max(1, roll.height);
+      const scratch = document.createElement("canvas");
+      scratch.width = width;
+      scratch.height = height;
+      const ctx = scratch.getContext("2d");
+      // A label has one ink, so the image is reduced to two tones by a
+      // threshold rather than dithered: the printer would otherwise turn a
+      // grey wash into noise.
+      ctx.fillStyle = "white";
+      ctx.fillRect(0, 0, width, height);
+      // The same transform the preview draws, so what is sent is what is seen.
+      const box = imageBox();
+      ctx.save();
+      ctx.translate(box.x, box.y);
+      ctx.rotate(box.rotation);
+      ctx.drawImage(backgroundImage, -box.width / 2, -box.height / 2, box.width, box.height);
+      ctx.restore();
+      const data = ctx.getImageData(0, 0, width, height).data;
+      const threshold = Number(document.querySelector("#image-threshold").value);
+      // One bit per pixel, MSB first, in the byte order `raster.packRow` uses.
+      // The label has one ink, so a byte per pixel spends seven bits saying
+      // nothing: packing cuts a full-width label from 92 KB to 12 KB, and the
+      // server reads either form from the decoded length.
+      const rowBytes = Math.ceil(width / 8);
+      const bits = new Uint8Array(rowBytes * height);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          // Rec. 601 luma, so a red and a green of the same brightness agree.
+          const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+          if (luma < threshold) {
+            bits[y * rowBytes + (x >> 3)] |= 1 << (7 - (x & 7));
+          }
+        }
+      }
+      // Chunked, because a per-pixel string concat is quadratic on a big label.
+      let binary = "";
+      for (let i = 0; i < bits.length; i += 8192) {
+        binary += String.fromCharCode(...bits.subarray(i, i + 8192));
+      }
+      return btoa(binary);
+    }
+
+    // ---- canvas ----------------------------------------------------------
+
+    async function currentSource() {
+      const name = sourceName();
+      if (!name) return null;
       const response = await api("/api/sources/" + encodeURIComponent(name));
-      const body = await response.json();
-      document.querySelector("#fields").textContent = JSON.stringify(body);
+      if (!response.ok) return null;
+      return readJson(response);
+    }
+
+    /// Vertical shows the roll turned a quarter turn clockwise, so the tape runs
+    /// left to right and the letters stay upright. It is one rotation, not a
+    /// transpose: turning the label over is not the same as turning it round,
+    /// and a transpose would show the print mirrored about the diagonal.
+    ///
+    /// Everything else in this page works in printer coordinates — the field's
+    /// x, y and angle, the form, the saved layout — and only the four places
+    /// that touch the screen convert. `toView` is the turn, `toLabel` its
+    /// inverse, and `viewSize` is the frame it turns the roll into.
+    function viewSize() {
+      const roll = rollSize();
+      return orientation === 90
+        ? { width: roll.height, height: roll.width }
+        : { width: roll.width, height: roll.height };
+    }
+
+    /// How far the view itself turns the roll: a quarter turn, or none.
+    function pageTurn() {
+      return orientation === 90 ? 90 : 0;
+    }
+
+    /// Printer (x, y) as the view shows it. This is the turn that keeps the
+    /// letters upright; the other one is a transpose, which is a reflection and
+    /// shows every glyph mirrored, so it is not a turn at all.
+    function toView(x, y) {
+      const view = viewSize();
+      return { x: y, y: view.height - 1 - x };
+    }
+
+    /// The inverse of `toView`: where a point on screen sits on the roll.
+    function toLabel(x, y) {
+      const view = viewSize();
+      return { x: view.height - 1 - y, y: x };
+    }
+
+
+
+    /// Faint guides every 16 dots (2 mm, the default line), so a field can be placed
+    /// without guessing. Drawn over the preview copy only: the pixels sent to
+    /// the printer never carry it.
+    function drawGrid() {
+      if (!document.querySelector("#grid").checked) return;
+      const step = 16;
+      previewCtx.save();
+      previewCtx.strokeStyle = "rgba(11, 98, 212, 0.25)";
+      previewCtx.lineWidth = 1;
+      for (let x = step; x < canvas.width; x += step) {
+        previewCtx.beginPath();
+        previewCtx.moveTo(x + 0.5, 0);
+        previewCtx.lineTo(x + 0.5, canvas.height);
+        previewCtx.stroke();
+      }
+      for (let y = step; y < canvas.height; y += step) {
+        previewCtx.beginPath();
+        previewCtx.moveTo(0, y + 0.5);
+        previewCtx.lineTo(canvas.width, y + 0.5);
+        previewCtx.stroke();
+      }
+      previewCtx.restore();
+    }
+
+    /// The picture's box as the preview shows it: turning the roll turns the
+    /// centre and the angle, and does not resize the box.
+    function viewImageBox(box) {
+      if (!box) return null;
+      if (pageTurn() !== 90) return box;
+      const centre = toView(box.x, box.y);
+      return { ...box, x: centre.x, y: centre.y, rotation: box.rotation + Math.PI / 2 };
+    }
+
+    /// Outline and handles, so it is clear what is being scaled. Drawn over the
+    /// preview copy only; the bytes sent carry no guide.
+    function drawImageOutline() {
+      const box = viewImageBox(imageBox());
+      if (!box || !backgroundImage) return;
+      const half = { x: Math.max(box.width, 24) / 2, y: Math.max(box.height, 24) / 2 };
+      const c = Math.cos(box.rotation);
+      const sn = Math.sin(box.rotation);
+      const at = (lx, ly) => ({ x: box.x + (lx * c - ly * sn), y: box.y + (lx * sn + ly * c) });
+      const corners = [at(-half.x, -half.y), at(half.x, -half.y), at(half.x, half.y), at(-half.x, half.y)];
+      previewCtx.save();
+      previewCtx.setLineDash([3, 3]);
+      previewCtx.strokeStyle = "#7a3fd0";
+      previewCtx.lineWidth = 1;
+      previewCtx.beginPath();
+      previewCtx.moveTo(corners[0].x, corners[0].y);
+      for (const point of corners.slice(1)) previewCtx.lineTo(point.x, point.y);
+      previewCtx.closePath();
+      previewCtx.stroke();
+      previewCtx.setLineDash([]);
+      previewCtx.fillStyle = "#ffffff";
+      for (const [lx, ly] of [[-half.x, -half.y], [half.x, -half.y], [half.x, half.y], [-half.x, half.y]]) {
+        const point = at(lx, ly);
+        previewCtx.fillRect(point.x - 3, point.y - 3, 6, 6);
+        previewCtx.strokeRect(point.x - 3, point.y - 3, 6, 6);
+      }
+      previewCtx.fillStyle = "#7a3fd0";
+      const grip = at(0, -half.y - 16);
+      previewCtx.beginPath();
+      previewCtx.arc(grip.x, grip.y, 4, 0, Math.PI * 2);
+      previewCtx.fill();
+      previewCtx.restore();
+    }
+
+    function drawBoxes() {
+      if (lastImage) previewCtx.putImageData(lastImage, 0, 0);
+      drawGrid();
+      drawImageOutline();
+      // One line per layout, only when it changes. When a box and its text
+      // disagree, this says which frame each of them is in.
+      const shape = (orientation === 90 ? "vertical" : "horizontal") + " " +
+        boxes.map((box) => [
+          Math.round(box.centre.x), Math.round(box.centre.y),
+          Math.round(box.rect.block_w), Math.round(box.rect.block_h), box.angle,
+          Math.round(box.quad[0].x), Math.round(box.quad[0].y),
+        ].join(",")).join(" | ");
+      if (shape !== lastShape) {
+        lastShape = shape;
+        traceLine("info", "boxes: " + shape);
+      }
+      for (const box of boxes) {
+        const top = { x: (box.quad[0].x + box.quad[1].x) / 2, y: (box.quad[0].y + box.quad[1].y) / 2 };
+        previewCtx.save();
+        previewCtx.beginPath();
+        previewCtx.moveTo(box.quad[0].x, box.quad[0].y);
+        for (const corner of box.quad.slice(1)) previewCtx.lineTo(corner.x, corner.y);
+        previewCtx.closePath();
+        previewCtx.fillStyle = box.clipped ? "rgba(200,0,0,0.12)" : "rgba(0,90,200,0.10)";
+        previewCtx.fill();
+        previewCtx.setLineDash([4, 3]);
+        previewCtx.strokeStyle = box.clipped ? "#c00" : "#06c";
+        previewCtx.lineWidth = 1;
+        previewCtx.stroke();
+        previewCtx.setLineDash([]);
+        // A square on each corner: drag one to resize the text, the way the
+        // picture's corners scale the picture.
+        previewCtx.fillStyle = "#ffffff";
+        for (const corner of box.quad) {
+          previewCtx.fillRect(corner.x - 3, corner.y - 3, 6, 6);
+          previewCtx.strokeRect(corner.x - 3, corner.y - 3, 6, 6);
+        }
+        previewCtx.beginPath();
+        previewCtx.moveTo(top.x, top.y);
+        previewCtx.lineTo(box.handle.x, box.handle.y);
+        previewCtx.stroke();
+        previewCtx.beginPath();
+        previewCtx.arc(box.handle.x, box.handle.y, 4, 0, Math.PI * 2);
+        previewCtx.fillStyle = "#06c";
+        previewCtx.fill();
+        previewCtx.restore();
+      }
+    }
+
+    /// Keep the bitmap's pixels crisp, and never larger than the window.
+    /// What the page thinks it is showing. A row of numbers under the preview
+    /// is worth a screenshot: when the picture and the boxes disagree, this says
+    /// which frame each of them is in.
+    function noteView() {
+      const note = document.querySelector("#view-note");
+      if (!note) return;
+      const roll = rollSize();
+      const view = viewSize();
+      const text = (orientation === 90 ? "vertical" : "horizontal") +
+        " \u00b7 roll " + roll.width + "\u00d7" + roll.height +
+        " \u00b7 view " + view.width + "\u00d7" + view.height +
+        " \u00b7 canvas " + canvas.width + "\u00d7" + canvas.height;
+      if (note.textContent === text) return;
+      note.textContent = text;
+      traceLine("info", "view: " + text);
+    }
+
+    function fitCanvas() {
+      const stage = canvas.parentElement;
+      const narrow = window.innerWidth <= 832;
+      const maxW = Math.max(160, (stage.clientWidth || 320) - 24);
+      const maxH = narrow
+        ? Math.max(160, Math.round(window.innerHeight * 0.4))
+        : Math.max(200, Math.min(maxW, window.innerHeight - 280));
+      const fit = Math.min(maxW / canvas.width, maxH / canvas.height);
+      const scale = fit >= 1 ? Math.max(1, Math.min(3, Math.floor(fit))) : fit;
+      canvas.style.width = Math.max(1, Math.round(canvas.width * scale)) + "px";
+      canvas.style.height = Math.max(1, Math.round(canvas.height * scale)) + "px";
+    }
+
+    function grayImage(payload) {
+      const image = previewCtx.createImageData(payload.width, payload.height);
+      const binary = atob(payload.pixels_b64);
+      for (let i = 0; i < binary.length; i++) {
+        const value = binary.charCodeAt(i);
+        image.data[i * 4] = value;
+        image.data[i * 4 + 1] = value;
+        image.data[i * 4 + 2] = value;
+        image.data[i * 4 + 3] = 255;
+      }
+      return image;
+    }
+
+    /// Printer (x, y) lands at view (y, x). The view is as tall as the head
+    /// and as wide as the tape.
+    /// The same quarter turn `toView` puts a point through, applied to the whole
+    /// picture: printer (x, y) lands at view (y, width - 1 - x), where `width`
+    /// is the roll's width and so the view's stride. It is a turn, not a
+    /// transpose — `(x, y) -> (y, x)` reflects the page about its diagonal and
+    /// shows every glyph mirrored, which is not what a turn does.
+    ///
+    /// The two sizes are not each other's inverse: the roll is `width` dots
+    /// across but the view is that less the page margin, so the stride here is
+    /// the roll's width and not the view's height. Using the view's height put
+    /// every pixel `margin` rows out, which shears the picture.
+    function turnView(image, width, height) {
+      const turned = previewCtx.createImageData(height, width);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const from = (y * width + x) * 4;
+          const to = ((width - 1 - x) * height + y) * 4;
+          turned.data[to] = image.data[from];
+          turned.data[to + 1] = image.data[from + 1];
+          turned.data[to + 2] = image.data[from + 2];
+          turned.data[to + 3] = image.data[from + 3];
+        }
+      }
+      return turned;
+    }
+
+    /// Draw a render. `image` says the argument is already pixels — the local
+    /// redraw when the view is turned — and anything else is the server's
+    /// payload, which is turned here. Testing for a `data` field instead is how
+    /// this went wrong: an `ImageData` has one, so every payload looked like a
+    /// finished image and the turn was never applied, leaving the picture
+    /// upright in a vertical view.
+    function showImage(payload, image) {
+      if (!image) {
+        lastPayload = payload;
+        image = grayImage(payload);
+        if (orientation === 90) image = turnView(image, image.width, image.height);
+      }
+      canvas.width = image.width;
+      canvas.height = image.height;
+      lastImage = image;
+      previewCtx.putImageData(image, 0, 0);
+      noteView();
+      fitCanvas();
+    }
+
+    function blankPreview() {
+      const view = viewSize();
+      canvas.width = view.width;
+      canvas.height = view.height;
+      lastImage = null;
+      previewCtx.fillStyle = "white";
+      previewCtx.fillRect(0, 0, canvas.width, canvas.height);
+      noteView();
+      fitCanvas();
+    }
+
+    /// Is this field's text wider or taller than the label? `width` and
+    /// `height` default to what the form asks for, but the preview passes the
+    /// size the server actually rendered, which is what the box is drawn on.
+    /// Is a drawn box past an edge of the page? The one place that decides, and
+    /// it is handed the box that is on screen. Computing a second box to ask
+    /// the question is how a centred field came out flagged as clipped while
+    /// its text sat well inside: the two calculations drifted apart.
+    function boxClipped(box, labelWidth, labelHeight) {
+      return box.x < 0 || box.y < 0 ||
+        box.x + box.w > labelWidth || box.y + box.h > labelHeight;
+    }
+
+    /// The clip state of a field, for the row's warning. It builds the same box
+    /// the preview does, from the same anchor, so the warning and the box agree.
+    function rowClipped(model, source, width, height) {
+      const roll = rollSize();
+      const box = boxRect(
+        { ...model, text: previewText(model, source) },
+        placedLeft(model, source),
+        Number.isFinite(model.y) ? model.y : 0,
+      );
+      return boxClipped(box, width ?? roll.width, height ?? roll.height);
+    }
+
+    /// Paint every row's note from the two facts that own it: the clip warning
+    /// and the resolved record value. Nothing is cleared here, so the order of
+    /// the render and the report does not matter.
+    function renderNotes() {
+      for (const row of rows) {
+        const note = row.controls.note;
+        const clip = note.dataset.clip;
+        const resolved = note.dataset.report;
+        note.textContent = clip || resolved || "";
+        row.row.classList.toggle("record", Boolean(resolved && !clip));
+      }
+    }
+
+    /// The clip marker: a class on the row and the warning in the note line.
+    function markRows(source) {
+      for (const row of rows) {
+        const clipped = rowClipped(row.model, source);
+        row.row.classList.toggle("clipped", clipped);
+        if (clipped) {
+          const box = boxRect({ ...row.model, text: previewText(row.model, source) }, placedLeft(row.model, source), row.model.y);
+          row.controls.note.dataset.clip = "clipped: " + Math.round(box.x + box.w) + "px of text runs past the edge";
+        } else {
+          delete row.controls.note.dataset.clip;
+        }
+      }
+      renderNotes();
+    }
+
+    async function refresh() {
+      const body = labelBody();
+      if (body.fields.length === 0 && !body.background_b64) {
+        boxes = [];
+        blankPreview();
+        markRows(null);
+        status.textContent = "empty label";
+        return;
+      }
+      const response = await post("/api/render", body);
+      const payload = await readJson(response);
+      if (!response.ok || !payload.pixels_b64) {
+        // The server answers a failed render with the label size, so the page
+        // can still show an empty label of the size the user asked for.
+        boxes = [];
+        usePage(payload.width || body.width, payload.height || body.height);
+        markRows(null);
+        status.textContent = payload.error || "render failed";
+        return;
+      }
+      showImage(payload);
+      const source = await currentSource();
+      // Drop the previous placement, ask for the current one, and only then
+      // build the boxes. The answer is what the renderer used.
+      for (const { model } of rows) {
+        model.placed_x = undefined;
+        model.placed_text = undefined;
+      }
+      await report();
+      const roll = rollSize();
+      const labelWidth = roll.width;
+      const labelHeight = roll.height;
+      boxes = rows.map((row) => {
+        const field = row.model;
+        const text = previewText(field, source);
+        // Measured here from the field as it is now, so a refresh during a
+        // drag or a resize puts the box where the pointer left it. Using the
+        // anchor as the left edge instead put a centred box half a block off.
+        const left = placedLeft(field, source);
+        const rect = boxRect({ ...field, text }, left, field.y);
+        const quad = boxQuad(rect);
+        // A field with nothing to draw gets no box. The renderer skips it, so
+        // boxing it here would put a dashed rectangle on a label that prints
+        // blank — the stray box that looks like a field with no text in it.
+        if (text.trim().length === 0) return null;
+        return {
+          row,
+          field,
+          rect,
+          quad,
+          handle: handleOf(rect),
+          centre: rect.centre,
+          screen_centre: quadCentre(quad),
+          x: rect.x,
+          y: rect.y,
+          w: rect.w,
+          h: rect.h,
+          rotation: rect.angle,
+          angle: rect.angle,
+          clipped: boxClipped(rect, labelWidth, labelHeight),
+        };
+      }).filter(Boolean);
+      drawBoxes();
+      markRows(source);
+      const clipped_count = boxes.filter((box) => box.clipped).length;
+      status.textContent = clipped_count
+        ? "preview \u2014 " + clipped_count + " field(s) clipped"
+        : "preview \u2014 " + boxes.length + " field(s)";
+      canvas.classList.toggle("placing", boxes.length > 0);
+    }
+
+    /// Say which fields draw a value from the selected record, using the text
+    /// the server resolved rather than a guess made here.
+    /// Ask the server where each line will start and what it will draw, then
+    /// store both on the row. `refresh` awaits this before it builds the boxes,
+    /// so a box is never drawn from the previous answer.
+    async function report() {
+      const queried = rows.slice();
+      for (const row of queried) delete row.controls.note.dataset.report;
+      renderNotes();
+      if (queried.length === 0) return;
+      // The whole field, not only the key: the server places literal text by
+      // its own width and alignment too, and the editor's box uses that.
+      const body = {
+        source: sourceName(),
+        fields: queried.map(({ model }) => ({
+          text: model.text,
+          key: model.key,
+          x: model.x,
+          size: model.size,
+          font: model.font,
+          align_mode: model.align_mode,
+          rotation: model.rotation || 0,
+        })),
+      };
+      const response = await post("/api/label/track", body);
+      if (!response.ok) return;
+      const payload = await readJson(response);
+      // The rows may have changed while the answer was in flight. A response
+      // is only good for the list it was asked about.
+      if (queried.length !== rows.length || queried.some((row, index) => rows[index] !== row)) return;
+      (payload.fields || []).forEach((entry, index) => {
+        const row = queried[index];
+        if (!row) return;
+        // The placed left edge and the drawn text, straight from the renderer.
+        // A clipped row still gets its placement: the box and the clip check
+        // both need it, and the clip warning is only text.
+        row.model.placed_x = typeof entry.x === "number" ? entry.x : undefined;
+        row.model.placed_text = entry.text;
+        if (entry.origin === "record") {
+          row.controls.note.dataset.report = "record " + row.model.key + ": " + entry.text;
+        } else if (entry.origin === "missing-key") {
+          row.controls.note.dataset.report = "no key " + row.model.key;
+        } else if (entry.origin === "unknown-source") {
+          row.controls.note.dataset.report = "no source selected";
+        }
+      });
+      renderNotes();
+    }
+
+    function canvasPoint(event) {
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: Math.round((event.clientX - rect.left) * canvas.width / rect.width),
+        y: Math.round((event.clientY - rect.top) * canvas.height / rect.height),
+      };
+    }
+
+    /// The pointer in printer coordinates, which is the space every field's
+    /// position is kept in. The screen may be showing the roll turned.
+    function labelPoint(event) {
+      const point = canvasPoint(event);
+      return orientation === 90 ? toLabel(point.x, point.y) : point;
+    }
+
+
+
+
+
+
+
+
+
+    /// The round anchor, in view coordinates: off the middle of the text's top
+    /// edge, along the way the text's own top faces, so it stays above the text
+    /// however the text is turned. The corners are on the roll and the anchor
+    /// is drawn on screen, so the direction is taken there and the point is
+    /// turned once.
+    function handleOf(box) {
+      const corners = boxCorners(box);
+      const top = { x: (corners[0].x + corners[1].x) / 2, y: (corners[0].y + corners[1].y) / 2 };
+      const bottom = { x: (corners[3].x + corners[2].x) / 2, y: (corners[3].y + corners[2].y) / 2 };
+      const away = { x: top.x - bottom.x, y: top.y - bottom.y };
+      const length = Math.hypot(away.x, away.y) || 1;
+      const out = { x: top.x + away.x / length * 14, y: top.y + away.y / length * 14 };
+      return orientation === 90 ? toView(out.x, out.y) : out;
+    }
+
+    /// A pointer in printer coordinates as the view shows it, because every box
+    /// on screen is a view polygon.
+    function screenPoint(point) {
+      return orientation === 90 ? toView(point.x, point.y) : point;
+    }
+
+    function hitHandle(point) {
+      for (let i = boxes.length - 1; i >= 0; i--) {
+        const handle = boxes[i].handle;
+        const dx = point.x - handle.x;
+        const dy = point.y - handle.y;
+        if (dx * dx + dy * dy <= 64) return boxes[i];
+      }
+      return null;
+    }
+
+    function hit(point) {
+      for (let i = boxes.length - 1; i >= 0; i--) {
+        if (inQuad(boxes[i].quad, point)) return boxes[i];
+      }
+      return null;
+    }
+
+    /// The box corner a view point is on, as the box and the corner's index
+    /// in `boxCorners`: 0 top left, 1 top right, 2 bottom right, 3 bottom
+    /// left, counted on the upright block before it turns.
+    function hitCorner(point) {
+      for (let i = boxes.length - 1; i >= 0; i--) {
+        const corner = boxes[i].quad.findIndex((c) => Math.abs(point.x - c.x) <= 5 && Math.abs(point.y - c.y) <= 5);
+        if (corner >= 0) return { box: boxes[i], corner };
+      }
+      return null;
+    }
+
+    /// Start a corner drag. The opposite corner is pinned: it stays where it
+    /// is on the roll while the size follows the pointer, which is what a
+    /// corner does in an image editor. The size is the start size times how
+    /// much farther the pointer is from the pinned corner than where it was
+    /// grabbed, so a press a little off the corner does not jump.
+    function startResize(event, box, corner) {
+      record();
+      const fixed = boxCorners(box.rect)[(corner + 2) % 4];
+      const grab = labelPoint(event);
+      drag = {
+        mode: "resize",
+        row: box.row,
+        box,
+        corner,
+        fixed,
+        start_size: sizeOf(box.field),
+        start_reach: Math.max(1, Math.hypot(grab.x - fixed.x, grab.y - fixed.y)),
+      };
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch (error) { /* no active pointer */ }
+      canvas.classList.add("dragging");
+      event.preventDefault();
+    }
+
+    /// Size the held field from the pointer, then place it so the pinned
+    /// corner has not moved. The text is re-rendered as it grows, so what is
+    /// under the box is always the letters at this size.
+    function resizeDragged(pointer) {
+      // A refresh rebuilds the boxes, so the held one is found by its row.
+      const box = boxes.find((item) => item.row === drag.row) || drag.box;
+      const field = box.field;
+      const reach = Math.hypot(pointer.x - drag.fixed.x, pointer.y - drag.fixed.y);
+      const size = sizeOf({ size: drag.start_size * reach / drag.start_reach });
+      const text = previewText(field, null);
+      const w = Math.max(blockWidth(text, size, field.font), 1);
+      const h = blockHeight(text, size);
+      // The grabbed corner is half a block from the centre on each axis, in
+      // the field's own turned frame, and the pinned corner is the other half.
+      const sx = drag.corner === 1 || drag.corner === 2 ? 1 : -1;
+      const sy = drag.corner >= 2 ? 1 : -1;
+      const radians = normalizeDegrees(field.rotation || 0) * Math.PI / 180;
+      const lx = sx * w / 2;
+      const ly = sy * h / 2;
+      const cx = drag.fixed.x + lx * Math.cos(radians) - ly * Math.sin(radians);
+      const cy = drag.fixed.y + lx * Math.sin(radians) + ly * Math.cos(radians);
+      field.size = size;
+      field.x = Math.max(0, Math.round(cx - w / 2 + shiftFor(field, w)));
+      field.y = Math.max(0, Math.round(cy - h / 2));
+      const controls = box.row.controls;
+      controls.size.value = String(field.size);
+      controls.x.value = String(field.x);
+      controls.y.value = String(field.y);
+      showBox(box);
+      drawBoxes();
+      scheduleRefresh();
+    }
+
+    /// A press in the view, as a point on the roll.
+    function pressOnRoll(event) {
+      const view = canvasPoint(event);
+      return pageTurn() === 90 ? toLabel(view.x, view.y) : view;
+    }
+
+    canvas.addEventListener("pointerdown", (event) => {
+      const point = screenPoint(labelPoint(event));
+      const resizing = hitCorner(point);
+      if (resizing) {
+        startResize(event, resizing.box, resizing.corner);
+        return;
+      }
+      const spinning = hitHandle(point);
+      const box = spinning || hit(point);
+      if (!box) {
+        // No field box here, so the picture is what is being handled. Its
+        // transform is in roll space, so the press is converted to it.
+        if (backgroundImage) {
+          const onRoll = pressOnRoll(event);
+          const where = imageHit(onRoll, imageBox());
+          if (where) {
+            imageTouched = true;
+            drag = {
+              mode: where === "move" ? "image-move" : where === "rotate" ? "image-rotate" : "image-scale",
+              start: { ...imageTransform },
+              grab: onRoll,
+            };
+            try {
+              canvas.setPointerCapture(event.pointerId);
+            } catch (error) { /* no active pointer */ }
+            canvas.classList.add("dragging");
+            event.preventDefault();
+            return;
+          }
+        }
+        return;
+      }
+      // A move keeps the anchor under the pointer, so the offset is measured
+      // from the field's own `x`/`y` in printer coordinates. Measuring it from
+      // the box instead re-anchors the field as soon as it is grabbed — the box
+      // starts at the block's aligned edge, not at the anchor — which reads as
+      // the text leaping on the first pixel of a drag.
+      const grabbed = labelPoint(event);
+      drag = spinning
+        ? { mode: "rotate", box, controls: box.row.controls, field: box.field }
+        : {
+          mode: "move",
+          box,
+          controls: box.row.controls,
+          anchor_x: box.field.x,
+          anchor_y: box.field.y,
+          offset_x: grabbed.x - box.field.x,
+          offset_y: grabbed.y - box.field.y,
+        };
+      // The field is placed at the press, not at the first move. Waiting for a
+      // move leaves the box where it was while the pointer is somewhere else,
+      // and the first move then snaps it — which reads as the box jumping on a
+      // press that never moved.
+      if (drag.mode === "move") placeDragged(box, grabbed);
+      // Pointer capture keeps a fast drag inside the canvas. A synthetic event
+      // has no active pointer, and capture is only an optimisation, so a
+      // refusal must not break the drag.
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch (error) { /* no active pointer */ }
+      canvas.classList.add("dragging");
+      event.preventDefault();
+    });
+
+    canvas.addEventListener("pointermove", (event) => {
+      if (!drag) {
+        // Over a corner, the pointer says the corner resizes.
+        const near = hitCorner(screenPoint(labelPoint(event)));
+        canvas.style.cursor = near ? (near.corner % 2 === 0 ? "nwse-resize" : "nesw-resize") : "";
+        return;
+      }
+      if (drag.mode === "resize") {
+        resizeDragged(labelPoint(event));
+        return;
+      }
+      const point = screenPoint(labelPoint(event));
+      if (drag.mode === "image-move") {
+        const onRoll = pressOnRoll(event);
+        imageTransform = {
+          ...imageTransform,
+          x: Math.round(drag.start.x + (onRoll.x - drag.grab.x)),
+          y: Math.round(drag.start.y + (onRoll.y - drag.grab.y)),
+        };
+        syncImageControls();
+        drawBoxes();
+        scheduleRefresh();
+        return;
+      }
+      if (drag.mode === "image-rotate") {
+        const onRoll = pressOnRoll(event);
+        const angle = Math.atan2(onRoll.y - drag.start.y, onRoll.x - drag.start.x);
+        const from = Math.atan2(drag.grab.y - drag.start.y, drag.grab.x - drag.start.x);
+        const snapOn = document.querySelector("#snap") && document.querySelector("#snap").checked;
+        const turned = drag.start.rotation + (angle - from) * 180 / Math.PI;
+        const stepped = snapOn ? Math.round(turned / 15) * 15 : Math.round(turned);
+        setImage({ rotation: ((stepped % 360) + 540) % 360 - 180 });
+        drawBoxes();
+        return;
+      }
+      if (drag.mode === "image-scale") {
+        // Scale about the centre by the ratio of the centre-to-pointer
+        // distance, so the grabbed corner lands under the pointer. The size is
+        // always re-derived from the original picture, so scaling back up does
+        // not magnify a reduced copy.
+        const onRoll = pressOnRoll(event);
+        const was = Math.hypot(drag.grab.x - drag.start.x, drag.grab.y - drag.start.y);
+        const now = Math.hypot(onRoll.x - drag.start.x, onRoll.y - drag.start.y);
+        if (was > 1) setImage({ scale: Math.max(0.02, Math.min(40, drag.start.scale * (now / was))) });
+        drawBoxes();
+        return;
+      }
+      if (drag.mode === "rotate") {
+        // The anchor points at the text's top side, which is the text's own
+        // angle less a quarter turn, so the angle the pointer expresses is the
+        // roll's angle plus the view's turn. Taking the turn and the quarter
+        // back out leaves the field's angle.
+        const centre = drag.box.screen_centre;
+        const here = Math.atan2(point.y - centre.y, point.x - centre.x) * 180 / Math.PI;
+        const degrees = normalizeDegrees(snapDegrees(here + 90) - pageTurn());
+        drag.box.field.rotation = degrees;
+        if (drag.controls.rotation) drag.controls.rotation.value = String(degrees);
+        drawBoxes();
+        scheduleRefresh();
+        return;
+      }
+      placeDragged(drag.box, point);
+    });
+
+    /// Put a dragged field where the pointer is, in the field's own frame one
+    /// dot per dot, and redraw its box. No render is asked for: a request per
+    /// pointer move is a request per pixel, and waiting on it is what made a
+    /// drag lag. The one request goes out when the field is dropped.
+    function placeDragged(box, point) {
+      const field = box.field;
+      // The offsets live on the drag, which knows what was grabbed; the box is
+      // the field. Reading them off the box gave `undefined`, so every move set
+      // the field to NaN — a box that vanishes, and reports that it did.
+      if (!drag || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
+      field.x = Math.round(point.x - drag.offset_x);
+      field.y = Math.round(point.y - drag.offset_y);
+      if (!Number.isFinite(field.x) || !Number.isFinite(field.y)) return;
+      // The row's numbers follow the box. A box keeps its row's controls on
+      // `row`; reading `box.controls` found nothing and the inputs stood still.
+      if (box.row && box.row.controls) {
+        box.row.controls.x.value = String(field.x);
+        box.row.controls.y.value = String(field.y);
+      }
+      showBox(box);
+      // Every move reports where the pointer was and where the box went, and
+      // whether the box moved in step with it. A drag that jumps, or that moves
+      // the box while the pointer is still, shows up in the trace as a step
+      // that does not match — which is checkable, unlike "it stutters".
+      const step_ok = dragStepWithin(box, point);
+      window.__niimbenchDrag = window.__niimbenchDrag || { ok: true, moves: 0 };
+      window.__niimbenchDrag.moves += 1;
+      if (!step_ok) window.__niimbenchDrag.ok = false;
+      traceLine("info", "drag: pointer " + Math.round(point.x) + "," + Math.round(point.y) +
+        " field " + field.x + "," + field.y +
+        " box " + Math.round(box.rect.x) + "," + Math.round(box.rect.y) +
+        " step " + (step_ok ? "ok" : "JUMPED"));
+      drawBoxes();
+    }
+
+    /// Did the box move by as much as the pointer? One dot per dot is the
+    /// promise, and the difference between the two is what a jump is. Allowed a
+    /// dot of slack: the field is rounded to whole dots and the pointer is not.
+    function dragStepWithin(box, point) {
+      const previous = box.__step;
+      box.__step = { x: point.x, y: point.y, rect: { x: box.rect.x, y: box.rect.y } };
+      if (!previous) return true;
+      const pointer = { x: point.x - previous.x, y: point.y - previous.y };
+      const rect = { x: box.rect.x - previous.rect.x, y: box.rect.y - previous.rect.y };
+      return Math.abs(pointer.x - rect.x) <= 1.001 && Math.abs(pointer.y - rect.y) <= 1.001;
+    }
+
+    function endDrag(event) {
+      if (!drag) return;
+      drag = null;
+      canvas.classList.remove("dragging");
+      if (event && event.pointerId !== undefined && canvas.hasPointerCapture(event.pointerId)) {
+        canvas.releasePointerCapture(event.pointerId);
+      }
+      refresh();
+    }
+    canvas.addEventListener("pointerdown", (event) => {
+      // Undo covers a drag as one entry, from the press rather than the drop.
+      if (hit(screenPoint(labelPoint(event)))) record();
+    });
+    canvas.addEventListener("pointerup", endDrag);
+    window.addEventListener("resize", fitCanvas);
+    canvas.addEventListener("pointercancel", endDrag);
+
+    // ---- source records --------------------------------------------------
+
+    async function loadSources() {
+      const response = await api("/api/sources");
+      const body = await readJson(response);
+      const select = document.querySelector("#source");
+      if (!select) return;
+      const keep = select.value;
+      select.replaceChildren();
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "(no source)";
+      select.append(blank);
+      for (const name of body.sources) {
+        const option = document.createElement("option");
+        option.textContent = name;
+        option.value = name;
+        select.append(option);
+      }
+      select.value = body.sources.includes(keep) ? keep : (body.sources[0] || "");
+    }
+
+    document.querySelector("#fill")?.addEventListener("click", async () => {
+      const name = sourceName();
+      if (!name) { status.textContent = "no source selected"; return; }
+      const response = await api("/api/sources/" + encodeURIComponent(name));
+      const body = await readJson(response);
+      if (!response.ok) { status.textContent = body.error || "no source"; return; }
+      record();
+      sourceKeys = Object.keys(body);
+      const untouched = rows.length === 0 || rows.every((row) => !row.model.text && !row.model.key);
+      if (untouched) {
+        clearRows();
+        const origins = centeredOrigins(sourceKeys.map((key) => String(body[key] ?? "")));
+        sourceKeys.forEach((key, index) => addRow({ key, ...origins[index] }));
+      } else {
+        for (const select of list.querySelectorAll(".key")) fillKeySelect(select, select.value);
+      }
       status.textContent = "filled from " + name;
+      refresh();
+    });
+
+    document.querySelector("#install-source")?.addEventListener("click", async () => {
+      const name = document.querySelector("#source-name").value.trim();
+      let json;
+      try {
+        json = JSON.parse(document.querySelector("#source-json").value);
+      } catch (error) {
+        status.textContent = "source JSON does not parse";
+        return;
+      }
+      if (!json || typeof json !== "object" || Array.isArray(json)) {
+        status.textContent = "source must be a JSON object";
+        return;
+      }
+      const response = await post("/api/sources", { name, json: JSON.stringify(json) });
+      const payload = await readJson(response);
+      if (!response.ok) { status.textContent = payload.error || "install failed"; return; }
+      await loadSources();
+      // Select the record just installed. `sourceName()` reads the menu; it
+      // cannot be assigned to.
+      const chooser = document.querySelector("#source");
+      if (chooser) chooser.value = name;
+      status.textContent = "added source " + name;
+      refresh();
+    });
+
+    // ---- found printers --------------------------------------------------
+
+    // The last scan, in the order the server reported it, and which row the
+    // user picked. The box is the whole control: one click on a printer is the
+    // selection, with no dropdown to open first.
+    let devices = [];
+    let picked = -1;
+
+    function deviceRow(device, index) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "device";
+      button.setAttribute("aria-pressed", index === picked ? "true" : "false");
+
+      const name = document.createElement("span");
+      name.className = "device-name";
+      name.textContent = device.name;
+
+      const detail = document.createElement("span");
+      detail.className = "device-detail";
+      detail.textContent = device.conn + " " + device.addr;
+
+      const model = document.createElement("span");
+      model.className = "device-detail";
+      model.textContent = device.model ? "model " + device.model : "model unknown, pick one by hand";
+
+      button.append(name, detail, model);
+      button.addEventListener("click", () => pickDevice(index));
+      return button;
+    }
+
+    /// The list is always shown, even for a single printer, and the box grows
+    /// with it instead of scrolling, so the panel below just moves down.
+    function renderDevices() {
+      const list = document.querySelector("#device");
+      list.replaceChildren();
+      if (devices.length === 0) {
+        const empty = document.createElement("li");
+        empty.className = "device-empty";
+        empty.textContent = "no Niimbot printer found";
+        list.append(empty);
+      } else {
+        devices.forEach((device, index) => {
+          const item = document.createElement("li");
+          item.append(deviceRow(device, index));
+          list.append(item);
+        });
+      }
+      document.querySelector("#device-status").textContent = devices.length
+        ? devices.length + " found"
+        : "nothing found yet";
+    }
+
+    /// Ask the server to scan. `discover` starts a Bluetooth inquiry, which
+    /// takes a couple of seconds; the scan the page runs on load does not, so
+    /// opening the editor never disturbs other Bluetooth traffic.
+    /// Scan for printers. `discover` asks Bluetooth as well as looking at what
+    /// this machine already knows, which is what the button does. `select`
+    /// picks the device when the scan found exactly one, so a startup scan
+    /// fills in the model and the roll without a click.
+    async function scanDevices(discover, select) {
+      const line = document.querySelector("#device-status");
+      line.textContent = discover ? "asking Bluetooth\u2026" : "scanning\u2026";
+      try {
+        const response = await post("/api/devices/scan", { discover });
+        const payload = await readJson(response);
+        if (!response.ok) {
+          line.textContent = payload.error || "scan failed";
+          traceLine("warn", "scan failed: " + (payload.error || response.status));
+          return;
+        }
+        devices = payload.devices || [];
+        // A rescan can reorder the list, so an old index means nothing now.
+        picked = -1;
+        renderDevices();
+        traceStep("scan found " + devices.length + " printer(s)" +
+          (discover ? " (asking Bluetooth)" : ""));
+        if (select && devices.length === 1) pickDevice(0);
+      } catch (error) {
+        line.textContent = "scan failed";
+        traceLine("warn", "scan failed: " + error.message);
+      }
+    }
+
+    /// One click on a printer fills the whole printer row: the connection, the
+    /// address, and the model the print head implies. Setting the model fires
+    /// its change handler, which puts that model's label roll on the canvas
+    /// exactly as picking the model by hand does.
+    function pickDevice(index) {
+      const device = devices[index];
+      if (!device) return;
+      picked = index;
+      renderDevices();
+      document.querySelector("#conn").value = device.conn;
+      document.querySelector("#addr").value = device.addr;
+      const model = document.querySelector("#model");
+      if (device.model && model.value !== device.model) {
+        model.value = device.model;
+        model.dispatchEvent(new Event("change"));
+      }
+      status.textContent = device.model
+        ? "printer: " + device.name
+        : "printer: " + device.name + " \u2014 model unknown, pick one by hand";
+      traceLine("info", "picked " + device.conn + " " + device.addr + " model " + (device.model || "unknown"));
+      readRoll();
+    }
+
+    /// What niimbench knows about the printer, in the printer's own colours: a
+    /// blue dot when a job has to be sent, green when the model and the roll
+    /// are known, amber while a job runs, and red when the last job failed.
+    /// The printer's own indicator is a separate thing, described in the
+    /// manual; nothing here tries to read it.
+    function updatePrinterStatus(state, text) {
+      const line = document.querySelector("#printer-state");
+      const label = document.querySelector("#printer-state-text");
+      if (!line || !label) return;
+      line.className = "state " + state;
+      label.textContent = text;
+    }
+
+    /// Derive that state from the controls, for the moments nothing is running.
+    function statusFor(addr, model, conn, problem) {
+      if (problem) return { state: "error", text: problem };
+      if (!addr) return { state: "idle", text: "No address yet" };
+      const where = conn === "bluetooth" ? "Bluetooth" : "USB";
+      return { state: "ready", text: where + " · " + model + " · ready" };
+    }
+
+    /// Derive that state from the controls, for the moments nothing is running.
+    function refreshPrinterStatus(problem) {
+      const { state, text } = statusFor(
+        document.querySelector("#addr").value.trim(),
+        document.querySelector("#model").value,
+        document.querySelector("#conn").value,
+        problem,
+      );
+      updatePrinterStatus(state, text);
+    }
+
+    /// The printer's tag names the roll. The size comes back as millimetres
+    /// and selects the matching label, when one is known.
+    async function readRoll() {
+      const addr = document.querySelector("#addr").value;
+      if (!addr) return;
+      status.textContent = "reading the roll";
+      try {
+        const response = await post("/api/label/roll", {
+          conn: document.querySelector("#conn").value,
+          addr,
+          model: document.querySelector("#model").value,
+          allow_cloud: document.querySelector("#cloud-lookup").checked,
+        });
+        const payload = await readJson(response);
+        if (!response.ok) {
+          status.textContent = payload.error === "unknown roll"
+            ? "roll not in the catalogue \u2014 tick \"Ask the cloud\" to look it up"
+            : payload.error || "no roll";
+          return;
+        }
+        const model = document.querySelector("#model").value;
+        const size = payload.id && sizeById(model, payload.id);
+        if (size) {
+          // The printer's roll is the size. The control is not a menu of
+          // alternatives here: it holds this roll and nothing else, so there is
+          // no way to pick a size the printer is not loaded with.
+          const select = document.querySelector("#label-size");
+          select.replaceChildren();
+          const option = document.createElement("option");
+          option.value = size.id;
+          option.textContent = size.width_mm + "\u00d7" + size.height_mm + " mm";
+          select.append(option);
+          select.value = size.id;
+        }
+        // The server's answer is the page the printer takes: its height has the
+        // model's margin already taken off, so a 12x40 roll reads 96x304.
+        if (payload.width && payload.height) usePage(payload.width, payload.height);
+        refresh();
+        status.textContent = payload.width_mm + "\u00d7" + payload.height_mm + " mm roll"
+          + (payload.source === "cloud" ? " (cloud)" : "");
+      } catch (error) {
+        status.textContent = "roll unread";
+      }
+    }
+
+    // ---- wiring ----------------------------------------------------------
+
+    document.querySelector("#scan-devices").addEventListener("click", () => scanDevices(true, true));
+    document.querySelector("#grid").addEventListener("change", () => drawBoxes());
+
+    // Which side the image controls sit on is a preference, so it is kept.
+    const panels = document.querySelector(".panels");
+    function showImageFirst(first) {
+      panels.classList.toggle("image-first", first);
+      try { localStorage.setItem("niimbench.imageFirst", first ? "1" : "0"); } catch (error) { /* no storage */ }
+      fitCanvas();
+    }
+    document.querySelector("#swap-panes").addEventListener("click", () => {
+      showImageFirst(!panels.classList.contains("image-first"));
+    });
+    try {
+      if (localStorage.getItem("niimbench.imageFirst") === "1") showImageFirst(true);
+    } catch (error) { /* no storage */ }
+
+    document.querySelector("#image-threshold").addEventListener("input", () => scheduleRefresh());
+
+    // One place that turns a control or a drag into the stored transform.
+    function setImage(patch) {
+      imageTouched = true;
+      imageTransform = { ...imageTransform, ...patch };
+      syncImageControls();
+      scheduleRefresh();
+    }
+
+    for (const [id, key] of [["image-rotation", "rotation"], ["image-x", "x"], ["image-y", "y"]]) {
+      document.querySelector("#" + id).addEventListener("input", () => {
+        const value = Number(document.querySelector("#" + id).value) || 0;
+        setImage({ [key]: value });
+      });
+    }
+    document.querySelector("#image-scale").addEventListener("input", () => {
+      // The box shows a percentage of the picture's own size, so the typed
+      // number goes straight into the scale: 100% draws it at natural size.
+      const percent = Number(document.querySelector("#image-scale").value) || 100;
+      setImage({ scale: Math.max(0.05, percent / 100) });
+    });
+    document.querySelector("#image-fit").addEventListener("click", () => { placeImage("fit"); refresh(); });
+    document.querySelector("#image-fill").addEventListener("click", () => { placeImage("fill"); refresh(); });
+    document.querySelector("#image-reset").addEventListener("click", () => {
+      backgroundImage = null;
+      imageTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
+      imageTouched = false;
+      const input = document.querySelector("#file");
+      input.value = "";
+      syncImageControls();
+      refresh();
+    });
+    document.querySelector("#image-180").addEventListener("click", () => {
+      const turned = ((Math.round(imageTransform.rotation) + 180 + 180) % 360) - 180;
+      setImage({ rotation: turned });
+      refresh();
+    });
+
+    for (const id of ["addr", "conn", "model"]) {
+      document.querySelector("#" + id).addEventListener("change", () => refreshPrinterStatus());
+      document.querySelector("#" + id).addEventListener("input", () => refreshPrinterStatus());
+    }
+    refreshPrinterStatus();
+
+    document.querySelector("#add-field").addEventListener("click", () => {
+      record();
+      const origin = centeredOrigins([""])[0];
+      addRow(origin);
+      refresh();
+    });
+
+    document.querySelector("#clear").addEventListener("click", () => {
+      record();
+      clearRows();
+      refresh();
+    });
+
+    document.querySelector("#file").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      if (!file) { backgroundImage = null; refresh(); return; }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        backgroundImage = img;
+        imageTouched = false;
+        // Fit inside by default: the old path stretched every picture to the
+        // label, which is the one thing nobody wants.
+        placeImage("fit");
+        URL.revokeObjectURL(url);
+        // A picture that does not appear is the hardest failure to read from a
+        // screenshot, so the import says its own size, where it landed, and how
+        // many bytes go to the server. `image: sent` is the line to look at
+        // when the preview is blank: it separates "never drawn" from "drawn and
+        // then rejected".
+        const box = imageBox();
+        traceStep("image: import " + (img.naturalWidth || img.width) + "x" + (img.naturalHeight || img.height) +
+          " -> " + Math.round(box.width) + "x" + Math.round(box.height) +
+          " at " + Math.round(box.x) + "," + Math.round(box.y));
+        refresh().then(() => {
+          const sent = backgroundPixels();
+          traceStep("image: sent " + (sent ? sent.length : 0) + " b64 chars, preview " +
+            (lastImage ? "drawn" : "empty"));
+        });
+      };
+      img.src = url;
     });
 
     document.querySelector("#label").addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!image) { status.textContent = "choose an image"; return; }
-      draw();
-      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
-      const gray = new Uint8Array(canvas.width * canvas.height);
-      for (let i = 0; i < gray.length; i++) gray[i] = pixels[i * 4];
-      let binary = "";
-      for (const byte of gray) binary += String.fromCharCode(byte);
+      const button = document.querySelector('#label button[type="submit"]');
+      // A job takes as long as the printer does. While it runs the button is
+      // disabled, so a second click or a second Ctrl+Enter cannot send the same
+      // label twice. `finally` puts it back even when the answer is not JSON,
+      // which a proxy or a dropped connection can do.
+      if (button.disabled) return;
+      button.disabled = true;
       status.textContent = "printing";
-      const response = await api("/api/print", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          width: canvas.width,
-          height: canvas.height,
-          density: Number(document.querySelector("#density").value),
-          model: document.querySelector("#model").value,
-          conn: document.querySelector("#conn").value,
-          addr: document.querySelector("#addr").value,
-          rotate: 0,
-          pixels_b64: btoa(binary),
-        }),
-      });
-      const body = await response.json();
-      status.textContent = body.error || "printed";
+      updatePrinterStatus("busy", "Sending the label");
+      try {
+        const body = labelBody();
+        const response = await post("/api/print", body);
+        const payload = await readJson(response);
+        status.textContent = payload.error || "printed";
+        if (payload.error) refreshPrinterStatus("Last job: " + payload.error);
+        else refreshPrinterStatus();
+      } catch (error) {
+        status.textContent = "print failed: " + error.message;
+        refreshPrinterStatus("Print failed");
+      } finally {
+        button.disabled = false;
+      }
     });
 
-    loadSources().catch((error) => { status.textContent = error.message; });
+    function sizesFor(model) {
+      const entry = sizeCatalog && sizeCatalog.models[model];
+      return entry ? entry.sizes : [];
+    }
+
+    function sizeById(model, id) {
+      return sizesFor(model).find((size) => size.id === id) || null;
+    }
+
+    function fillSizeSelect(preferId) {
+      const model = document.querySelector("#model").value;
+      const select = document.querySelector("#label-size");
+      select.replaceChildren();
+      const custom = document.createElement("option");
+      custom.value = "";
+      custom.textContent = "Custom";
+      select.append(custom);
+      for (const size of sizesFor(model)) {
+        const option = document.createElement("option");
+        option.value = size.id;
+        option.textContent = size.round
+          ? size.width_mm + " mm round"
+          : size.width_mm + "\u00d7" + size.height_mm + " mm";
+        select.append(option);
+      }
+      if (preferId && sizeById(model, preferId)) {
+        select.value = preferId;
+        return true;
+      }
+      select.value = "";
+      return false;
+    }
+
+    function useSize(size) {
+      document.querySelector("#width").value = size.width;
+      document.querySelector("#height").value = size.height;
+    }
+
+    function selectSizeForCanvas() {
+      if (!sizeCatalog) return;
+      const model = document.querySelector("#model").value;
+      const width = Number(document.querySelector("#width").value);
+      const height = Number(document.querySelector("#height").value);
+      fillSizeSelect("");
+      const match = sizesFor(model).find((size) => size.width === width && size.height === height);
+      if (match) document.querySelector("#label-size").value = match.id;
+    }
+
+    function markCustomIfEdited() {
+      const size = sizeById(document.querySelector("#model").value, document.querySelector("#label-size").value);
+      if (!size) return;
+      const width = Number(document.querySelector("#width").value);
+      const height = Number(document.querySelector("#height").value);
+      if (width !== size.width || height !== size.height) document.querySelector("#label-size").value = "";
+    }
+
+    document.querySelector("#model").addEventListener("change", () => {
+      record();
+      // The printer's own roll is the authority on the canvas, so a model
+      // change asks the printer again. Only a machine with no printer falls
+      // back to filling the menu with the model's presets.
+      if (document.querySelector("#addr").value) {
+        readRoll();
+        return;
+      }
+      const previous = document.querySelector("#label-size").value;
+      const model = document.querySelector("#model").value;
+      const entry = sizeCatalog && sizeCatalog.models[model];
+      if (!previous) {
+        fillSizeSelect("");
+        const width = document.querySelector("#width");
+        if (entry && Number(width.value) > entry.max_width) width.value = entry.max_width;
+        refresh();
+        return;
+      }
+      if (!fillSizeSelect(previous)) {
+        const size = entry && sizeById(model, entry.default);
+        if (size) {
+          document.querySelector("#label-size").value = size.id;
+          useSize(size);
+        }
+      } else {
+        const size = sizeById(model, previous);
+        if (size) useSize(size);
+      }
+      refresh();
+    });
+
+    document.querySelector("#label-size").addEventListener("change", () => {
+      record();
+      const size = sizeById(document.querySelector("#model").value, document.querySelector("#label-size").value);
+      if (size) useSize(size);
+      refresh();
+    });
+
+    // The page size, watched so an edit is undoable and redraws the picture.
+    // Every control here is optional: the record chooser is part of a feature
+    // that is not always on the page, and a listener on a missing element threw
+    // during setup and stopped the rest of the boot, which is why the startup
+    // scan never ran.
+    for (const id of ["width", "height"]) {
+      const control = document.querySelector("#" + id);
+      if (!control) continue;
+      // A snapshot reads the controls, so it has to be taken while they still
+      // hold the old value. `change` fires after the new value is in place, and
+      // `input` may too depending on how the edit was made; `beforeinput` fires
+      // while the old value is still readable, which is what makes the first
+      // edit on a control undoable. Typing several digits is one entry, because
+      // `record` skips a state it has already pushed.
+      control.addEventListener("beforeinput", () => record());
+      control.addEventListener("change", () => {
+        markCustomIfEdited();
+        refresh();
+      });
+    }
+
+    // The record chooser, when the feature is on the page.
+    for (const id of ["source"]) {
+      const control = document.querySelector("#" + id);
+      if (!control) continue;
+      control.addEventListener("beforeinput", () => record());
+      control.addEventListener("change", () => refresh());
+    }
+
+    for (const button of document.querySelectorAll(".orient button")) {
+      button.addEventListener("click", () => {
+        record();
+        setOrientation(Number(button.dataset.rotate));
+        refitIfUntouched();
+        syncImageControls();
+        refresh();
+      });
+    }
+
+    // ---- layout files ----------------------------------------------------
+
+    function applyLayout(layout) {
+      if (!layout || typeof layout !== "object" || !Array.isArray(layout.fields)) {
+        throw new Error("not a niimbench layout");
+      }
+      if (layout.fields.length > 64) {
+        throw new Error("layout has " + layout.fields.length + " fields; 64 is the limit");
+      }
+      clearRows();
+      const set = (id, value) => {
+        if (value === undefined || value === null) return;
+        document.querySelector("#" + id).value = value;
+      };
+      if (layout.width && layout.height) usePage(layout.width, layout.height);
+      set("model", layout.model);
+      set("density", layout.density);
+      if (layout.rotate !== undefined && layout.rotate !== null) {
+        setOrientation(layout.rotate === 90 ? 90 : 0);
+      }
+      set("conn", layout.conn);
+      set("addr", layout.addr);
+      // A loaded layout carries its own printer, so no row stays highlighted
+      // for a device that the layout just replaced.
+      picked = -1;
+      renderDevices();
+      const source = document.querySelector("#source");
+      if (source && layout.source !== undefined && layout.source !== null) {
+        if (![...source.options].some((option) => option.value === layout.source)) {
+          const option = document.createElement("option");
+          option.value = layout.source;
+          option.textContent = layout.source;
+          source.append(option);
+        }
+        source.value = layout.source;
+      }
+      for (const field of layout.fields) {
+        if (!field || typeof field !== "object") {
+          throw new Error("layout field is not an object");
+        }
+        addRow({
+          text: field.text || "",
+          key: field.key || "",
+          x: Number(field.x) || 0,
+          y: Number(field.y) || 0,
+          size: sizeFromLayout(field),
+          // A layout written before fonts existed, or naming one this build
+          // does not carry, gets the default font; its row's menu shows which.
+          font: field.font,
+          // A layout written before alignment existed is left aligned.
+          align_mode: alignModes.includes(field.align_mode) ? field.align_mode : "left",
+          rotation: normalizeDegrees(field.rotation),
+        });
+      }
+      if (layout.background_b64) {
+        status.textContent = "layout loaded without its background image";
+      }
+      // Save layout writes the chosen size preset, so a load has to put it
+      // back. Deriving it from width and height alone would drop the id and
+      // leave the select showing the previous label's preset.
+      if (layout.label !== undefined && layout.label !== null
+          && [...document.querySelector("#label-size").options].some((option) => option.value === layout.label)) {
+        document.querySelector("#label-size").value = layout.label;
+      } else {
+        selectSizeForCanvas();
+      }
+      // Redraw and re-resolve the fields for the loaded body. Without this a
+      // loaded layout shows the previous label until some control is touched.
+      refresh();
+    }
+
+    document.querySelector("#undo").addEventListener("click", undo);
+    document.querySelector("#redo").addEventListener("click", redo);
+
+    // Ctrl+Z and Ctrl+Shift+Z (or Ctrl+Y). Not while typing in a row, where the
+    // browser's own text undo belongs to the user.
+    document.addEventListener("keydown", (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      const key = event.key.toLowerCase();
+      if (key !== "z" && key !== "y") return;
+      const tag = (event.target && event.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      event.preventDefault();
+      if (key === "y" || event.shiftKey) redo();
+      else undo();
+    });
+
+    document.querySelector("#save").addEventListener("click", () => {
+      const body = labelBody();
+      body.label = document.querySelector("#label-size").value;
+      // The background is dropped on purpose: it is a picture, not a label.
+      delete body.background_b64;
+      const blob = new Blob([JSON.stringify(body, null, 2) + "\n"], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "niimbench-label.json";
+      anchor.click();
+      URL.revokeObjectURL(url);
+      status.textContent = "saved layout";
+    });
+
+    document.querySelector("#load").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      event.target.value = "";
+      if (!file) return;
+      try {
+        applyLayout(JSON.parse(await file.text()));
+        status.textContent = "loaded " + file.name;
+      } catch (error) {
+        status.textContent = error.message;
+        return;
+      }
+      await loadSources();
+      refresh();
+    });
+
+    document.querySelector("#reset").addEventListener("click", () => {
+      // Reset is the baseline. Putting the page back to it is not an edit, so
+      // it clears the history instead of adding to it. A reset from a changed
+      // label therefore has nothing to undo, which is what the button says.
+      applyLayout({
+        width: 384,
+        height: 240,
+        model: "b21",
+        label: "50x30",
+        density: 5,
+        rotate: 0,
+        conn: "usb",
+        addr: "",
+        source: "",
+        fields: [{ text: "", x: 192, y: 112, size: 16, align_mode: "center" }],
+      });
+      backgroundImage = null;
+      document.querySelector("#file").value = "";
+      history.length = 0;
+      future.length = 0;
+      lastPushed = snapshot();
+      updateHistoryButtons();
+      refresh();
+    });
+
+    document.querySelector("#remove-source")?.addEventListener("click", async () => {
+      const name = sourceName();
+      if (!name) { status.textContent = "no source selected"; return; }
+      const response = await api("/api/sources/" + encodeURIComponent(name), { method: "DELETE" });
+      const payload = await readJson(response);
+      if (!response.ok) { status.textContent = payload.error || "remove failed"; return; }
+      status.textContent = "removed source " + name;
+      await loadSources();
+      refresh();
+    });
+
+    traceStep("boot: asking for the label sizes");
+    window.__niimbenchErrors = window.__niimbenchErrors || [];
+    const boot = api("/api/label/sizes")
+      .then((response) => {
+        traceStep("boot: sizes answered " + response.status);
+        return readJson(response);
+      })
+      .then((body) => {
+        sizeCatalog = body;
+        const model = document.querySelector("#model").value;
+        const entry = body.models && body.models[model];
+        traceLine("info", "boot: sizes keys " + Object.keys(body || {}).join(",") + " models " +
+          Object.keys((body && body.models) || {}).join(",") + " model " + model + " entry " + JSON.stringify(entry));
+        if (!entry) return;
+        fillSizeSelect(entry.default);
+        traceStep("boot: size menu filled");
+        const size = sizeById(model, entry.default);
+        traceStep("boot: size " + JSON.stringify(size && size.id));
+        if (size) useSize(size);
+        traceStep("boot: page set to " + document.querySelector("#width").value + "x" + document.querySelector("#height").value);
+      })
+      .catch(() => {})
+      .then(() => api("/api/label/metrics"))
+      .then((response) => {
+        traceStep("boot: metrics answered " + response.status);
+        return readJson(response);
+      })
+      .then((body) => {
+        metrics = body;
+        fontTables = tablesFrom(body);
+        traceStep("boot: metrics in " + body.fonts.length + " fonts, default " + body.default);
+      })
+      .catch((error) => traceLine("warn", "boot: metrics failed: " + error.message))
+      // The page picks up a printer by itself. `Find nearby` is the button that
+      // looks further, over Bluetooth; this first scan is the local one, and a
+      // single known device is selected so the model and the roll are on the
+      // canvas before anything is drawn.
+      .then(() => scanDevices(false, true))
+      .catch(() => {})
+      .then(loadSources)
+      .then(async () => {
+        traceStep("boot: placing the first field");
+        // The page opens with one plain text field saying niimbench. Filling
+        // from the selected record instead put whatever keys that record
+        // happened to have on the label before anyone asked, which read as a
+        // stray "NB-1" appearing by itself. **Fill from source** does that on
+        // purpose.
+        clearRows();
+        // The page opens at the largest size that fits across the roll, so a
+        // 96-dot head does not start with a word the renderer would clip.
+        const size = sizeThatFits("niimbench");
+        const origin = centeredOrigins(["niimbench"], size)[0];
+        addRow({ ...origin, text: "niimbench" });
+        return refresh();
+      })
+      .catch((error) => {
+        traceLine("error", "boot failed: " + error.message);
+        status.textContent = error.message;
+      });
+    // The boot is a promise, so what it did is inspectable rather than timed.
+    window.__niimbenchBoot = boot;
+
+    /// What is on the canvas right now, as numbers. This is the page checking
+    /// itself: the pixels are classified here, in the browser, because this is
+    /// where they are, and the summary is plain data a test can assert on.
+    ///
+    /// It exists because every one of the box bugs showed up as "the canvas
+    /// looks wrong", and no amount of re-reading the maths ever caught them.
+    /// Asking the canvas does.
+    window.__niimbenchCanvas = function canvasReport() {
+      const element = document.querySelector("#preview");
+      if (!element) return { error: "no canvas" };
+      const width = element.width;
+      const height = element.height;
+      if (!width || !height) return { error: "canvas has no size" };
+      const data = element.getContext("2d").getImageData(0, 0, width, height).data;
+      const bounds = (test) => {
+        let minX = width, minY = height, maxX = -1, maxY = -1, count = 0;
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const i = (y * width + x) * 4;
+            if (!test(data[i], data[i + 1], data[i + 2], x, y)) continue;
+            count += 1;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+          }
+        }
+        return count ? { minX, minY, maxX, maxY, count } : null;
+      };
+      // Ink is what the renderer drew: dark, and not the blue of the overlay.
+      const isInk = (r, g, b) => r < 128 && g < 128 && b < 128;
+      // The overlay is the accent blue: the field's outline, the stem and the
+      // round anchor. Reporting them as one bound is useless — the anchor sits
+      // above the box, so the combined bound is the anchor's, and a check on it
+      // says the box is above its text.
+      const isOverlay = (r, g, b) => b > 120 && b - r > 40 && b - g > 30;
+      const ink = bounds(isInk);
+      const overlay = bounds(isOverlay);
+      // The outline is the overlay beside the ink: within a dot or so of the
+      // ink's own bounds on both axes. The stem and anchor are a dozen dots
+      // clear of it.
+      const near = ink ? (value, low, high) => value >= low - 2 && value <= high + 2 : null;
+      const outline = ink
+        ? bounds((r, g, b, x, y) => isOverlay(r, g, b) &&
+            near(x, ink.minX, ink.maxX) && near(y, ink.minY, ink.maxY))
+        : null;
+      // The distinct colours just outside the ink's rows, so a check that
+      // cannot find the outline can say what is actually there instead.
+      return {
+        width,
+        height,
+        ink,
+        overlay,
+        outline,
+        orientation,
+        // What each control in the first row occupies. A control that is
+        // missing, collapsed or overlapping is then a number in the report
+        // rather than something to be judged from a picture.
+        row: (() => {
+          const first = document.querySelector("#field-list .field");
+          if (!first) return null;
+          const bounds = first.getBoundingClientRect();
+          return {
+            width: Math.round(bounds.width),
+            children: [...first.children].map((child) => {
+              const box = child.getBoundingClientRect();
+              return {
+                tag: child.tagName.toLowerCase(),
+                cls: String(child.className || ""),
+                left: Math.round(box.left - bounds.left),
+                // The line the control landed on. A row that wraps puts controls
+                // on more than one, and two controls on different lines are not
+                // in each other's way whatever their x.
+                top: Math.round(box.top - bounds.top),
+                width: Math.round(box.width),
+                value: child.value !== undefined ? String(child.value) : (child.textContent || "").trim().slice(0, 10),
+              };
+            }),
+          };
+        })(),
+        fields: boxes.length,
+        clipped: boxes.map((box) => box.clipped),
+        rects: boxes.map((box) => ({ x: box.rect.x, y: box.rect.y, w: box.rect.w, h: box.rect.h })),
+        field: boxes.length ? { x: boxes[0].field.x, y: boxes[0].field.y, placed_x: boxes[0].field.placed_x, align: boxes[0].field.align_mode, size: boxes[0].field.size } : null,
+        colors: boxes.map((box) => (box.clipped ? "#c00" : "#06c")),
+        quad: boxes.length ? boxes[0].quad.map((point) => [Math.round(point.x), Math.round(point.y)]) : null,
+        errors: window.__niimbenchErrors.slice(),
+      };
+    };
+
+    /// Drag a field with synthetic pointer events and report whether its box
+    /// kept step with the pointer, then put it back. This is the check for the
+    /// bug that could only be described as "it jumps": the box and the pointer
+    /// are two numbers, and one dot per dot is a comparison.
+    ///
+    /// Runs inside the self-check so `make trace-test` and `make canvas-test`
+    /// both exercise it: a drag that jumps fails those checks, not just a
+    /// person's patience.
+    function selfCheckDrag() {
+      const canvas = document.querySelector("#preview");
+      const box = boxes[0];
+      if (!canvas || !box) return null;
+      const bounds = canvas.getBoundingClientRect();
+      if (!bounds.width) return null;
+      const start = { x: box.rect.x, y: box.rect.y, left: placedLeft(box.field, null), field_x: box.field.x, field_y: box.field.y };
+      const scale_x = canvas.width / bounds.width;
+      const scale_y = canvas.height / bounds.height;
+      const at = (x, y) => ({
+        clientX: bounds.left + x / scale_x,
+        clientY: bounds.top + y / scale_y,
+        pointerId: 1, pointerType: "mouse", isPrimary: true, bubbles: true, cancelable: true, buttons: 1,
+      });
+      const send = (type, x, y) => canvas.dispatchEvent(new PointerEvent(type, at(x, y)));
+
+      window.__niimbenchDrag = { ok: true, moves: 0 };
+      // A press in the middle of the box — its corners resize — then a walk of
+      // a few dots. The first move is the one that used to leap, so it is
+      // included.
+      const press = box.screen_centre;
+      send("pointerdown", press.x, press.y);
+      for (const [dx, dy] of [[0, 0], [1, 1], [4, 2], [8, 5], [12, 7]]) {
+        send("pointermove", press.x + dx, press.y + dy);
+      }
+      const verdict = window.__niimbenchDrag;
+      // The row's x and y follow the drag, so the numbers and the box agree.
+      const inputs = box.row.controls;
+      verdict.inputs = inputs.x.value === String(box.field.x) && inputs.y.value === String(box.field.y);
+      if (!verdict.inputs) verdict.ok = false;
+      // Put the field back where the check found it and rebuild its box, so the
+      // canvas reported afterwards is the one a boot produces. Restoring the
+      // field alone leaves the box at the drag's last position, and the report
+      // then describes a canvas that does not exist.
+      //
+      // Before the drop, not after: the drop renders the field, and a drop at
+      // the dragged position left that render on screen with the box restored
+      // beside it — every page opened with its text outside its box.
+      box.field.x = start.field_x;
+      box.field.y = start.field_y;
+      box.field.placed_x = undefined;
+      if (box.row && box.row.controls) {
+        box.row.controls.x.value = String(start.field_x);
+        box.row.controls.y.value = String(start.field_y);
+      }
+      send("pointerup", press.x + 12, press.y + 7);
+      showBox(box);
+      drawBoxes();
+      return verdict;
+    }
+
+    /// Drag a field's bottom-right corner outward with synthetic pointer events
+    /// and report whether the text grew while the opposite corner stayed where
+    /// it was, then put the field back. Harness only, like the drag check.
+    function selfCheckResize() {
+      const canvas = document.querySelector("#preview");
+      const box = boxes[0];
+      if (!canvas || !box) return null;
+      const bounds = canvas.getBoundingClientRect();
+      if (!bounds.width) return null;
+      const field = box.field;
+      const controls = box.row.controls;
+      const before = { size: field.size, x: field.x, y: field.y };
+      const pinned = boxCorners(box.rect)[0];
+      const grab = box.quad[2];
+      const send = (type, x, y) => canvas.dispatchEvent(new PointerEvent(type, {
+        clientX: bounds.left + x * bounds.width / canvas.width,
+        clientY: bounds.top + y * bounds.height / canvas.height,
+        pointerId: 1, pointerType: "mouse", isPrimary: true, bubbles: true, cancelable: true, buttons: 1,
+      }));
+      send("pointerdown", grab.x, grab.y);
+      send("pointermove", grab.x + 6, grab.y + 3);
+      send("pointermove", grab.x + 12, grab.y + 6);
+      const held = boxes.find((item) => item.row === box.row) || box;
+      const now = boxCorners(held.rect)[0];
+      const verdict = {
+        sizes: [before.size, field.size],
+        pinned_moved: Math.round(Math.hypot(now.x - pinned.x, now.y - pinned.y) * 100) / 100,
+      };
+      verdict.ok = field.size > before.size && verdict.pinned_moved <= 1.5;
+      // Back where it was before the drop, so the drop renders the field the
+      // page opened with — the same rule as the drag check.
+      field.size = before.size;
+      field.x = before.x;
+      field.y = before.y;
+      controls.size.value = String(before.size);
+      controls.x.value = String(before.x);
+      controls.y.value = String(before.y);
+      send("pointerup", grab.x + 12, grab.y + 6);
+      showBox(held);
+      drawBoxes();
+      return verdict;
+    }
+
+    /// Edit the first row the way a person does — type into its text, pick a
+    /// size and a font — and report whether the field followed each control,
+    /// then put everything back. A row whose `change` handler throws leaves
+    /// the field as it was, which is what this catches.
+    function selfCheckEdit() {
+      const row = rows[0];
+      if (!row) return null;
+      const { text, size, font } = row.controls;
+      const before = { text: text.value, size: size.value, font: font.value };
+      const errors = window.__niimbenchErrors.length;
+      text.value = before.text + "!";
+      text.dispatchEvent(new Event("input", { bubbles: true }));
+      size.value = String(Number(before.size) + 3);
+      size.dispatchEvent(new Event("change", { bubbles: true }));
+      const other = Array.from(font.options).find((option) => option.value !== before.font);
+      if (other) {
+        font.value = other.value;
+        font.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      const verdict = {
+        text: row.model.text === before.text + "!",
+        size: row.model.size === Number(before.size) + 3,
+        font: Boolean(other) && row.model.font === other.value,
+        errors: window.__niimbenchErrors.length - errors,
+      };
+      verdict.ok = verdict.text && verdict.size && verdict.font && verdict.errors === 0;
+      text.value = before.text;
+      size.value = before.size;
+      font.value = before.font;
+      for (const control of [size, font]) control.dispatchEvent(new Event("change", { bubbles: true }));
+      text.dispatchEvent(new Event("input", { bubbles: true }));
+      return verdict;
+    }
+
+    /// Write the report into the page, where `--dump-dom` can read it. A
+    /// `--dump-dom` run is a plain subprocess with no protocol to time out.
+    window.__niimbenchSelfCheck = function selfCheck() {
+      // The drag and the resize move the user's field and render it, so only the harness
+      // runs it: it loads the page with `#selfcheck`, which survives the token
+      // redirect where a query parameter would not.
+      const harness = location.hash === "#selfcheck";
+      const dragVerdict = harness ? selfCheckDrag() : null;
+      const resizeVerdict = harness ? selfCheckResize() : null;
+      const editVerdict = harness ? selfCheckEdit() : null;
+      const report = window.__niimbenchCanvas();
+      if (report) {
+        report.drag = dragVerdict;
+        report.resize = resizeVerdict;
+        report.edit = editVerdict;
+        // The fonts the server carries, and the ones a row offers.
+        const menu = rows[0] && rows[0].controls.font;
+        report.fonts = { served: metrics.fonts.length, offered: menu ? menu.options.length : 0 };
+      }
+      const view = viewSize();
+      report.view = { width: view.width, height: view.height };
+      const node = document.createElement("div");
+      node.id = "selftest";
+      // In the DOM for `--dump-dom` to read, and out of the way of the page: a
+      // diagnostic that prints itself over the thing it describes is a bug.
+      node.hidden = true;
+      node.style.display = "none";
+      node.textContent = JSON.stringify(report);
+      const old = document.querySelector("#selftest");
+      if (old) old.remove();
+      document.body.append(node);
+      return report;
+    };
+
+    // Run the check once the boot settles, however it settles, so a load with
+    // `--virtual-time-budget` always has a verdict to dump.
+    boot.then(
+      () => window.__niimbenchSelfCheck(),
+      () => window.__niimbenchSelfCheck(),
+    ).then((report) => {
+      window.__niimbenchChecked = true;
+      // Say so in the trace. `tools/trace-test.js` reads the trace back and
+      // requires this line, so a boot that stops completing its record fails a
+      // check rather than quietly going quiet.
+      // The protocol this run actually used. The list is built by tracing, so it
+      // exists only at run time; reporting it here is what lets the harness
+      // require every step of the run itself rather than of the source.
+      traceLine("info", "protocol: " + tracedSteps.join("|"));
+      traceStep("checked: canvas " + report.width + "x" + report.height +
+        " fields " + report.fields + " ink " + (report.ink ? report.ink.count : 0) +
+        " box " + (report.outline ? "yes" : "no") +
+        " errors " + report.errors.length +
+        " drag " + (report.drag ? (report.drag.ok ? "ok" : "JUMPED") + " over " + report.drag.moves + " moves" : "not exercised") +
+        " resize " + (report.resize ? (report.resize.ok ? "ok" : "BROKEN") + " " + report.resize.sizes.join("->") : "not exercised") +
+        " edit " + (report.edit ? (report.edit.ok ? "ok" : "BROKEN") : "not exercised") +
+        " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none"));
+    });
   </script>
 </body>
 </html>

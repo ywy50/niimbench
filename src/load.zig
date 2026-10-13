@@ -24,6 +24,7 @@ fn sameInject(declared: []const []const u8, written: []const []const u8) bool {
 }
 
 pub fn loadDefault(ctx: *cordis.Context, io: std.Io) !void {
+    ctx.io = io;
     const override = readCwd(ctx.allocator, io, "cordis.patch.yml") catch null;
     defer if (override) |text| ctx.allocator.free(text);
     try loadText(ctx, override orelse bundled_patch);

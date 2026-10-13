@@ -1,0 +1,32 @@
+# NIIMBOT D11_H
+
+![d11_h](files/d11_h/d11_h.jpg)
+
+# Properties
+
+<!-- BEGIN D11_H CLOUD_INFO -->
+<!-- Auto-generated, do not edit -->
+| Parameter                              | Value                   |
+|----------------------------------------|-------------------------|
+| ID                                     | 528                     |
+| DPI                                    | **300**                 |
+| Printhead size                         | 12mm / 144px (verified) |
+| Print direction                        | left                    |
+| [Paper types](../other/label-types.md) | 1,5                     |
+| Density range                          | 1-[3]-5                 |
+| Printer type                           | thermal                 |
+<!-- END CLOUD_INFO -->
+
+## HW
+
+| Parameter             | Value                                         |
+| --------------------- | --------------------------------------------- |
+| MCU                   | [YiCHiP YC3122-L](http://www.yichip.com/yc3x) |
+| Firmware base address | 0x01010000                                    |
+| Firmware file offset  | 0x1C                                          |
+
+
+## Downgrading firmware
+
+D11_H is known for refusing to accept firmware versions lower than the current one.
+See [flashing firmware](../firmware/flashing-firmware.md#downgrading-firmware).
