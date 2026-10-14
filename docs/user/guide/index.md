@@ -18,7 +18,7 @@ The other panels make room the way a dashboard's do. A moved panel follows the p
 
 The label in **Preview** is drawn as large as the panel allows, in whole multiples of its pixels when it fits at least once, so a bigger **Preview** panel shows a bigger label.
 
-The arrangement is kept in this browser and comes back the next time the page opens. It is not part of a label: **Save layout** does not write it and **Undo** does not move a panel. **Reset panels**, at the top right, puts every panel back where the page first had it.
+The arrangement is kept in this browser and comes back the next time the page opens. It is not part of a label: **Save layout** does not write it and **Undo** does not move a panel. **Reset panels**, in the header, puts every panel back where the page first had it.
 
 A window 52rem (832 pixels) wide or narrower has no room for a grid. There the panels are stacked full width in the order above, each as tall as what it holds, and they do not move.
 
@@ -98,13 +98,13 @@ A field whose ink would pass the right or bottom edge is outlined in red and mar
 
 ## Undo and redo
 
-**Undo** and **Redo** walk the label's changes, and `Ctrl+Z` and `Ctrl+Shift+Z` (or `Ctrl+Y`) do the same from the keyboard. A change is a field you add, copy, remove, move, retype, or restyle, a printer setting, or a loaded layout. A drag is one change, recorded when you press rather than when you drop, and a run of keystrokes in one field is one change too.
+**Undo** and **Redo**, in the header, walk the label's changes, and `Ctrl+Z` and `Ctrl+Shift+Z` (or `Ctrl+Y`) do the same from the keyboard. A change is a field you add, copy, remove, move, retype, or restyle, a printer setting, or a loaded layout. A drag is one change, recorded when you press rather than when you drop, and a run of keystrokes in one field is one change too.
 
-The history holds the same JSON that **Save layout** writes, so it does not cover the background image. Typing into a number or text control records the state before the first keystroke, so the first edit to the width or height is undoable like any other. **Reset** is the baseline: it clears the history rather than adding to it, which is why **Undo** starts disabled. The history keeps the last hundred changes.
+The history holds the same JSON that **Save layout** writes, so it does not cover the background image. Typing into a number or text control records the state before the first keystroke, so the first edit to the width or height is undoable like any other. **Reset label** is the baseline: it clears the history rather than adding to it, which is why **Undo** starts disabled. The history keeps the last hundred changes.
 
 ## Save and load a layout
 
-**Save layout** downloads `niimbench-label.json`: width, height, fields, density, model, connection, address, and rotation, and for each field its text, position, font, size, alignment and angle. The picture is left out on purpose.
+**Save layout**, in the header, downloads `niimbench-label.json`: width, height, fields, density, model, connection, address, and rotation, and for each field its text, position, font, size, alignment and angle. The picture is left out on purpose.
 
 **Load layout** reads that JSON. It needs an object with a `fields` array of at most 64 objects. A field's `size` is its line height in dots. A layout saved before sizes were in dots says `scale` instead, and loads at `scale * 11` dots. A field's `font` is one of the built-in font ids; a layout without one, or naming a font this build does not have, loads in DejaVu Sans, and the row's menu shows it. A `background_b64` field is ignored and the status line says the background was not loaded.
 
@@ -128,7 +128,7 @@ Set **Model**, **Density**, **Orientation**, **Connection**, and **Address**.
 
 **Density** is how hot the print head burns each dot: higher prints darker and bolder, lower lighter. It changes nothing about which dots print, so the preview, which shows exactly that, looks the same at every density; the difference is only on the paper. Each head has its own range, 1 to 5 on the B1, B21 and other B-series heads and 1 to 3 on the D11, D110 and B18, and the input offers the picked model's range: picking a D110 with density 5 sets it to 3, the most that head takes.
 
- USB wants a tty such as `/dev/ttyACM0`. Bluetooth wants the MAC the printer list shows; a BLE-only model such as the D110_M is reached over its print characteristic, and picking a printer fills in the address, the model and the roll's size for you. **Print** sends the same label body the preview used, plus those printer fields. The status line shows `printed` or the error name. A job takes as long as the printer does, so **Print** is disabled until the answer arrives: a second click or a second `Ctrl+Enter` cannot send the same label twice.
+ USB wants a tty such as `/dev/ttyACM0`. Bluetooth wants the MAC the printer list shows; a BLE-only model such as the D110_M is reached over its print characteristic, and picking a printer fills in the address, the model and the roll's size for you. **Print**, at the top right of the page, sends the same label body the preview used, plus those printer fields; it stays in view however the panels are arranged. The status line shows `printed` or the error name. A job takes as long as the printer does, so **Print** is disabled until the answer arrives: a second click or a second `Ctrl+Enter` cannot send the same label twice.
 
 Text starts upright, in the middle of the label. Drag the round handle on a field to turn that field. The degree box shows the angle and accepts a typed one. **Snap 15°** locks the drag to 15 degree steps. The label itself stays the roll, so a 15 mm head stays 96 dots across. Picking a printer reads the roll and sets the label size when the tag and Niimbot's catalogue both answer.
 

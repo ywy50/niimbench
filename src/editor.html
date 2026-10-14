@@ -50,7 +50,7 @@
     }
     header, .workspace { width: calc(100% - 2rem); margin-inline: auto; }
     header {
-      display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem 1rem;
       position: sticky; top: 0; z-index: 5;
       padding: 0.7rem 0;
       background: color-mix(in srgb, var(--bg) 88%, transparent);
@@ -59,8 +59,12 @@
       border-bottom: 1px solid var(--line);
     }
     h1 { margin: 0; font-size: 1.12rem; font-weight: 700; letter-spacing: -0.01em; }
+    /* The status, Reset panels and Print keep together at the right: a header
+       too narrow for one line wraps them as a group, so Print never ends up
+       alone at the start of a line. */
+    .header-end { display: flex; align-items: center; gap: 1rem; min-width: 0; margin-left: auto; }
     #status {
-      min-height: 0; margin: 0 0 0 auto; max-width: 65%; padding: 0.18rem 0.7rem;
+      min-height: 0; min-width: 0; margin: 0; max-width: 24rem; padding: 0.18rem 0.7rem;
       font-size: 0.78rem; color: var(--muted); white-space: nowrap;
       overflow: hidden; text-overflow: ellipsis;
       background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px;
@@ -126,7 +130,6 @@
     label { display: grid; gap: 0.28rem; font-size: 0.78rem; color: var(--muted); }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
     .tools { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
-    .tools .spacer { flex: 1 1 auto; }
     .state {
       display: inline-flex; align-items: center; gap: 0.4rem;
       margin: 0.15rem 0 0; font-size: 0.85rem; color: var(--muted);
@@ -291,8 +294,23 @@
 <body>
   <header>
     <h1>niimbench</h1>
+    <!-- What acts on the whole label lives on the header, which stays in view
+         however the panels are arranged: its history, its file, and Print. -->
+    <div class="tools">
+      <button type="button" id="undo" title="undo (Ctrl+Z)">Undo</button>
+      <button type="button" id="redo" title="redo (Ctrl+Shift+Z)">Redo</button>
+    </div>
+    <div class="tools">
+      <button type="button" id="save">Save layout</button>
+      <label class="file">Load layout <input id="load" type="file" accept="application/json,.json"></label>
+      <button type="button" id="reset" title="put the label back to the one the page opens with">Reset label</button>
+    </div>
+    <div class="header-end">
     <p id="status" aria-live="polite">idle</p>
     <button type="button" id="reset-panels" title="put every panel back where the page first had it">Reset panels</button>
+    <!-- `form` lets Print submit the form it is not inside. -->
+    <button type="submit" form="label" id="print" class="primary" title="print the label (Ctrl+Enter in a text field)">Print</button>
+    </div>
   </header>
   <form id="label">
   <div class="workspace">
@@ -376,16 +394,7 @@
     <div class="tools">
       <button type="button" id="add-field">Add text</button>
       <button type="button" id="clear">Clear text</button>
-      <button type="button" id="undo" title="undo (Ctrl+Z)">Undo</button>
-      <button type="button" id="redo" title="redo (Ctrl+Shift+Z)">Redo</button>
       <label class="toggle"><input type="checkbox" id="grid"> Grid</label>
-      <span class="spacer"></span>
-      <button type="submit" class="primary">Print</button>
-    </div>
-    <div class="tools">
-      <button type="button" id="save">Save layout</button>
-      <label class="file">Load layout <input id="load" type="file" accept="application/json,.json"></label>
-      <button type="button" id="reset">Reset</button>
     </div>
     </div>
     <span class="panel-grip" aria-hidden="true"></span>
@@ -2820,7 +2829,7 @@
 
     document.querySelector("#label").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const button = document.querySelector('#label button[type="submit"]');
+      const button = document.querySelector("#print");
       // A job takes as long as the printer does. While it runs the button is
       // disabled, so a second click or a second Ctrl+Enter cannot send the same
       // label twice. `finally` puts it back even when the answer is not JSON,
