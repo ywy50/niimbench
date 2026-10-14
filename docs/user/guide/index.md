@@ -10,6 +10,18 @@ Open that URL. The browser stores the token in a cookie and lands on `http://127
 
 The page opens with one text field that says `niimbench`, centred on the label in DejaVu Sans at the largest size up to 32 dots that fits across the roll. The preview is the grayscale the printer will get. `POST /api/render` and `POST /api/print` share that drawing path.
 
+## Arrange the panels
+
+The page is four panels on a grid: **Preview**, **Label and printer**, **Text** and **Image**. Drag a panel by its title to move it, and drag the striped corner at its bottom right to resize it. Both snap to the grid, which is 24 columns across the window.
+
+The other panels make room the way a dashboard's do. A moved panel follows the pointer over a dashed outline of where it will land, and the panel it lands on moves below it. A resized panel stays where it is and pushes the panels it grows into down. No panel is left with a gap above it: each rises until it meets the one above. A panel that holds more than it has room for scrolls.
+
+The label in **Preview** is drawn as large as the panel allows, in whole multiples of its pixels when it fits at least once, so a bigger **Preview** panel shows a bigger label.
+
+The arrangement is kept in this browser and comes back the next time the page opens. It is not part of a label: **Save layout** does not write it and **Undo** does not move a panel. **Reset panels**, at the top right, puts every panel back where the page first had it.
+
+A window 52rem (832 pixels) wide or narrower has no room for a grid. There the panels are stacked full width in the order above, each as tall as what it holds, and they do not move.
+
 ## Pick a label size
 
 **Label** lists the die-cut rolls for the selected **Model**. B1 and B21 share one list, D11 and D110 share another, and B18 has its own. Choosing a roll writes the width and height. The page opens on the roll that model ships with: 50×30 mm for B1 and B21.
@@ -28,7 +40,7 @@ The frame drawn round the picture is what you grab: drag inside it to move, drag
 
 **Grid** draws faint guides on the preview every 16 dots (2 mm), so a field can be placed by eye against something. The guides are drawn over the page only; they never reach the printer.
 
-**Add text** appends a row. Each row has its text, a **font**, a **size**, an alignment, an `x` and `y` in pixels, an angle, and **Wrap**, **Fit**, **Copy** and **Remove**. Size is the line height in dots, any whole number from 1 to 1024 — dragging a corner of the field's box sets the same number — and it is a different thing from **Label** in the panel above, which is the size of the roll itself. 8 dots is 1 mm. Every size is allowed, including one too wide for the roll: the box turns red and the row says it is clipped, and **Fit** or **Wrap** fixes it. **Copy** adds another field with the same text, font, size, and alignment directly below. Inputs apply when they change.
+**Add text** appends a row. Each row has its text, a **font**, a **size**, an alignment, an `x` and `y` in pixels, an angle, and **Wrap**, **Fit**, **Copy** and **Remove**. Size is the line height in dots, any whole number from 1 to 1024 — dragging a corner of the field's box sets the same number — and it is a different thing from **Label** in the **Label and printer** panel, which is the size of the roll itself. 8 dots is 1 mm. Every size is allowed, including one too wide for the roll: the box turns red and the row says it is clipped, and **Fit** or **Wrap** fixes it. **Copy** adds another field with the same text, font, size, and alignment directly below. Inputs apply when they change.
 
 **Font** picks the typeface a row is drawn in, from the fifteen free fonts built into niimbench: sans, serif and monospaced faces from DejaVu, Liberation, Open Sans, Fira Sans, Noto and Hack, with bold versions of the sans faces. A new row starts in DejaVu Sans. The same size can look larger or smaller from one font to the next, because size is the whole line, including the room a font keeps for accents and descenders; the box always shows what that line takes on the label. The list, with each font's licence, is [src/fonts/README.md](../../../src/fonts/README.md).
 

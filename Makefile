@@ -9,7 +9,7 @@ ROTATE ?= 0
 ARGS ?=
 
 .DEFAULT_GOAL := run
-.PHONY: help test build run serve print labels lint protocol-test view-test box-test canvas-test trace-test
+.PHONY: help test build run serve print labels lint protocol-test view-test box-test panel-test canvas-test trace-test
 
 help:
 	@printf '%s\n' \
@@ -24,6 +24,7 @@ help:
 		'  make protocol-test   check the page records every boot step, with node' \
 		'  make view-test       check the editor preview geometry with node' \
 		'  make box-test        check the field box geometry with node' \
+		'  make panel-test      check the editor'\''s panel layout with node' \
 		'  make canvas-test     check the drawn canvas in headless Chrome' \
 		'  make trace-test      run the page once and check the trace it wrote' \
 		'' \
@@ -49,7 +50,7 @@ serve:
 build:
 	$(ZIG) build $(ARGS)
 
-test: lint protocol-test view-test box-test trace-test canvas-test
+test: lint protocol-test view-test box-test panel-test trace-test canvas-test
 	$(ZIG) build test $(ARGS)
 
 # The page script runs only in a browser, so nothing else would notice a name
@@ -70,6 +71,10 @@ view-test:
 box-test:
 	@command -v node >/dev/null 2>&1 || { echo "node is needed for make box-test"; exit 1; }
 	node tools/box-geometry.test.js
+
+panel-test:
+	@command -v node >/dev/null 2>&1 || { echo "node is needed for make panel-test"; exit 1; }
+	node tools/panel-layout.test.js
 
 # The drawn canvas, in a real browser. The geometry checks assert the page's
 # maths; this asserts the pixels a person sees, which is where a box off the
