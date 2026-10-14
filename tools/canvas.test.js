@@ -135,6 +135,10 @@ function judge(report) {
   // A narrower roll, as a smaller printer has, keeps the field on the label.
   check("a narrower roll keeps the field on the label",
     Boolean(report.roll) && report.roll.ok === true, JSON.stringify(report.roll));
+  // A field turned upright in Vertical on a narrow roll, grown until its
+  // upright line is longer than the roll is wide: the box still holds the ink.
+  check("a turned field grown past the roll's width stays inside its box",
+    Boolean(report.turned) && report.turned.ok === true, JSON.stringify(report.turned));
   // Every font the renderer carries is offered in the row's font menu.
   check("a row offers every font the server carries",
     Boolean(report.fonts) && report.fonts.served > 1 && report.fonts.offered === report.fonts.served,

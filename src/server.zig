@@ -442,23 +442,6 @@ pub fn renderLabel(service: *HttpService, req: RequestView) !Response {
     return .{ .body = try service.allocator.realloc(body, used), .owned = true };
 }
 
-/// The field list with every line placed by its alignment. `label.render` and
-/// `label.renderOnto` draw where they are told, and the alignment needs the
-/// resolved text width, so the arithmetic lives here, next to the resolution.
-fn placedFields(allocator: std.mem.Allocator, job: LabelRequest, source_json: []const u8) ![]label.Field {
-    if (job.fields.len == 0) return &.{};
-    const out = try allocator.alloc(label.Field, job.fields.len);
-    errdefer allocator.free(out);
-    for (job.fields, 0..) |field, i| {
-        out[i] = field;
-        out[i].x = try label.alignedX(allocator, out[i], source_json);
-        // The place is now in `x`, so the renderer must not apply the shift
-        // again. This is the one and only place alignment is resolved.
-        out[i].align_mode = .left;
-    }
-    return out;
-}
-
 fn compose(service: *HttpService, job: LabelRequest) !raster.Gray {
     // The page is printed as it is asked for. The margin that keeps the gap
     // sensor happy is taken off where a roll's size is resolved — see
@@ -479,14 +462,12 @@ fn compose(service: *HttpService, job: LabelRequest) !raster.Gray {
             return .{ .pixels = background, .width = job.width, .height = job.height };
         }
         defer service.allocator.free(background);
-        const placed = try placedFields(service.allocator, job, source_json);
-        defer service.allocator.free(placed);
-        return label.renderOnto(service.allocator, background, job.width, height, placed, source_json);
+        // The renderer places each line by its alignment and the resolved
+        // text, the same rule `label.alignedX` gives the editor.
+        return label.renderOnto(service.allocator, background, job.width, height, job.fields, source_json);
     }
     if (job.fields.len > 0) {
-        const placed = try placedFields(service.allocator, job, source_json);
-        defer service.allocator.free(placed);
-        return label.render(service.allocator, job.width, height, placed, source_json);
+        return label.render(service.allocator, job.width, height, job.fields, source_json);
     }
     if (job.pixels_b64.len == 0) return error.NothingToPrint;
     const pixels = try decodePixels(service.allocator, job.pixels_b64);
@@ -1008,7 +989,9 @@ const Tracked = struct {
     /// Points into the caller's arena, or is owned when `owned` is set.
     text: []const u8 = "",
     owned: ?[]u8 = null,
-    x: usize,
+    /// The block's left edge, which is left of the label for a centred or
+    /// right-aligned line wider than its anchor allows.
+    x: isize,
 };
 
 fn trackField(service: *HttpService, job: TrackBody, field: label.Field) !Tracked {
@@ -1808,9 +1791,9 @@ test "alignment reaches the render route and the track answer" {
 
     // The track answer carries the placed edge, so the editor draws its box
     // where the ink is.
-    const Entry = struct { origin: []const u8, text: []const u8 = "", x: usize };
+    const Entry = struct { origin: []const u8, text: []const u8 = "", x: isize };
     const Envelope = struct { fields: []const Entry };
-    for ([_]struct { mode: []const u8, x: usize }{
+    for ([_]struct { mode: []const u8, x: isize }{
         .{ .mode = "left", .x = 150 },
         .{ .mode = "center", .x = try label.alignedX(gpa, .{ .text = "NB-1", .x = 150, .size = 16, .align_mode = .center }, "") },
         .{ .mode = "right", .x = try label.alignedX(gpa, .{ .text = "NB-1", .x = 150, .size = 16, .align_mode = .right }, "") },

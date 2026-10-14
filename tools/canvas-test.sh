@@ -33,6 +33,8 @@ trap cleanup EXIT INT TERM
 binary="$(pwd)/zig-out/bin/niimbench"
 [ -x "$binary" ] || { echo "canvas-test: $binary is missing; run make build first"; exit 1; }
 
+# No printer finders: the page boots the same whatever is plugged in or paired.
+cp "$(dirname "$0")/harness.patch.yml" "$dir/cordis.patch.yml"
 ( cd "$dir" && "$binary" --no-open > "$server_log" 2>&1 ) &
 server_pid=$!
 

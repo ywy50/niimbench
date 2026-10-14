@@ -432,7 +432,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -746,9 +746,9 @@
     }
 
     /// Where the renderer puts a block's left edge: the anchor less the
-    /// alignment, and never left of the page. This is `label.alignedX` and the
-    /// clamp after it, written once, so the page never has to ask and never has
-    /// to apply the alignment twice.
+    /// alignment, which can be left of the page, where the line is clipped.
+    /// This is `label.alignedX`, written once, so the page never has to ask
+    /// and never has to apply the alignment twice.
     function placedLeft(field) {
       const text = previewText(field);
       const block_w = Math.max(blockWidth(text, sizeOf(field), field.font), 1);
@@ -3140,6 +3140,67 @@
       return verdict;
     }
 
+    /// Grow a field turned upright in Vertical on a roll a quarter as wide,
+    /// until its upright line is half again as long as the roll is wide —
+    /// turned, it still fits — and require the box to hold the ink the server
+    /// drew. The box is the quad the page draws, in the canvas's own pixels,
+    /// the same frame as the ink. This
+    /// is where the renderer used to push the upright line back to the roll's
+    /// edge and the text jumped out of its box. Then put everything back.
+    async function selfCheckTurned() {
+      const row = rows[0];
+      const width = document.querySelector("#width");
+      const upright = document.querySelector("#upright");
+      if (!row || !upright) return { ok: false, row: Boolean(row), upright: Boolean(upright) };
+      const field = row.model;
+      const was = { width: width.value, checked: upright.checked, size: field.size, x: field.x, y: field.y, rotation: field.rotation };
+      width.value = String(Math.max(16, Math.floor(Number(was.width) / 4)));
+      width.dispatchEvent(new Event("change", { bubbles: true }));
+      upright.checked = true;
+      document.querySelector('.orient button[data-rotate="90"]').click();
+      await refresh();
+      const roll = rollSize();
+      const text = previewText(field);
+      let size = sizeOf(field);
+      const long = roll.width * 3 / 2;
+      while (size < roll.width && blockWidth(text, size, field.font) <= long) size += 1;
+      row.controls.size.value = String(size);
+      row.controls.size.dispatchEvent(new Event("change", { bubbles: true }));
+      await refresh();
+      const ink = window.__niimbenchCanvas().ink;
+      const drawn = boxes.find((item) => item.row === row);
+      const box = drawn && {
+        minX: Math.min(...drawn.quad.map((p) => p.x)),
+        minY: Math.min(...drawn.quad.map((p) => p.y)),
+        maxX: Math.max(...drawn.quad.map((p) => p.x)),
+        maxY: Math.max(...drawn.quad.map((p) => p.y)),
+      };
+      const verdict = {
+        from: Number(was.width),
+        size,
+        line: blockWidth(text, size, field.font),
+        roll: roll.width,
+        rotation: field.rotation,
+        field: { x: field.x, y: field.y, placed_x: field.placed_x },
+        ink: ink && [ink.minX, ink.minY, ink.maxX, ink.maxY],
+        box: box && [box.minX, box.minY, box.maxX, box.maxY].map(Math.round),
+      };
+      verdict.ok = Boolean(ink && box) && verdict.line > long &&
+        box.minX <= ink.minX + 1 && box.maxX >= ink.maxX - 1 &&
+        box.minY <= ink.minY + 1 && box.maxY >= ink.maxY - 1;
+      document.querySelector('.orient button[data-rotate="0"]').click();
+      upright.checked = was.checked;
+      width.value = was.width;
+      width.dispatchEvent(new Event("change", { bubbles: true }));
+      Object.assign(field, { size: was.size, x: was.x, y: was.y, rotation: was.rotation });
+      row.controls.size.value = String(was.size);
+      row.controls.x.value = String(was.x);
+      row.controls.y.value = String(was.y);
+      row.controls.rotation.value = String(was.rotation);
+      await refresh();
+      return verdict;
+    }
+
     /// Write the report into the page, where `--dump-dom` can read it. A
     /// `--dump-dom` run is a plain subprocess with no protocol to time out.
     window.__niimbenchSelfCheck = async function selfCheck() {
@@ -3161,6 +3222,7 @@
         // Last, because they render: the canvas above is the one the boot drew.
         report.vertical = harness ? await selfCheckVertical() : null;
         report.roll = harness ? await selfCheckRoll() : null;
+        report.turned = harness ? await selfCheckTurned() : null;
       }
       const view = viewSize();
       report.view = { width: view.width, height: view.height };
@@ -3200,7 +3262,8 @@
         " edit " + (report.edit ? (report.edit.ok ? "ok" : "BROKEN") : "not exercised") +
         " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none") +
         " vertical " + (report.vertical ? (report.vertical.ok ? "ok" : "BROKEN") : "not exercised") +
-        " roll " + (report.roll ? (report.roll.ok ? "ok" : "BROKEN") : "not exercised"));
+        " roll " + (report.roll ? (report.roll.ok ? "ok" : "BROKEN") : "not exercised") +
+        " turned " + (report.turned ? (report.turned.ok ? "ok" : "BROKEN") : "not exercised"));
     });
   </script>
 </body>

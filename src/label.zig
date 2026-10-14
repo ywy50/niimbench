@@ -14,13 +14,18 @@ pub const Align = enum {
         return std.meta.stringToEnum(Align, name) orelse error.BadAlign;
     }
 
-    /// The left edge of a line of `text_width` at this alignment. Never
-    /// returns a negative pixel: a line wider than the label clamps to 0.
-    pub fn place(self: Align, x: usize, text_width: usize) usize {
+    /// The left edge of a line of `text_width` at this alignment. It can be
+    /// left of the label, where the line is clipped like at any other edge.
+    /// Clamping it to 0 moved the ink away from the editor's box, and a turned
+    /// field, whose upright line may be far longer than the roll is wide,
+    /// jumped along the roll as soon as it grew.
+    pub fn place(self: Align, x: usize, text_width: usize) isize {
+        const anchor: isize = @intCast(x);
+        const width: isize = @intCast(text_width);
         return switch (self) {
-            .left => x,
-            .center => x -| (text_width / 2),
-            .right => x -| text_width,
+            .left => anchor,
+            .center => anchor - @divFloor(width, 2),
+            .right => anchor - width,
         };
     }
 };
@@ -148,7 +153,7 @@ pub fn textFits(face: *const Face, text: []const u8, size: usize, x: usize, y: u
 
 /// The left edge of this field's block. `resolve` and this agree on the text,
 /// so the ink and the editor's box are placed from one measurement.
-pub fn alignedX(gpa: std.mem.Allocator, field: Field, source_json: []const u8) !usize {
+pub fn alignedX(gpa: std.mem.Allocator, field: Field, source_json: []const u8) !isize {
     const text = try resolve(gpa, field, source_json);
     defer gpa.free(text);
     return field.align_mode.place(field.x, blockWidth(try faceOf(field), text, field.size));
@@ -195,7 +200,7 @@ fn drawText(gpa: std.mem.Allocator, pixels: []u8, width: usize, height: usize, f
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |line| {
         const line_left = field.align_mode.place(field.x, lineWidth(face, line, size));
-        const at: f32 = @floatFromInt(line_left - left + margin);
+        const at: f32 = @floatFromInt(line_left - left + @as(isize, @intCast(margin)));
         try font.drawLine(gpa, face, grid, gw, at, @floatFromInt(top), size, line);
         top += size;
     }
@@ -392,15 +397,16 @@ fn firstInkColumnIn(pixels: []const u8, width: usize, top: usize, bottom: usize)
 }
 
 test "alignment places a line by its own width" {
-    try std.testing.expectEqual(@as(usize, 10), Align.left.place(10, 40));
-    try std.testing.expectEqual(@as(usize, 0), Align.center.place(10, 40));
-    try std.testing.expectEqual(@as(usize, 0), Align.right.place(10, 40));
-    try std.testing.expectEqual(@as(usize, 75), Align.center.place(100, 50));
-    try std.testing.expectEqual(@as(usize, 50), Align.right.place(100, 50));
-    // A line wider than the label clamps to the left edge instead of wrapping
-    // around a subtraction.
-    try std.testing.expectEqual(@as(usize, 0), Align.center.place(4, 400));
-    try std.testing.expectEqual(@as(usize, 0), Align.right.place(4, 400));
+    try std.testing.expectEqual(@as(isize, 10), Align.left.place(10, 40));
+    try std.testing.expectEqual(@as(isize, -10), Align.center.place(10, 40));
+    try std.testing.expectEqual(@as(isize, -30), Align.right.place(10, 40));
+    try std.testing.expectEqual(@as(isize, 75), Align.center.place(100, 50));
+    try std.testing.expectEqual(@as(isize, 50), Align.right.place(100, 50));
+    // A line wider than twice its anchor starts left of the label, where it is
+    // clipped like at any other edge. It is not pushed back on: that moves the
+    // ink away from the box the editor draws round it.
+    try std.testing.expectEqual(@as(isize, -196), Align.center.place(4, 400));
+    try std.testing.expectEqual(@as(isize, -396), Align.right.place(4, 400));
 
     try std.testing.expectEqual(Align.center, try Align.parse("center"));
     try std.testing.expectEqual(Align.right, try Align.parse("right"));
@@ -473,7 +479,7 @@ test "alignedX agrees with the drawn left edge" {
         const placed = try alignedX(gpa, field, "");
         const drawn = try render(gpa, label_width, size, &.{field}, "");
         defer gpa.free(drawn.pixels);
-        try std.testing.expectEqual(placed + gap, firstInkColumn(drawn.pixels, label_width, size).?);
+        try std.testing.expectEqual(placed + @as(isize, @intCast(gap)), @as(isize, @intCast(firstInkColumn(drawn.pixels, label_width, size).?)));
     }
     // A source value is measured after resolution, not before.
     const keyed = Field{ .key = "sku", .x = anchor, .y = 0, .align_mode = .right };
@@ -548,6 +554,25 @@ test "a turned field keeps every ink pixel" {
         const difference = if (count > upright) count - upright else upright - count;
         try std.testing.expect(difference <= upright / 20 + 1);
     }
+}
+
+test "a turned centred line turns about its anchor however long it is" {
+    // A field turned a quarter turn on a narrow roll: its upright line is far
+    // longer than twice its anchor, but turned it fits. It must turn about the
+    // anchor, which is where the editor draws its box. Pushing the upright
+    // line's left edge back to 0 first moved the ink along the roll and out of
+    // the box as soon as the field grew.
+    const gpa = std.testing.allocator;
+    const width = 48;
+    const anchor = 24;
+    const text = "niimbench";
+    try std.testing.expect(blockWidth(sans, text, 16) > 2 * anchor);
+    const gray = try render(gpa, width, 160, &.{.{ .text = text, .x = anchor, .y = 72, .size = 16, .align_mode = .center, .rotation = 90 }}, "");
+    defer gpa.free(gray.pixels);
+    const first = firstInkColumn(gray.pixels, width, 160).?;
+    const last = lastInkColumn(gray.pixels, width, 160).?;
+    const middle = (first + last) / 2;
+    try std.testing.expect(middle + 3 >= anchor and middle <= anchor + 3);
 }
 
 test "a half turn puts the top of the text at the bottom" {

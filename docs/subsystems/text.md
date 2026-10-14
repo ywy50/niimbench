@@ -22,7 +22,7 @@ A character the font does not map â€” including every code point above U+FFFF â€
 
 ### Placement and turning
 
-`x` is the left edge, centre or right edge of the block, as `align_mode` says, and each line is placed by its own width from that anchor. `y` is the top of the first line. A block wider than the label clamps to the left edge rather than wrapping around a subtraction. The HTTP routes resolve the alignment once, in `placedFields`, and draw the block from its left edge.
+`x` is the left edge, centre or right edge of the block, as `align_mode` says, and each line is placed by its own width from that anchor. `y` is the top of the first line. A centred or right-aligned block can start left of the label, and is clipped there like at any other edge. It is never pushed back on: the editor draws its box where the block is, and a field turned a quarter turn on a narrow roll, whose upright line can be far longer than the roll is wide, would otherwise have its ink jump along the roll and out of the box as it grew. The renderer places the block itself, and `alignedX` gives the editor the same left edge.
 
 `rotation` turns the block clockwise about its own centre. The block is drawn upright first and then put on the label by sampling each destination dot through the inverse turn, so a turned letter is as solid as an upright one.
 

@@ -1,0 +1,31 @@
+# The boot list the page harnesses serve from. It is the embedded
+# src/default.patch.yml without the serial and bluetooth plugins, so the
+# page's startup scan finds no printer and boots on its own defaults: a
+# printer that happens to be plugged in or paired must not change what
+# `make test` checks.
+- id: trace
+  plugin: trace
+
+- id: printer
+  plugin: printer
+
+- id: transports
+  plugin: transports
+
+- id: devices
+  plugin: devices
+
+- id: sources
+  plugin: sources
+
+- id: json-source
+  plugin: json-source
+  inject: [sources]
+
+- id: http
+  plugin: http
+  inject: [trace, printer, transports, devices, sources]
+
+- id: editor
+  plugin: editor
+  inject: [http]

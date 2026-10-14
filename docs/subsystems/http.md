@@ -148,6 +148,8 @@ After a successful print the context emits `print/done`.
 {"fields":[{"origin":"record","text":"NB-1"},{"origin":"literal"},{"origin":"missing-key"}]}
 ```
 
+Each entry also carries `x`, the block's left edge as the renderer places it. It is negative for a centred or right-aligned block that starts left of the label.
+
 `origin` is one of:
 
 | Value | Meaning |
