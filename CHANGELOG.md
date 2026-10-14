@@ -25,6 +25,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 - Dragging a field's round anchor in the Vertical view no longer flips the
   text upside down on the first move: the drag added the view's quarter turn
   the wrong way round.
+- The preview's boxes, handles, guides and picture outline are sharp. They
+  were drawn into the label's own dots and enlarged with them, so a one-dot
+  line was several screen pixels of blur; they are now a layer of their own at
+  the screen's resolution, one size on screen at any zoom.
 
 ## [0.1.0] - 2026-10-14
 

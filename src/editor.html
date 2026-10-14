@@ -289,6 +289,12 @@
     }
     canvas.dragging { cursor: grabbing; }
     canvas.placing { cursor: grab; }
+    /* The boxes, handles and guides are a layer of their own over the label,
+       at the screen's resolution, so they stay sharp however far the label's
+       dots are enlarged. It shares the label's cell and lets every press
+       through to it. */
+    .canvas-box > canvas { grid-area: 1 / 1; }
+    #overlay { pointer-events: none; background: none; border: 0; border-radius: 0; image-rendering: auto; }
 
     details {
       padding: 0.65rem 0.8rem;
@@ -341,7 +347,7 @@
   <section class="panel" data-panel="preview">
     <h2 class="panel-head">Preview</h2>
     <div class="panel-body stage">
-      <div class="canvas-box"><canvas id="preview" width="384" height="240"></canvas></div>
+      <div class="canvas-box"><canvas id="preview" width="384" height="240"></canvas><canvas id="overlay" aria-hidden="true"></canvas></div>
       <p class="hint">Drag a box to move it. Drag the round handle to rotate it.
         <label class="check"><input id="snap" type="checkbox"> Snap 15°</label>
               <span id="view-note" class="view-note" aria-live="polite"></span>
@@ -512,6 +518,8 @@
     const canvas = document.querySelector("#preview");
     const list = document.querySelector("#field-list");
     const previewCtx = canvas.getContext("2d");
+    const overlay = document.querySelector("#overlay");
+    const overlayCtx = overlay.getContext("2d");
     // Filled from /api/label/metrics: every font the renderer carries, with its
     // advance table, so the boxes here are measured the way the ink is. Until
     // it answers, one stand-in font measures each character as six tenths of a
@@ -1562,27 +1570,27 @@
 
 
     /// Faint guides every 16 dots (2 mm, the default line), so a field can be placed
-    /// without guessing. Drawn over the preview copy only: the pixels sent to
-    /// the printer never carry it.
-    function drawGrid() {
+    /// without guessing. Drawn on the overlay: the pixels sent to the printer
+    /// never carry it.
+    function drawGrid(px) {
       if (!document.querySelector("#grid").checked) return;
       const step = 16;
-      previewCtx.save();
-      previewCtx.strokeStyle = "rgba(11, 98, 212, 0.25)";
-      previewCtx.lineWidth = 1;
+      overlayCtx.save();
+      overlayCtx.strokeStyle = "rgba(11, 98, 212, 0.25)";
+      overlayCtx.lineWidth = px;
       for (let x = step; x < canvas.width; x += step) {
-        previewCtx.beginPath();
-        previewCtx.moveTo(x + 0.5, 0);
-        previewCtx.lineTo(x + 0.5, canvas.height);
-        previewCtx.stroke();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(x, 0);
+        overlayCtx.lineTo(x, canvas.height);
+        overlayCtx.stroke();
       }
       for (let y = step; y < canvas.height; y += step) {
-        previewCtx.beginPath();
-        previewCtx.moveTo(0, y + 0.5);
-        previewCtx.lineTo(canvas.width, y + 0.5);
-        previewCtx.stroke();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(0, y);
+        overlayCtx.lineTo(canvas.width, y);
+        overlayCtx.stroke();
       }
-      previewCtx.restore();
+      overlayCtx.restore();
     }
 
     /// The picture's box as the preview shows it: turning the roll turns the
@@ -1594,9 +1602,9 @@
       return { ...box, x: centre.x, y: centre.y, rotation: box.rotation + Math.PI / 2 };
     }
 
-    /// Outline and handles, so it is clear what is being scaled. Drawn over the
-    /// preview copy only; the bytes sent carry no guide.
-    function drawImageOutline() {
+    /// Outline and handles, so it is clear what is being scaled. Drawn on the
+    /// overlay; the bytes sent carry no guide.
+    function drawImageOutline(px) {
       const box = viewImageBox(imageBox());
       if (!box || !backgroundImage) return;
       const half = { x: Math.max(box.width, 24) / 2, y: Math.max(box.height, 24) / 2 };
@@ -1605,29 +1613,29 @@
       const at = (lx, ly) => ({ x: box.x + (lx * c - ly * sn), y: box.y + (lx * sn + ly * c) });
       const corners = [at(-half.x, -half.y), at(half.x, -half.y), at(half.x, half.y), at(-half.x, half.y)];
       const picked = Boolean(selected && selected.kind === "image");
-      previewCtx.save();
-      previewCtx.setLineDash(picked ? [] : [3, 3]);
-      previewCtx.strokeStyle = "#7a3fd0";
-      previewCtx.lineWidth = picked ? 2 : 1;
-      previewCtx.beginPath();
-      previewCtx.moveTo(corners[0].x, corners[0].y);
-      for (const point of corners.slice(1)) previewCtx.lineTo(point.x, point.y);
-      previewCtx.closePath();
-      previewCtx.stroke();
-      previewCtx.setLineDash([]);
-      previewCtx.lineWidth = 1;
-      previewCtx.fillStyle = "#ffffff";
+      overlayCtx.save();
+      overlayCtx.setLineDash(picked ? [] : [4 * px, 4 * px]);
+      overlayCtx.strokeStyle = "#7a3fd0";
+      overlayCtx.lineWidth = (picked ? 2.5 : 1.5) * px;
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(corners[0].x, corners[0].y);
+      for (const point of corners.slice(1)) overlayCtx.lineTo(point.x, point.y);
+      overlayCtx.closePath();
+      overlayCtx.stroke();
+      overlayCtx.setLineDash([]);
+      overlayCtx.lineWidth = 1.5 * px;
+      overlayCtx.fillStyle = "#ffffff";
       for (const [lx, ly] of [[-half.x, -half.y], [half.x, -half.y], [half.x, half.y], [-half.x, half.y]]) {
         const point = at(lx, ly);
-        previewCtx.fillRect(point.x - 3, point.y - 3, 6, 6);
-        previewCtx.strokeRect(point.x - 3, point.y - 3, 6, 6);
+        overlayCtx.fillRect(point.x - 4 * px, point.y - 4 * px, 8 * px, 8 * px);
+        overlayCtx.strokeRect(point.x - 4 * px, point.y - 4 * px, 8 * px, 8 * px);
       }
-      previewCtx.fillStyle = "#7a3fd0";
+      overlayCtx.fillStyle = "#7a3fd0";
       const grip = at(0, -half.y - 16);
-      previewCtx.beginPath();
-      previewCtx.arc(grip.x, grip.y, 4, 0, Math.PI * 2);
-      previewCtx.fill();
-      previewCtx.restore();
+      overlayCtx.beginPath();
+      overlayCtx.arc(grip.x, grip.y, 5.5 * px, 0, Math.PI * 2);
+      overlayCtx.fill();
+      overlayCtx.restore();
     }
 
     /// Cut a field's ink out of the last render, so a turn can be shown on the
@@ -1707,8 +1715,6 @@
       } else if (lastImage) {
         previewCtx.putImageData(lastImage, 0, 0);
       }
-      drawGrid();
-      drawImageOutline();
       // One line per layout, only when it changes. When a box and its text
       // disagree, this says which frame each of them is in.
       const shape = (orientation === 90 ? "vertical" : "horizontal") + " " +
@@ -1721,38 +1727,69 @@
         lastShape = shape;
         traceLine("info", "boxes: " + shape);
       }
+      drawOverlay();
+    }
+
+    /// Everything drawn over the label — the boxes and their handles, the
+    /// guides, the picture's outline — on a layer of its own at the screen's
+    /// resolution. Drawn into the label's few hundred dots and enlarged with
+    /// them, a one-dot line was five screen pixels of smear. The drawing is
+    /// still in dots, as everything else on the page is: the transform turns a
+    /// dot into the screen pixels it covers, and `px`, one CSS pixel in dots,
+    /// keeps lines and handles one size on screen however far the label is
+    /// enlarged. The layer covers the label's content box, which is the
+    /// preview's client size.
+    function drawOverlay() {
+      const ratio = window.devicePixelRatio || 1;
+      const width = Math.round(canvas.clientWidth * ratio);
+      const height = Math.round(canvas.clientHeight * ratio);
+      // A canvas whose size is set is cleared and reallocated, even to the
+      // size it has, so only a change is written.
+      if (overlay.width !== width || overlay.height !== height) {
+        overlay.width = width;
+        overlay.height = height;
+      }
+      overlay.style.width = canvas.clientWidth + "px";
+      overlay.style.height = canvas.clientHeight + "px";
+      overlayCtx.setTransform(1, 0, 0, 1, 0, 0);
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      if (!width || !height) return;
+      overlayCtx.setTransform(width / canvas.width, 0, 0, height / canvas.height, 0, 0);
+      const px = canvas.width / canvas.clientWidth;
+      drawGrid(px);
+      drawImageOutline(px);
       for (const box of boxes) {
         const top = { x: (box.quad[0].x + box.quad[1].x) / 2, y: (box.quad[0].y + box.quad[1].y) / 2 };
-        previewCtx.save();
-        previewCtx.beginPath();
-        previewCtx.moveTo(box.quad[0].x, box.quad[0].y);
-        for (const corner of box.quad.slice(1)) previewCtx.lineTo(corner.x, corner.y);
-        previewCtx.closePath();
-        previewCtx.fillStyle = box.clipped ? "rgba(200,0,0,0.12)" : "rgba(0,90,200,0.10)";
-        previewCtx.fill();
+        overlayCtx.save();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(box.quad[0].x, box.quad[0].y);
+        for (const corner of box.quad.slice(1)) overlayCtx.lineTo(corner.x, corner.y);
+        overlayCtx.closePath();
+        overlayCtx.fillStyle = box.clipped ? "rgba(200,0,0,0.12)" : "rgba(0,90,200,0.10)";
+        overlayCtx.fill();
         const picked = Boolean(selected && selected.row === box.row);
-        previewCtx.setLineDash(picked ? [] : [4, 3]);
-        previewCtx.strokeStyle = box.clipped ? "#c00" : "#06c";
-        previewCtx.lineWidth = picked ? 2 : 1;
-        previewCtx.stroke();
-        previewCtx.lineWidth = 1;
-        previewCtx.setLineDash([]);
+        overlayCtx.setLineDash(picked ? [] : [5 * px, 4 * px]);
+        overlayCtx.strokeStyle = box.clipped ? "#c00" : "#06c";
+        overlayCtx.lineWidth = (picked ? 2.5 : 1.5) * px;
+        overlayCtx.stroke();
+        overlayCtx.lineWidth = 1.5 * px;
+        overlayCtx.setLineDash([]);
         // A square on each corner: drag one to resize the text, the way the
         // picture's corners scale the picture.
-        previewCtx.fillStyle = "#ffffff";
+        overlayCtx.fillStyle = "#ffffff";
         for (const corner of box.quad) {
-          previewCtx.fillRect(corner.x - 3, corner.y - 3, 6, 6);
-          previewCtx.strokeRect(corner.x - 3, corner.y - 3, 6, 6);
+          overlayCtx.fillRect(corner.x - 4 * px, corner.y - 4 * px, 8 * px, 8 * px);
+          overlayCtx.strokeRect(corner.x - 4 * px, corner.y - 4 * px, 8 * px, 8 * px);
         }
-        previewCtx.beginPath();
-        previewCtx.moveTo(top.x, top.y);
-        previewCtx.lineTo(box.handle.x, box.handle.y);
-        previewCtx.stroke();
-        previewCtx.beginPath();
-        previewCtx.arc(box.handle.x, box.handle.y, 4, 0, Math.PI * 2);
-        previewCtx.fillStyle = "#06c";
-        previewCtx.fill();
-        previewCtx.restore();
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(top.x, top.y);
+        overlayCtx.lineTo(box.handle.x, box.handle.y);
+        overlayCtx.stroke();
+        overlayCtx.beginPath();
+        overlayCtx.arc(box.handle.x, box.handle.y, 5.5 * px, 0, Math.PI * 2);
+        overlayCtx.fillStyle = "#06c";
+        overlayCtx.fill();
+        overlayCtx.restore();
       }
     }
 
@@ -1797,6 +1834,7 @@
       const scale = displayScale(Math.min(maxW / canvas.width, maxH / canvas.height));
       canvas.style.width = Math.max(1, Math.round(canvas.width * scale)) + "px";
       canvas.style.height = Math.max(1, Math.round(canvas.height * scale)) + "px";
+      drawOverlay();
     }
 
     function grayImage(payload) {
@@ -3237,18 +3275,28 @@
       const width = element.width;
       const height = element.height;
       if (!width || !height) return { error: "canvas has no size" };
-      const data = element.getContext("2d").getImageData(0, 0, width, height).data;
-      const bounds = (test) => {
+      const label = { data: element.getContext("2d").getImageData(0, 0, width, height).data, width, height };
+      // The boxes and handles are on the overlay, at the screen's resolution.
+      // A pixel there is reported as the dot it lies over.
+      const layer = document.querySelector("#overlay");
+      const drawn = layer && layer.width && layer.height
+        ? { data: layer.getContext("2d").getImageData(0, 0, layer.width, layer.height).data, width: layer.width, height: layer.height }
+        : { data: [], width: 0, height: 0 };
+      const bounds = (test, image = label) => {
+        const sx = image.width / width;
+        const sy = image.height / height;
         let minX = width, minY = height, maxX = -1, maxY = -1, count = 0;
-        for (let y = 0; y < height; y++) {
-          for (let x = 0; x < width; x++) {
-            const i = (y * width + x) * 4;
-            if (!test(data[i], data[i + 1], data[i + 2], x, y)) continue;
+        for (let y = 0; y < image.height; y++) {
+          for (let x = 0; x < image.width; x++) {
+            const i = (y * image.width + x) * 4;
+            const dx = Math.floor(x / sx);
+            const dy = Math.floor(y / sy);
+            if (!test(image.data[i], image.data[i + 1], image.data[i + 2], image.data[i + 3], dx, dy)) continue;
             count += 1;
-            if (x < minX) minX = x;
-            if (y < minY) minY = y;
-            if (x > maxX) maxX = x;
-            if (y > maxY) maxY = y;
+            if (dx < minX) minX = dx;
+            if (dy < minY) minY = dy;
+            if (dx > maxX) maxX = dx;
+            if (dy > maxY) maxY = dy;
           }
         }
         return count ? { minX, minY, maxX, maxY, count } : null;
@@ -3259,16 +3307,18 @@
       // round anchor. Reporting them as one bound is useless — the anchor sits
       // above the box, so the combined bound is the anchor's, and a check on it
       // says the box is above its text.
-      const isOverlay = (r, g, b) => b > 120 && b - r > 40 && b - g > 30;
+      // The layer is clear between its lines, and a box's own tint is faint, so
+      // only what is drawn mostly opaque counts.
+      const isOverlay = (r, g, b, a) => a >= 128 && b > 120 && b - r > 40 && b - g > 30;
       const ink = bounds(isInk);
-      const overlay = bounds(isOverlay);
+      const overlay = bounds(isOverlay, drawn);
       // The outline is the overlay beside the ink: within a dot or so of the
       // ink's own bounds on both axes. The stem and anchor are a dozen dots
       // clear of it.
       const near = ink ? (value, low, high) => value >= low - 2 && value <= high + 2 : null;
       const outline = ink
-        ? bounds((r, g, b, x, y) => isOverlay(r, g, b) &&
-            near(x, ink.minX, ink.maxX) && near(y, ink.minY, ink.maxY))
+        ? bounds((r, g, b, a, x, y) => isOverlay(r, g, b, a) &&
+            near(x, ink.minX, ink.maxX) && near(y, ink.minY, ink.maxY), drawn)
         : null;
       // The distinct colours just outside the ink's rows, so a check that
       // cannot find the outline can say what is actually there instead.
