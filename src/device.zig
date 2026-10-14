@@ -1,5 +1,7 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const ble = @import("ble.zig");
+const corebluetooth = @import("corebluetooth.zig");
 const dbus = @import("dbus.zig");
 const discovery = @import("discovery.zig");
 const packet = @import("packet.zig");
@@ -137,6 +139,8 @@ fn ioctl(fd: std.posix.fd_t, request: u32, arg: usize) !void {
 }
 
 pub fn openBluetooth(allocator: std.mem.Allocator, io: std.Io, addr: []const u8) !printer.Transport {
+    // macOS names a peripheral by a UUID of its own, not a MAC.
+    if (builtin.os.tag == .macos) return corebluetooth.open(allocator, io, addr);
     // A BLE-only model, such as the D110, has no RFCOMM channel to reach: its
     // frames travel as GATT writes on the Niimbot vendor service. That is the
     // bearer the finder reports and the one opened here.
@@ -320,16 +324,11 @@ const BluetoothScan = struct {
         return self.adapter_buf[0..self.adapter_len];
     }
 
-    /// Keep devices that name themselves as Niimbot printers. Their names are
-    /// the only model signal Bluetooth offers without connecting, so a name
-    /// that carries a model word is enough and one that does not is skipped.
+    /// Keep devices that name themselves as Niimbot printers.
     fn put(context: *anyopaque, device: dbus.DeviceView) void {
         const self: *BluetoothScan = @ptrCast(@alignCast(context));
         const name = if (device.alias.len > 0) device.alias else device.name;
-        const model = discovery.modelForName(name);
-        if (model == null and !discovery.mentionsNiimbot(name)) return;
-        if (self.out.has(.bluetooth, device.address)) return;
-        self.out.addBearer(.bluetooth, device.address, name, model, 0, .{ .spp = device.spp, .le = device.le }) catch {};
+        self.out.addNamed(device.address, name, .{ .spp = device.spp, .le = device.le });
     }
 
     fn adapter(context: *anyopaque, path: []const u8) void {
@@ -344,6 +343,7 @@ const BluetoothScan = struct {
 /// runs an inquiry first, so a printer that is on but never paired with this
 /// machine is still seen; the passive answer is exactly the paired set.
 pub fn findBluetooth(io: std.Io, allocator: std.mem.Allocator, discover: bool, out: *discovery.Found) !void {
+    if (builtin.os.tag == .macos) return corebluetooth.find(io, allocator, discover, inquiry_ms, out);
     const conn = try dbus.Conn.connect(allocator, io);
     defer conn.deinit();
     var scan = BluetoothScan{ .out = out };

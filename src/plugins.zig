@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const cordis = @import("cordis.zig");
 const device = @import("device.zig");
 const discovery = @import("discovery.zig");
@@ -55,6 +56,9 @@ fn trackFinder(ctx: *cordis.Context, registry: *discovery.Registry, kind: Finder
 }
 
 pub fn applySerial(ctx: *cordis.Context) !void {
+    // The serial port is set up with Linux ioctls. On macOS the plugin adds
+    // nothing yet, and a USB print says `UsbUnavailable`.
+    if (builtin.os.tag != .linux) return;
     const registry = ctx.require(device.Registry, "transports");
     registry.usb = device.openSerial;
     try trackOpener(ctx, registry, .usb);

@@ -93,6 +93,17 @@ pub const Found = struct {
         device.name_len = name.len;
         self.len += 1;
     }
+
+    /// Add a Bluetooth device if its name says it is a Niimbot printer. The
+    /// name is the only model signal Bluetooth offers without connecting, so a
+    /// name that carries a model word or the brand is kept and any other is
+    /// skipped. A repeated address is the same device.
+    pub fn addNamed(self: *Found, addr: []const u8, name: []const u8, bearer: Bearer) void {
+        const model = modelForName(name);
+        if (model == null and !mentionsNiimbot(name)) return;
+        if (self.has(.bluetooth, addr)) return;
+        self.addBearer(.bluetooth, addr, name, model, 0, bearer) catch {};
+    }
 };
 
 /// The model behind a `PrinterInfo` (0x40) answer for key `0x08` (model id).
