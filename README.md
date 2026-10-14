@@ -11,6 +11,8 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/ywy50/niimbench/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ywy50/niimbench/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/ywy50/niimbench/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/ywy50/niimbench?color=0b62d4"></a>
   <img alt="Zig 0.17" src="https://img.shields.io/badge/zig-0.17-f7a41d?logo=zig&logoColor=white">
   <img alt="platform: Linux" src="https://img.shields.io/badge/platform-linux-lightgrey">
   <img alt="printers: B1, B18, B21, D11, D110" src="https://img.shields.io/badge/printers-B1%20%7C%20B18%20%7C%20B21%20%7C%20D11%20%7C%20D110-0b62d4">
@@ -21,7 +23,21 @@ A local label bench for Niimbot printers, written in Zig. niimbench is inspired 
 
 ## Quick start
 
-You need Zig 0.17. Node and a Chromium-family browser are only needed for `make test`.
+Run the latest release on a 64-bit x86 Linux machine, with nothing to install:
+
+```bash
+curl -fsSL https://github.com/ywy50/niimbench/releases/latest/download/niimbench-x86_64-linux.tar.gz | tar xz
+./niimbench-x86_64-linux/niimbench
+```
+
+On a 64-bit ARM machine, such as a Raspberry Pi 4 or 5 running a 64-bit OS:
+
+```bash
+curl -fsSL https://github.com/ywy50/niimbench/releases/latest/download/niimbench-aarch64-linux.tar.gz | tar xz
+./niimbench-aarch64-linux/niimbench
+```
+
+From source you need Zig 0.17. Node and a Chromium-family browser are only needed for `make test`.
 
 Serve the editor and open it in your browser:
 
@@ -134,7 +150,22 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 | `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness, and the label catalogue fetcher |
 | `docs/assets/` | The logo kit, and the README's screenshot with the steps that take it ([docs/assets/README.md](docs/assets/README.md)) |
 | `Makefile` | `make`, `make serve`, `make test`, `make drive`, `make print`, `make labels` |
+| `.github/workflows/` | CI on every push and pull request, and the tag-driven release |
+| `CHANGELOG.md` | What each release changed |
 | `docs/` | Index, architecture, subsystems, cookbook, user guide, templates, reviews |
+
+## Releases
+
+Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has a tarball for x86_64 and one for arm64 Linux. Each holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, and the licences of the fonts compiled into the binary. Every tarball comes with a `.sha256` and a build provenance attestation signed by the release workflow.
+
+Check a download before you run it:
+
+```bash
+sha256sum -c niimbench-x86_64-linux.tar.gz.sha256
+gh attestation verify niimbench-x86_64-linux.tar.gz --repo ywy50/niimbench
+```
+
+`niimbench --version` prints the version, and [CHANGELOG.md](CHANGELOG.md) says what each one changed. Cutting a release is [docs/cookbook/releasing.md](docs/cookbook/releasing.md).
 
 ## Contributing
 
