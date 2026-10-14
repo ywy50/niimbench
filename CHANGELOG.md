@@ -11,6 +11,15 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Changed
+
+- The printer's status and last job are on the header, left of the page status,
+  so they stay in view however the panels are arranged.
+- The Label and printer panel opens with the printer: the found devices,
+  then connection and address, then the cloud opt-in, which now reads "Ask
+  the cloud for unknown label rolls" on one line. The label's model, size,
+  density and orientation follow.
+
 ### Fixed
 
 - Dragging a field's round anchor in the Vertical view no longer flips the
