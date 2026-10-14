@@ -1547,7 +1547,7 @@ test "the editor route disappears when its fiber is disposed" {
 test "editor page renders fields through the server" {
     // The page as it is used: a label editor with a printer, not the record
     // feature. The source-record controls are deliberately not here.
-    const control = [_][]const u8{ "save", "load", "reset", "add-field", "device", "scan-devices" };
+    const control = [_][]const u8{ "save", "load", "reset", "add-field", "device", "scan-devices", "upright" };
 
     try std.testing.expect(std.mem.indexOf(u8, page_html, "/api/render") != null);
     try std.testing.expect(std.mem.indexOf(u8, page_html, "field-list") != null);

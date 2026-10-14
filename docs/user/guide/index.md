@@ -14,6 +14,8 @@ The page opens with one text field that says `niimbench`, centred on the label i
 
 **Label** lists the die-cut rolls for the selected **Model**. B1 and B21 share one list, D11 and D110 share another, and B18 has its own. Choosing a roll writes the width and height. The page opens on the roll that model ships with: 50×30 mm for B1 and B21.
 
+A new roll — another **Model**, another **Label**, or a typed width or height — keeps the text on it. A field the new roll would cut off keeps its place relative to the roll and gets smaller until the whole field fits, so switching from a B21 to a D11 does not leave the text off the edge. A field that was already clipped on the old roll is left as it is, and **Undo** puts the roll and the fields back together.
+
 A roll wider than the print head uses the head width. A 50 mm B21 roll is 384 dots across, and a 15 mm D11 roll is 96. **Custom** leaves whatever width and height you type. Changing the model to one that does not take the current roll switches to that model's roll and sets the numbers again. Which rolls those are is in [../../subsystems/printer.md](../../subsystems/printer.md).
 
 ## Place a field
@@ -46,18 +48,18 @@ There are two turns and they are independent. **Orientation** is how the editor 
 
 ### Orientation: the view
 
-**Horizontal** and **Vertical** choose which way the *page* is drawn in the editor. They change nothing about a field's angle and nothing about what the printer is sent.
+**Horizontal** and **Vertical** choose which way the *page* is drawn in the editor. The printer is always sent the page as it is.
 
 | | The editor shows | The printer is sent |
 |---|---|---|
 | **Horizontal** | the roll as it is: width across the head, height along the tape | the page, unchanged |
-| **Vertical** | the roll turned a quarter turn clockwise, so the tape runs left to right along the window and the label reads upright | the page, unchanged |
+| **Vertical** | the roll turned a quarter turn counter-clockwise, so the tape runs left to right along the window | the page, unchanged |
 
-In **Vertical**, the letters are never mirrored and never upside down: the picture is turned, so what a field's angle means on screen is that angle plus the view's turn. A field at `0` reads across the roll and shows horizontally in the window; a field at `90` reads along the tape and shows horizontally too. Whatever the orientation, the width and height the printer receives are the page's own — orientation is a property of the editor's window, not of the job.
+In **Vertical**, the letters are never mirrored: the picture is turned, so a field's angle shows on screen as that angle less the view's quarter turn. A field at `0` reads across the roll, which in Vertical runs up the window; a field at `90` reads along the tape, which runs left to right. Whatever the orientation, the width and height the printer receives are the page's own — orientation is a property of the editor's window, not of the job.
 
-**The buttons never change a field's angle.** Pressing **Vertical** on a label whose fields are at `0` turns the window and nothing else: the letters still read across the tape, so on screen they now run up the page. To make the text itself run along the tape, set its own `°` to `90` — the box and the letters turn together, because they are the same angle. Pressing **Vertical** and then setting a field to `90` is the usual way to get letters reading left to right up the window.
+**Keep text upright**, next to the buttons and on by default, turns every field with the view: **Vertical** adds `90` to each field's angle and **Horizontal** takes it off again, so the letters read the same way up in the window before and after the switch. A field the turn would push off the label is brought back on, smaller if it has to be. With it off, the buttons turn only the window: the fields keep their angles, and text at `0` runs up the page in Vertical.
 
-The picture is redrawn in the window from the last render, so the buttons are immediate and do not ask the server for anything. A new field starts at `0` whatever the orientation; if you turn a field to `90` and then add another, the new one starts at `0`.
+A new field starts at the view's own turn — `0` in Horizontal, `90` in Vertical — so it reads upright whichever way the window is turned. Dragging a field moves it with the pointer in either view.
 
 ### Angle: the letters
 

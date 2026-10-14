@@ -317,6 +317,7 @@
             <button type="button" data-rotate="90" aria-pressed="false">Vertical</button>
           </span>
         </label>
+        <label class="check span" title="turn every field with the view, so its letters read the same way up after the switch"><input id="upright" type="checkbox" checked> Keep text upright</label>
       </div>
       <div class="printers span">
         <div class="printers-head">
@@ -431,7 +432,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -478,6 +479,11 @@
     let deep = 0;
     let lastPushed = null;
     let boxes = [];
+    /// The roll the fields were last laid out on. Every change of roll — a
+    /// model, a size preset, a typed width — ends in `refresh`, so this is
+    /// where a field the new roll would cut off is brought back on. A field
+    /// that was already off the old roll stays where someone put it.
+    let laidOutOn = null;
     /// The last box layout written to the trace, so a drag or a refresh does not
     /// repeat a line that has not changed.
     let lastShape = "";
@@ -638,8 +644,9 @@
 
     /// Orientation is the view and nothing else: it decides which way the page
     /// is drawn in the window. A field's own angle is how its letters are
-    /// drawn, and that is the only thing the printer is told about, so the
-    /// button must not touch it.
+    /// drawn, and that is the only thing the printer is told about, so this
+    /// does not touch it. **Keep text upright** turns the fields in the
+    /// buttons' handler, as an edit of their angles.
     ///
     /// Turning both is what a preview at 180 degrees looks like: the picture
     /// turns once for the view and the letters turn again, while the boxes turn
@@ -1438,8 +1445,8 @@
 
     // ---- canvas ----------------------------------------------------------
 
-    /// Vertical shows the roll turned a quarter turn clockwise, so the tape runs
-    /// left to right and the letters stay upright. It is one rotation, not a
+    /// Vertical shows the roll turned a quarter turn counter-clockwise, so the
+    /// tape runs left to right. It is one rotation, not a
     /// transpose: turning the label over is not the same as turning it round,
     /// and a transpose would show the print mirrored about the diagonal.
     ///
@@ -1731,7 +1738,39 @@
       }
     }
 
+    /// Bring a field back onto the label: its box centre keeps its place
+    /// relative to the roll, and its size steps down until the whole box is
+    /// on. `before` is the roll the field was placed on. The row's inputs
+    /// follow, so the numbers and the box agree.
+    function keepOnLabel(row, before) {
+      const field = row.model;
+      if (!rowClipped(field)) return;
+      const roll = rollSize();
+      const text = previewText(field);
+      const centre = boxRect({ ...field, text }, placedLeft(field), field.y).centre;
+      const cx = centre.x * roll.width / before.width;
+      const cy = centre.y * roll.height / before.height;
+      for (let size = sizeOf(field); size >= 1; size -= 1) {
+        const w = Math.max(blockWidth(text, size, field.font), 1);
+        const h = blockHeight(text, size);
+        const trial = { ...field, size, x: Math.round(cx - w / 2 + shiftFor(field, w)), y: Math.round(cy - h / 2) };
+        if (rowClipped(trial)) continue;
+        Object.assign(field, { size, x: trial.x, y: trial.y });
+        row.controls.size.value = String(field.size);
+        row.controls.x.value = String(field.x);
+        row.controls.y.value = String(field.y);
+        return;
+      }
+    }
+
     async function refresh() {
+      const now = rollSize();
+      if (laidOutOn && (laidOutOn.width !== now.width || laidOutOn.height !== now.height)) {
+        for (const row of rows) {
+          if (!rowClipped(row.model, laidOutOn.width, laidOutOn.height)) keepOnLabel(row, laidOutOn);
+        }
+      }
+      laidOutOn = now;
       const body = labelBody();
       if (body.fields.length === 0 && !body.background_b64) {
         boxes = [];
@@ -2097,7 +2136,10 @@
         scheduleRefresh();
         return;
       }
-      placeDragged(drag.box, point);
+      // On the roll, the frame the press measured its offset in. The view
+      // point is a quarter turn away from it in Vertical, and a field moved by
+      // it ran off at right angles to the pointer.
+      placeDragged(drag.box, labelPoint(event));
     });
 
     /// Put a dragged field where the pointer is, in the field's own frame one
@@ -2595,7 +2637,19 @@
     for (const button of document.querySelectorAll(".orient button")) {
       button.addEventListener("click", () => {
         record();
-        setOrientation(Number(button.dataset.rotate));
+        const turn = Number(button.dataset.rotate);
+        // Keep text upright turns every field by the view's own turn, so the
+        // letters read the same way up after the switch as before it. A field
+        // the turn would push off the label is brought back on.
+        if (document.querySelector("#upright").checked && turn !== pageTurn()) {
+          for (const row of rows) {
+            const on = !rowClipped(row.model);
+            row.model.rotation = normalizeDegrees((row.model.rotation || 0) + turn - pageTurn());
+            row.controls.rotation.value = String(row.model.rotation);
+            if (on) keepOnLabel(row, rollSize());
+          }
+        }
+        setOrientation(turn);
         refitIfUntouched();
         syncImageControls();
         refresh();
@@ -2657,6 +2711,9 @@
       } else {
         selectSizeForCanvas();
       }
+      // A layout's fields are placed for its own roll, so its roll is where
+      // they were laid out, and `refresh` has nothing to bring back on.
+      laidOutOn = rollSize();
       // Redraw and re-resolve the fields for the loaded body. Without this a
       // loaded layout shows the previous label until some control is touched.
       refresh();
@@ -2907,11 +2964,22 @@
       // a few dots. The first move is the one that used to leap, so it is
       // included.
       const press = box.screen_centre;
+      const walk = [[0, 0], [1, 1], [4, 2], [8, 5], [12, 7]];
+      const last = { x: press.x + walk[walk.length - 1][0], y: press.y + walk[walk.length - 1][1] };
       send("pointerdown", press.x, press.y);
-      for (const [dx, dy] of [[0, 0], [1, 1], [4, 2], [8, 5], [12, 7]]) {
+      for (const [dx, dy] of walk) {
         send("pointermove", press.x + dx, press.y + dy);
       }
       const verdict = window.__niimbenchDrag;
+      // The field moved as far on the roll as the pointer did, through the
+      // page's own screen-to-roll turn: a step that matches some other frame
+      // is a field running off at right angles to the pointer.
+      const onRoll = (point) => labelPoint(new PointerEvent("pointermove", at(point.x, point.y)));
+      const from = onRoll(press);
+      const to = onRoll(last);
+      verdict.followed = Math.abs(box.field.x - (start.field_x + to.x - from.x)) <= 1 &&
+        Math.abs(box.field.y - (start.field_y + to.y - from.y)) <= 1;
+      if (!verdict.followed) verdict.ok = false;
       // The row's x and y follow the drag, so the numbers and the box agree.
       const inputs = box.row.controls;
       verdict.inputs = inputs.x.value === String(box.field.x) && inputs.y.value === String(box.field.y);
@@ -2931,7 +2999,7 @@
         box.row.controls.x.value = String(start.field_x);
         box.row.controls.y.value = String(start.field_y);
       }
-      send("pointerup", press.x + 12, press.y + 7);
+      send("pointerup", last.x, last.y);
       showBox(box);
       drawBoxes();
       return verdict;
@@ -3014,9 +3082,67 @@
       return verdict;
     }
 
+    /// Turn the view to Vertical with **Keep text upright** on, the way a
+    /// person does, and drag the field there. The letters must read upright in
+    /// the window — the anchor, which marks the text's top, straight above the
+    /// box — and the field must follow the pointer. Then turn back, which must
+    /// give the field its own angle back.
+    async function selfCheckVertical() {
+      const upright = document.querySelector("#upright");
+      const button = (degrees) => document.querySelector('.orient button[data-rotate="' + degrees + '"]');
+      const row = rows[0];
+      if (!upright || !row) return { ok: false, upright: Boolean(upright), row: Boolean(row) };
+      const was = { checked: upright.checked, rotation: row.model.rotation };
+      upright.checked = true;
+      button(90).click();
+      await refresh();
+      const box = boxes.find((item) => item.row === row);
+      const verdict = { rotation: row.model.rotation };
+      verdict.upright = Boolean(box) && box.handle.y < box.screen_centre.y - 4 &&
+        Math.abs(box.handle.x - box.screen_centre.x) < 2;
+      verdict.drag = selfCheckDrag();
+      button(0).click();
+      await refresh();
+      verdict.back = row.model.rotation;
+      upright.checked = was.checked;
+      verdict.ok = verdict.upright && verdict.back === was.rotation &&
+        Boolean(verdict.drag) && verdict.drag.ok === true;
+      return verdict;
+    }
+
+    /// Narrow the roll under a field placed for the wide one, which is what
+    /// picking a smaller printer does, and require the field to stay on the
+    /// label. Then put the roll and the field back.
+    async function selfCheckRoll() {
+      const row = rows[0];
+      const width = document.querySelector("#width");
+      if (!row) return { ok: false };
+      const was = { width: width.value, size: row.model.size, x: row.model.x, y: row.model.y };
+      width.value = String(Math.max(16, Math.floor(Number(was.width) / 4)));
+      width.dispatchEvent(new Event("change", { bubbles: true }));
+      await refresh();
+      const verdict = {
+        width: Number(width.value),
+        size: row.model.size,
+        x: row.model.x,
+        y: row.model.y,
+        clipped: rowClipped(row.model),
+        inputs: row.controls.x.value === String(row.model.x) && row.controls.size.value === String(row.model.size),
+      };
+      verdict.ok = !verdict.clipped && verdict.inputs;
+      width.value = was.width;
+      width.dispatchEvent(new Event("change", { bubbles: true }));
+      Object.assign(row.model, { size: was.size, x: was.x, y: was.y });
+      row.controls.size.value = String(was.size);
+      row.controls.x.value = String(was.x);
+      row.controls.y.value = String(was.y);
+      await refresh();
+      return verdict;
+    }
+
     /// Write the report into the page, where `--dump-dom` can read it. A
     /// `--dump-dom` run is a plain subprocess with no protocol to time out.
-    window.__niimbenchSelfCheck = function selfCheck() {
+    window.__niimbenchSelfCheck = async function selfCheck() {
       // The drag and the resize move the user's field and render it, so only the harness
       // runs it: it loads the page with `#selfcheck`, which survives the token
       // redirect where a query parameter would not.
@@ -3032,6 +3158,9 @@
         // The fonts the server carries, and the ones a row offers.
         const menu = rows[0] && rows[0].controls.font;
         report.fonts = { served: metrics.fonts.length, offered: menu ? menu.options.length : 0 };
+        // Last, because they render: the canvas above is the one the boot drew.
+        report.vertical = harness ? await selfCheckVertical() : null;
+        report.roll = harness ? await selfCheckRoll() : null;
       }
       const view = viewSize();
       report.view = { width: view.width, height: view.height };
@@ -3069,7 +3198,9 @@
         " drag " + (report.drag ? (report.drag.ok ? "ok" : "JUMPED") + " over " + report.drag.moves + " moves" : "not exercised") +
         " resize " + (report.resize ? (report.resize.ok ? "ok" : "BROKEN") + " " + report.resize.sizes.join("->") : "not exercised") +
         " edit " + (report.edit ? (report.edit.ok ? "ok" : "BROKEN") : "not exercised") +
-        " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none"));
+        " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none") +
+        " vertical " + (report.vertical ? (report.vertical.ok ? "ok" : "BROKEN") : "not exercised") +
+        " roll " + (report.roll ? (report.roll.ok ? "ok" : "BROKEN") : "not exercised"));
     });
   </script>
 </body>

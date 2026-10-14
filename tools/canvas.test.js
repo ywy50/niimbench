@@ -128,6 +128,13 @@ function judge(report) {
   // whose handler throws leaves the field as it was.
   check("editing a row's text, size and font changes its field",
     Boolean(report.edit) && report.edit.ok === true, JSON.stringify(report.edit));
+  // Vertical with Keep text upright: the letters read upright in the window,
+  // a drag there follows the pointer, and turning back restores the angle.
+  check("Vertical with Keep text upright reads upright and drags with the pointer",
+    Boolean(report.vertical) && report.vertical.ok === true, JSON.stringify(report.vertical));
+  // A narrower roll, as a smaller printer has, keeps the field on the label.
+  check("a narrower roll keeps the field on the label",
+    Boolean(report.roll) && report.roll.ok === true, JSON.stringify(report.roll));
   // Every font the renderer carries is offered in the row's font menu.
   check("a row offers every font the server carries",
     Boolean(report.fonts) && report.fonts.served > 1 && report.fonts.offered === report.fonts.served,
