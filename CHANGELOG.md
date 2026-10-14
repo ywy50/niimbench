@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-14
+
 ### Added
 
 - A **Smooth** toggle under the preview rounds the enlarged dots into each
@@ -93,5 +95,6 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ywy50/niimbench/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ywy50/niimbench/releases/tag/v0.1.0
