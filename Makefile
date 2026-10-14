@@ -93,7 +93,9 @@ panel-test:
 # Any Chromium-family browser. The check only needs `--headless=new`,
 # `--dump-dom` and `--virtual-time-budget`, which all of them accept, so this is
 # not tied to one vendor or one installed version.
-BROWSER ?= $(shell for name in chromium chromium-browser chrome google-chrome google-chrome-stable microsoft-edge; do \
+# Stable Google Chrome comes first when it is there: a CI runner also carries a
+# Chromium development snapshot, whose --dump-dom never exited.
+BROWSER ?= $(shell for name in google-chrome-stable google-chrome chromium chromium-browser chrome microsoft-edge; do \
 	path=$$(command -v $$name 2>/dev/null); if [ -n "$$path" ]; then echo $$path; exit 0; fi; done; \
 	ls -d $$HOME/.cache/ms-playwright/chromium*/chrome-linux64/chrome 2>/dev/null | head -1)
 
