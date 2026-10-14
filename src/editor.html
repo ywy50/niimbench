@@ -126,7 +126,6 @@
     label { display: grid; gap: 0.28rem; font-size: 0.78rem; color: var(--muted); }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
     .tools { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
-    .tools .spacer { flex: 1 1 auto; }
     .state {
       display: inline-flex; align-items: center; gap: 0.4rem;
       margin: 0.15rem 0 0; font-size: 0.85rem; color: var(--muted);
@@ -293,6 +292,10 @@
     <h1>niimbench</h1>
     <p id="status" aria-live="polite">idle</p>
     <button type="button" id="reset-panels" title="put every panel back where the page first had it">Reset panels</button>
+    <!-- Print sends the whole label, so it sits on the bar that stays in view
+         however the panels are arranged. `form` lets it submit the form it is
+         not inside. -->
+    <button type="submit" form="label" id="print" class="primary" title="print the label (Ctrl+Enter in a text field)">Print</button>
   </header>
   <form id="label">
   <div class="workspace">
@@ -379,8 +382,6 @@
       <button type="button" id="undo" title="undo (Ctrl+Z)">Undo</button>
       <button type="button" id="redo" title="redo (Ctrl+Shift+Z)">Redo</button>
       <label class="toggle"><input type="checkbox" id="grid"> Grid</label>
-      <span class="spacer"></span>
-      <button type="submit" class="primary">Print</button>
     </div>
     <div class="tools">
       <button type="button" id="save">Save layout</button>
@@ -2820,7 +2821,7 @@
 
     document.querySelector("#label").addEventListener("submit", async (event) => {
       event.preventDefault();
-      const button = document.querySelector('#label button[type="submit"]');
+      const button = document.querySelector("#print");
       // A job takes as long as the printer does. While it runs the button is
       // disabled, so a second click or a second Ctrl+Enter cannot send the same
       // label twice. `finally` puts it back even when the answer is not JSON,
