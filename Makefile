@@ -90,6 +90,8 @@ panel-test:
 # maths; this asserts the pixels a person sees, which is where a box off the
 # canvas or beside its text actually shows up. Skipped, loudly, when Chrome is
 # not installed: a silently skipped check is worse than none.
+# The skip and the run are one shell line: each recipe line is a shell of its
+# own, so an `exit 0` on a line of its own skipped nothing.
 # Any Chromium-family browser. The check only needs `--headless=new`,
 # `--dump-dom` and `--virtual-time-budget`, which all of them accept, so this is
 # not tied to one vendor or one installed version.
@@ -105,13 +107,13 @@ BROWSER ?= $(shell for name in google-chrome-stable google-chrome chromium chrom
 # the message says where to add it.
 trace-test: build
 	@command -v node >/dev/null 2>&1 || { echo "node is needed for make trace-test"; exit 1; }
-	@if [ -z "$(BROWSER)" ]; then echo "trace-test: no Chromium-family browser found, skipping (set BROWSER= to run it)"; exit 0; fi
-	@tools/trace-test.sh "$(BROWSER)"
+	@if [ -z "$(BROWSER)" ]; then echo "trace-test: no Chromium-family browser found, skipping (set BROWSER= to run it)"; \
+	else tools/trace-test.sh "$(BROWSER)"; fi
 
 canvas-test: build
 	@command -v node >/dev/null 2>&1 || { echo "node is needed for make canvas-test"; exit 1; }
-	@if [ -z "$(BROWSER)" ]; then echo "canvas-test: no Chromium-family browser found, skipping (set BROWSER= to run it)"; exit 0; fi
-	@tools/canvas-test.sh "$(BROWSER)"
+	@if [ -z "$(BROWSER)" ]; then echo "canvas-test: no Chromium-family browser found, skipping (set BROWSER= to run it)"; \
+	else tools/canvas-test.sh "$(BROWSER)"; fi
 
 # A server started by hand with `&` outlives whoever started it. These are the
 # two ways a check or an agent gets one instead: tools/with-server.sh starts a
@@ -125,8 +127,8 @@ stray-test: build
 # also what keeps the driver itself working.
 drive: build
 	@command -v node >/dev/null 2>&1 || { echo "node is needed for make drive"; exit 1; }
-	@if [ -z "$(BROWSER)" ]; then echo "drive: no Chromium-family browser found, skipping (set BROWSER= to run it)"; exit 0; fi
-	@BROWSER="$(BROWSER)" SIZE="$(SIZE)" DRIVE_OUT="$(DRIVE_OUT)" tools/with-server.sh node tools/drive.js $(STEPS)
+	@if [ -z "$(BROWSER)" ]; then echo "drive: no Chromium-family browser found, skipping (set BROWSER= to run it)"; \
+	else BROWSER="$(BROWSER)" SIZE="$(SIZE)" DRIVE_OUT="$(DRIVE_OUT)" tools/with-server.sh node tools/drive.js $(STEPS); fi
 
 print:
 	@test -n "$(IMAGE)" || { echo "set IMAGE= to a binary P5 file"; exit 1; }
