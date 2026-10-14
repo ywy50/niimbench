@@ -207,11 +207,28 @@ const Codepoints = struct {
     }
 };
 
+/// A turn about a point in grid dots, clockwise with y down: what a field's
+/// rotation does to its block. The default turns nothing, exactly.
+pub const Turn = struct {
+    cx: f32 = 0,
+    cy: f32 = 0,
+    cos: f32 = 1,
+    sin: f32 = 0,
+
+    fn apply(self: Turn, p: [2]f32) [2]f32 {
+        const dx = p[0] - self.cx;
+        const dy = p[1] - self.cy;
+        return .{ self.cx + dx * self.cos - dy * self.sin, self.cy + dx * self.sin + dy * self.cos };
+    }
+};
+
 /// One line in `face` drawn into `grid` (one byte per dot, `stride` wide), with
-/// the line's top-left at (`left`, `top`) in grid dots. Inked dots are set to 1;
-/// `fill` says which dots those are.
-pub fn drawLine(gpa: std.mem.Allocator, face: *const Face, grid: []u8, stride: usize, left: f32, top: f32, size: usize, text: []const u8) !void {
-    var edges: Edges = .{ .gpa = gpa, .face = face };
+/// the line's top-left at (`left`, `top`) in grid dots before `turn`. Inked
+/// dots are set to 1; `fill` says which dots those are. The outline is turned
+/// before it is filled, so a turned stroke is put on the dots once, and the
+/// dropout rule keeps it unbroken at any angle.
+pub fn drawLine(gpa: std.mem.Allocator, face: *const Face, grid: []u8, stride: usize, left: f32, top: f32, size: usize, text: []const u8, turn: Turn) !void {
+    var edges: Edges = .{ .gpa = gpa, .face = face, .turn = turn };
     defer edges.deinit();
     const k = @as(f32, @floatFromInt(size)) / @as(f32, @floatFromInt(face.lineUnits()));
     const baseline = top + @as(f32, @floatFromInt(face.ascent)) * k;
@@ -354,6 +371,7 @@ const Edges = struct {
     areas: std.ArrayList(f32) = .empty,
     origin: [2]f32 = .{ 0, 0 },
     k: f32 = 1,
+    turn: Turn = .{},
 
     fn deinit(self: *Edges) void {
         self.list.deinit(self.gpa);
@@ -362,7 +380,7 @@ const Edges = struct {
 
     /// Font units to grid dots: y grows down on the label and up in the font.
     fn dot(self: *const Edges, p: [2]f32) [2]f32 {
-        return .{ self.origin[0] + p[0] * self.k, self.origin[1] - p[1] * self.k };
+        return self.turn.apply(.{ self.origin[0] + p[0] * self.k, self.origin[1] - p[1] * self.k });
     }
 
     fn line(self: *Edges, a: [2]f32, b: [2]f32) !void {
@@ -733,7 +751,7 @@ test "a drawn line has ink inside its measured box" {
         const grid = try gpa.alloc(u8, w * h);
         defer gpa.free(grid);
         @memset(grid, 0);
-        try drawLine(gpa, face, grid, w, 4, 4, size, text);
+        try drawLine(gpa, face, grid, w, 4, 4, size, text, .{});
         var ink: usize = 0;
         var first_row: usize = h;
         var last_row: usize = 0;
@@ -766,8 +784,8 @@ test "an accented letter draws its accent" {
         defer gpa.free(accented);
         @memset(plain, 0);
         @memset(accented, 0);
-        try drawLine(gpa, &font.face, plain, w, 2, 2, size, "e");
-        try drawLine(gpa, &font.face, accented, w, 2, 2, size, "\u{e9}");
+        try drawLine(gpa, &font.face, plain, w, 2, 2, size, "e", .{});
+        try drawLine(gpa, &font.face, accented, w, 2, 2, size, "\u{e9}", .{});
         var plain_ink: usize = 0;
         var accented_ink: usize = 0;
         for (plain, accented) |a, b| {
@@ -781,9 +799,9 @@ test "an accented letter draws its accent" {
 /// Ink pieces (8-connected) and enclosed white holes (4-connected white that
 /// does not reach the edge) of a `w` × `h` grid. A broken stroke is an extra
 /// piece; a white speck inside a letter is an extra hole.
-const Topology = struct { pieces: usize, holes: usize };
+pub const Topology = struct { pieces: usize, holes: usize };
 
-fn topology(gpa: std.mem.Allocator, grid: []const u8, w: usize, h: usize) !Topology {
+pub fn topology(gpa: std.mem.Allocator, grid: []const u8, w: usize, h: usize) !Topology {
     const seen = try gpa.alloc(u8, w * h);
     defer gpa.free(seen);
     @memset(seen, 0);
@@ -844,7 +862,7 @@ fn glyphTopology(gpa: std.mem.Allocator, face: *const Face, text: []const u8, si
     defer gpa.free(grid);
     @memset(grid, 0);
     const at = @as(f32, @floatFromInt(margin)) + phase;
-    try drawLine(gpa, face, grid, w, at, at, size, text);
+    try drawLine(gpa, face, grid, w, at, at, size, text, .{});
     return topology(gpa, grid, w, h);
 }
 

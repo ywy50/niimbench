@@ -24,7 +24,7 @@ A character the font does not map â€” including every code point above U+FFFF â€
 
 `x` is the left edge, centre or right edge of the block, as `align_mode` says, and each line is placed by its own width from that anchor. `y` is the top of the first line. A centred or right-aligned block can start left of the label, and is clipped there like at any other edge. It is never pushed back on: the editor draws its box where the block is, and a field turned a quarter turn on a narrow roll, whose upright line can be far longer than the roll is wide, would otherwise have its ink jump along the roll and out of the box as it grew. The renderer places the block itself, and `alignedX` gives the editor the same left edge.
 
-`rotation` turns the block clockwise about its own centre. The block is drawn upright first and then put on the label by sampling each destination dot through the inverse turn, so a turned letter is as solid as an upright one.
+`rotation` turns the block clockwise about its own centre. Each letter's outline is turned about that centre before it is filled, straight onto the label, so a turned stroke is put on the dots once and the dropout rule keeps it unbroken at any angle. Drawing the block upright and then turning its dots put every stroke on the dots twice, and a thin stroke at an angle came out stepped and broken.
 
 ### Filling outlines
 

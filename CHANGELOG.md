@@ -27,6 +27,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
   were drawn into the label's own dots and enlarged with them, so a one-dot
   line was several screen pixels of blur; they are now a layer of their own at
   the screen's resolution, one size on screen at any zoom.
+- Turned text prints with solid strokes. A field at an angle was drawn upright
+  and its dots then turned, which put every stroke on the dots twice and left
+  thin ones stepped and broken; each letter's outline is now turned before it
+  is filled.
 
 ## [0.1.0] - 2026-10-14
 
