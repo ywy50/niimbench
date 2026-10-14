@@ -262,7 +262,6 @@
     .field button { white-space: nowrap; }
     .field textarea, .field input, .field select { min-width: 0; font: inherit; font-size: 0.84rem; }
     .field textarea { min-height: 2rem; padding: 0.28rem 0.4rem; resize: vertical; }
-    .field .align { text-transform: capitalize; }
     .field .actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
     .field .actions button { padding: 0.22rem 0.45rem; font-size: 0.72rem; }
     .field .note { grid-column: 1 / -1; font-size: 0.74rem; color: var(--accent); overflow-wrap: anywhere; }
@@ -285,16 +284,33 @@
     }
     canvas.dragging { cursor: grabbing; }
     canvas.placing { cursor: grab; }
-    /* Smooth: the browser blends the enlarged dots instead of drawing each as
-       a square, which is closer to how they look on paper, where a dot is an
-       eighth of a millimetre and bleeds into its neighbours. */
-    #preview.smooth { image-rendering: auto; }
+    /* Under the preview: what a drag does, then the preview's own toggles, on
+       one line that wraps as a whole; the view's numbers on a line of their
+       own below, small, so they never run into a toggle's label. */
+    .stage-bar {
+      align-self: stretch; display: flex; flex-wrap: wrap; align-items: center; justify-content: center;
+      gap: 0.3rem 1.25rem; padding-top: 0.55rem;
+    }
+    .stage-bar .toggles { display: inline-flex; flex-wrap: wrap; gap: 0.3rem 1rem; }
+    .stage-bar .check { margin-left: 0; }
+    .view-note { flex: 1 1 100%; text-align: center; font-size: 0.7rem; color: var(--muted); opacity: 0.8; font-variant-numeric: tabular-nums; }
+    /* Smooth: each enlarged dot is blurred into its neighbours by about a
+       third of a dot, and the result pushed back to black and white. That
+       rounds the dots' corners and joins their steps the way ink does on
+       paper, where a dot is an eighth of a millimetre and bleeds, without the
+       grey haze the browser's own smoothing gave at five times. `--dot` is a
+       dot's size on screen, which `fitCanvas` sets. The frame moves to the
+       overlay, where the blur cannot smear it. */
+    .canvas-box.smooth #preview { filter: blur(calc(var(--dot, 4px) * 0.35)) contrast(8); border-color: transparent; }
+    .canvas-box.smooth #overlay { box-shadow: 0 0 0 1px var(--line-strong); }
     /* The boxes, handles and guides are a layer of their own over the label,
        at the screen's resolution, so they stay sharp however far the label's
        dots are enlarged. It shares the label's cell and lets every press
        through to it. */
     .canvas-box > canvas { grid-area: 1 / 1; }
-    #overlay { pointer-events: none; background: none; border: 0; border-radius: 0; image-rendering: auto; }
+    /* Above the label even when Smooth gives the label a filter, which paints
+       it as a layer of its own, over anything not positioned. */
+    #overlay { position: relative; z-index: 1; pointer-events: none; background: none; border: 0; border-radius: 0; image-rendering: auto; }
 
     details {
       padding: 0.65rem 0.8rem;
@@ -338,11 +354,14 @@
     <h2 class="panel-head">Preview</h2>
     <div class="panel-body stage">
       <div class="canvas-box"><canvas id="preview" width="384" height="240"></canvas><canvas id="overlay" aria-hidden="true"></canvas></div>
-      <p class="hint">Drag a box to move it. Drag the round handle to rotate it.
-        <label class="check"><input id="snap" type="checkbox"> Snap 15°</label>
-        <label class="check" title="blend the enlarged dots, roughly how they look on paper; the dots, and what prints, are the same"><input id="smooth" type="checkbox"> Smooth</label>
-              <span id="view-note" class="view-note" aria-live="polite"></span>
-      </p>
+      <div class="stage-bar">
+        <p class="hint">Drag a box to move it. Drag the round handle to rotate it.</p>
+        <span class="toggles">
+          <label class="check"><input id="snap" type="checkbox"> Snap 15°</label>
+          <label class="check" title="round the enlarged dots into each other, roughly how they look on paper; the dots, and what prints, are the same"><input id="smooth" type="checkbox"> Smooth</label>
+        </span>
+        <span id="view-note" class="view-note" aria-live="polite"></span>
+      </div>
     </div>
     <span class="panel-grip" aria-hidden="true"></span>
   </section>
@@ -424,7 +443,7 @@
   <section class="panel" data-panel="image">
     <h2 class="panel-head">Image</h2>
     <div class="panel-body">
-    <label>Image <input id="file" type="file" accept="image/*"></label>
+    <label>Add images <input id="file" type="file" accept="image/*" multiple></label>
     <label>Image threshold
     <input id="image-threshold" type="range" min="0" max="255" value="160">
     </label>
@@ -442,7 +461,7 @@
           <label>Left <input id="image-x" type="number" value="0"></label>
           <label>Top <input id="image-y" type="number" value="0"></label>
         </div>
-    <span class="hint">Drag the picture to move it, a square handle to scale, and the round handle to turn it.</span>
+    <span class="hint">Drag a picture to move it, a square handle to scale, and the round handle to turn it. The controls above act on the picture last clicked or added.</span>
     </div>
     <span class="panel-grip" aria-hidden="true"></span>
   </section>
@@ -490,7 +509,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "align", "density", "fit", "rotate", "image", "select", "printer"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "density", "fit", "rotate", "image", "select", "printer"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -547,17 +566,18 @@
     /// The last box layout written to the trace, so a drag or a refresh does not
     /// repeat a line that has not changed.
     let lastShape = "";
-    // The uploaded picture and where it sits on the roll. The transform is
-    // stored in label pixels, not canvas pixels, so it survives a zoom or an
-    // orientation change, and the same numbers draw the preview and the bytes.
-    let backgroundImage = null;
-    let imageTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
-    // True once the user has moved, scaled or turned the picture. Until then a
-    // fitting is redone whenever the view changes shape, so a picture imported
-    // into the vertical view is not left hanging off the label.
-    let imageTouched = false;
+    // The pictures on the label, bottom to top, each `{ image, transform,
+    // touched }`. A transform is where the picture sits on the roll, in label
+    // pixels, not canvas pixels, so it survives a zoom or an orientation
+    // change, and the same numbers draw the preview and the bytes. `touched`
+    // turns true once the user has moved, scaled or turned that picture; until
+    // then a fitting is redone whenever the view changes shape.
+    const pictures = [];
+    // The picture the Image panel's controls act on: the one last picked or
+    // added, or null.
+    let picture = null;
     /// What the last press on the canvas picked: `{ kind: "field", row }` or
-    /// `{ kind: "image" }`, or null. It is drawn highlighted, and Delete
+    /// `{ kind: "image", picture }`, or null. It is drawn highlighted, and Delete
     /// removes it.
     let selected = null;
     let drag = null;
@@ -950,20 +970,6 @@
 
     const alignModes = ["left", "center", "right"];
 
-    function alignOptions(selected) {
-      const select = document.createElement("select");
-      select.className = "align";
-      select.title = "alignment: x is the left edge, the centre, or the right edge";
-      for (const mode of alignModes) {
-        const option = document.createElement("option");
-        option.value = mode;
-        option.textContent = mode;
-        select.append(option);
-      }
-      select.value = alignModes.includes(selected) ? selected : "center";
-      return select;
-    }
-
     /// The fonts this build carries, as a select, named the way the server
     /// names them. A row's letters are drawn in the one picked here.
     function fontOptions(selected) {
@@ -1022,12 +1028,11 @@
 
       const font = fontOptions(field.font);
       const size = sizeInput(field.size);
-      const align = alignOptions(field.align_mode);
 
       const copy = document.createElement("button");
       copy.type = "button";
       copy.textContent = "Copy";
-      copy.title = "add another field with this text, size, and alignment";
+      copy.title = "add another field like this one, directly below";
 
       const wrap = document.createElement("button");
       wrap.type = "button";
@@ -1039,13 +1044,18 @@
       fit.textContent = "Fit";
       fit.title = "centre on the label at the largest size that fits";
 
+      const centre = document.createElement("button");
+      centre.type = "button";
+      centre.textContent = "Center";
+      centre.title = "back to the middle of the label, upright, at the same size";
+
       const remove = document.createElement("button");
       remove.type = "button";
       remove.textContent = "Remove";
 
       const actions = document.createElement("span");
       actions.className = "actions";
-      actions.append(wrap, fit, copy, remove);
+      actions.append(wrap, fit, centre, copy, remove);
 
       // One extra line under the controls, where `markRows` puts the clip
       // warning.
@@ -1068,7 +1078,7 @@
       rotation.step = "1";
       rotation.value = String(normalizeDegrees(field.rotation));
 
-      row.append(text, font, size, align, x, y, rotation, actions, note);
+      row.append(text, font, size, x, y, rotation, actions, note);
       list.append(row);
 
       const sync = () => {
@@ -1077,17 +1087,6 @@
         field.font = font.value;
         field.size = sizeOf({ size: size.value });
         size.value = String(field.size);
-        if (align.value !== field.align_mode) {
-          // Alignment chooses which edge `x` holds, not where the text is:
-          // the block keeps its left edge and `x` moves to the new anchor.
-          // That is the server's rule run backwards, so a left edge left of
-          // the label gives a negative `x`, which the renderer takes.
-          const left = placedLeft(field);
-          field.align_mode = align.value;
-          const w = Math.max(blockWidth(previewText(field), sizeOf(field), field.font), 1);
-          x.value = String(left + Math.floor(shiftFor(field, w)));
-        }
-        field.align_mode = align.value;
         field.x = Math.round(Number(x.value) || 0);
         field.y = Math.max(0, Number(y.value) || 0);
         field.rotation = normalizeDegrees(rotation.value);
@@ -1107,7 +1106,7 @@
         // reaching the form and submitting it.
         event.stopPropagation();
       });
-      for (const control of [font, size, align, x, y, rotation]) control.addEventListener("change", sync);
+      for (const control of [font, size, x, y, rotation]) control.addEventListener("change", sync);
       for (const control of [x, y]) {
         control.addEventListener("keydown", (event) => {
           nudge(event, field, x, y);
@@ -1128,10 +1127,12 @@
         sync();
       });
       fit.addEventListener("click", () => fitToLabel(field, { size, x, y }));
+      centre.addEventListener("click", () => centreOnLabel(field, { x, y, rotation }));
       copy.addEventListener("click", () => {
         record();
         const made = addRow({
           text: field.text,
+          font: field.font,
           size: field.size,
           align_mode: field.align_mode,
           x: field.x,
@@ -1144,12 +1145,12 @@
       });
       remove.addEventListener("click", () => {
         record();
-        removeRow({ model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } });
+        removeRow({ model: field, row, controls: { text, font, size, x, y, rotation, note, remove } });
         refresh();
       });
       // What the rest of the page needs to read back or rewrite this row.
       note.textContent = "";
-      return { model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } };
+      return { model: field, row, controls: { text, font, size, x, y, rotation, note, remove } };
     }
 
     /// Centre a field on the label at the largest size whose box, turned as
@@ -1184,6 +1185,24 @@
       }
       // Not even a one-dot line fits inside the margin; leave the field alone
       // rather than shrink it to nothing.
+    }
+
+    /// Put a field back where new text starts: upright in the view, and its
+    /// block centred on the label, at the size it has. The block turns about
+    /// its own centre, so centring it upright centres it at any angle.
+    function centreOnLabel(field, controls) {
+      record();
+      const roll = rollSize();
+      const text = previewText(field);
+      const w = Math.max(blockWidth(text, sizeOf(field), field.font), 1);
+      const h = blockHeight(text, sizeOf(field));
+      field.rotation = pageTurn();
+      field.x = Math.round(roll.width / 2 - w / 2) + Math.floor(shiftFor(field, w));
+      field.y = Math.max(0, Math.round(roll.height / 2 - h / 2));
+      controls.x.value = String(field.x);
+      controls.y.value = String(field.y);
+      controls.rotation.value = String(field.rotation);
+      refresh();
     }
 
     /// Where a new line starts so the text sits in the middle of what the view
@@ -1383,33 +1402,47 @@
 
     /// How big the picture is drawn, in roll pixels. `scale` is the one
     /// multiplier, applied to the picture's own pixels, and it is always read
-    /// from `backgroundImage` — never from a smaller copy of it — so scaling
+    /// from the picture's own image — never from a smaller copy of it — so scaling
     /// back up re-samples the original instead of magnifying a reduced one.
-    function imageSize() {
-      const width = backgroundImage.naturalWidth || backgroundImage.width;
-      const height = backgroundImage.naturalHeight || backgroundImage.height;
+    function imageSize(p = picture) {
+      const width = p.image.naturalWidth || p.image.width;
+      const height = p.image.naturalHeight || p.image.height;
       return {
-        width: Math.max(1, Math.round(width * imageTransform.scale)),
-        height: Math.max(1, Math.round(height * imageTransform.scale)),
+        width: Math.max(1, Math.round(width * p.transform.scale)),
+        height: Math.max(1, Math.round(height * p.transform.scale)),
       };
     }
 
     /// The picture's box on the roll, centred on its transform.
-    function imageBox() {
-      if (!backgroundImage) return null;
-      const size = imageSize();
+    function imageBox(p = picture) {
+      if (!p) return null;
+      const size = imageSize(p);
       return {
-        x: imageTransform.x,
-        y: imageTransform.y,
+        x: p.transform.x,
+        y: p.transform.y,
         width: size.width,
         height: size.height,
-        rotation: (imageTransform.rotation * Math.PI) / 180,
-        scale: imageTransform.scale,
+        rotation: (p.transform.rotation * Math.PI) / 180,
+        scale: p.transform.scale,
       };
     }
 
+    /// The topmost picture a roll-space point is on, or near a handle of, and
+    /// which part: a handle's name or "move".
+    function pictureAt(point) {
+      for (let i = pictures.length - 1; i >= 0; i--) {
+        const where = imageHit(point, imageBox(pictures[i]));
+        if (where) return { picture: pictures[i], where };
+      }
+      return null;
+    }
+
     /// The grip and corner handles on the roll. Small pictures get a floor on
-    /// the drawn size so the handles stay apart enough to aim at.
+    /// the drawn size so the handles stay apart enough to aim at. The round
+    /// grip sits off the picture's top edge, but never off the label: a
+    /// picture fitted to the label fills it, and a grip beyond the edge was
+    /// drawn where nothing shows and nobody can press. Turning takes the
+    /// angle from the picture's centre, so a grip moved in turns the same way.
     function imageHandles(box) {
       const half = { x: Math.max(box.width, 24) / 2, y: Math.max(box.height, 24) / 2 };
       const c = Math.cos(box.rotation);
@@ -1417,7 +1450,14 @@
       const at = (lx, ly) => ({ x: box.x + (lx * c - ly * sn), y: box.y + (lx * sn + ly * c) });
       const out = [["nw", -half.x, -half.y], ["ne", half.x, -half.y], ["se", half.x, half.y], ["sw", -half.x, half.y]]
         .map(([name, lx, ly]) => ({ name, ...at(lx, ly) }));
-      out.push({ name: "rotate", ...at(0, -half.y - 16) });
+      const roll = rollSize();
+      const grip = at(0, -half.y - 16);
+      const inset = 6;
+      out.push({
+        name: "rotate",
+        x: Math.min(Math.max(grip.x, inset), roll.width - inset),
+        y: Math.min(Math.max(grip.y, inset), roll.height - inset),
+      });
       return out;
     }
 
@@ -1445,46 +1485,54 @@
     /// Keep the numbers and the picture in step with the controls.
     function syncImageControls() {
       const set = (id, value) => { const el = document.querySelector("#" + id); if (el) el.value = String(value); };
-      set("image-scale", Math.round(imageTransform.scale * 100));
-      set("image-rotation", Math.round(imageTransform.rotation));
-      set("image-x", Math.round(imageTransform.x));
-      set("image-y", Math.round(imageTransform.y));
+      const t = picture ? picture.transform : { x: 0, y: 0, scale: 1, rotation: 0 };
+      set("image-scale", Math.round(t.scale * 100));
+      set("image-rotation", Math.round(t.rotation));
+      set("image-x", Math.round(t.x));
+      set("image-y", Math.round(t.y));
       const shown = document.querySelector("#image-readout");
       if (shown) {
-        shown.textContent = backgroundImage
-          ? Math.round(imageTransform.scale * 100) + "% · " + Math.round(imageTransform.rotation) + "°"
+        const which = pictures.length > 1 ? (pictures.indexOf(picture) + 1) + " of " + pictures.length + " · " : "";
+        shown.textContent = picture
+          ? which + Math.round(t.scale * 100) + "% · " + Math.round(t.rotation) + "°"
           : "no image";
       }
     }
 
-    /// Re-place a picture the user has not touched, so it stays on the label
-    /// when the view changes shape.
+    /// Re-place every picture the user has not touched, so each stays on the
+    /// label, and upright, when the view changes shape.
     function refitIfUntouched(mode) {
-      if (!backgroundImage || imageTouched) return;
-      placeImage(mode || "fit");
+      for (const p of pictures) {
+        if (!p.touched) placeImage(mode || "fit", p);
+      }
     }
 
-    /// Drop the picture in centred at a size that fits, or fills.
-    function placeImage(mode) {
-      if (!backgroundImage) return;
-      // Fit to the view, which is the shape on screen. Fitting to the roll
-      // leaves the picture off the label as soon as the view is turned.
+    /// Drop a picture in centred on the label and upright in the view, at a
+    /// size that fits the view's shape, or fills it. The transform is on the
+    /// roll, so the centre is the roll's; the view decides only which way is
+    /// up, which is why the angle is the view's turn, and which side is long.
+    /// Taking the centre from the view as well put a picture imported into
+    /// Vertical beyond the roll's narrow side, off the label, until a switch
+    /// to Horizontal re-placed it.
+    function placeImage(mode, p = picture) {
+      if (!p) return;
+      const roll = rollSize();
       const view = viewSize();
-      const source = { width: backgroundImage.naturalWidth || backgroundImage.width, height: backgroundImage.naturalHeight || backgroundImage.height };
+      const source = { width: p.image.naturalWidth || p.image.width, height: p.image.naturalHeight || p.image.height };
       const place = imagePlacement(source, { width: view.width, height: view.height }, mode);
       // The placement is a size; the transform stores the multiplier that
       // produces it, so the two never disagree.
-      imageTransform = {
-        x: place.x + place.width / 2,
-        y: place.y + place.height / 2,
+      p.transform = {
+        x: roll.width / 2,
+        y: roll.height / 2,
         scale: place.width / source.width,
-        rotation: 0,
+        rotation: pageTurn(),
       };
       syncImageControls();
     }
 
     function backgroundPixels() {
-      if (!backgroundImage) return null;
+      if (!pictures.length) return null;
       const roll = rollSize();
       const width = Math.max(1, roll.width);
       const height = Math.max(1, roll.height);
@@ -1498,12 +1546,14 @@
       ctx.fillStyle = "white";
       ctx.fillRect(0, 0, width, height);
       // The same transform the preview draws, so what is sent is what is seen.
-      const box = imageBox();
-      ctx.save();
-      ctx.translate(box.x, box.y);
-      ctx.rotate(box.rotation);
-      ctx.drawImage(backgroundImage, -box.width / 2, -box.height / 2, box.width, box.height);
-      ctx.restore();
+      for (const p of pictures) {
+        const box = imageBox(p);
+        ctx.save();
+        ctx.translate(box.x, box.y);
+        ctx.rotate(box.rotation);
+        ctx.drawImage(p.image, -box.width / 2, -box.height / 2, box.width, box.height);
+        ctx.restore();
+      }
       const data = ctx.getImageData(0, 0, width, height).data;
       const threshold = Number(document.querySelector("#image-threshold").value);
       // One bit per pixel, MSB first, in the byte order `raster.packRow` uses.
@@ -1598,21 +1648,26 @@
     function viewImageBox(box) {
       if (!box) return null;
       if (pageTurn() !== 90) return box;
+      // Vertical shows the roll a quarter turn counter-clockwise, so every
+      // angle on screen is a quarter less than on the roll. Adding the quarter
+      // drew the outline a half turn out: a rectangle looks the same, but the
+      // round handle sat on the side opposite the one the press is tested on.
       const centre = toView(box.x, box.y);
-      return { ...box, x: centre.x, y: centre.y, rotation: box.rotation + Math.PI / 2 };
+      return { ...box, x: centre.x, y: centre.y, rotation: box.rotation - Math.PI / 2 };
     }
 
     /// Outline and handles, so it is clear what is being scaled. Drawn on the
     /// overlay; the bytes sent carry no guide.
     function drawImageOutline(px) {
-      const box = viewImageBox(imageBox());
-      if (!box || !backgroundImage) return;
-      const half = { x: Math.max(box.width, 24) / 2, y: Math.max(box.height, 24) / 2 };
-      const c = Math.cos(box.rotation);
-      const sn = Math.sin(box.rotation);
-      const at = (lx, ly) => ({ x: box.x + (lx * c - ly * sn), y: box.y + (lx * sn + ly * c) });
-      const corners = [at(-half.x, -half.y), at(half.x, -half.y), at(half.x, half.y), at(-half.x, half.y)];
-      const picked = Boolean(selected && selected.kind === "image");
+      // The handles are the roll-space points the press is tested against,
+      // turned for the view, so what is drawn is what a press finds.
+      for (const p of pictures) {
+        const handles = imageHandles(imageBox(p)).map((h) => (orientation === 90 ? toView(h.x, h.y) : h));
+        drawPictureOutline(px, handles.slice(0, 4), handles[4], Boolean(selected && selected.picture === p));
+      }
+    }
+
+    function drawPictureOutline(px, corners, grip, picked) {
       overlayCtx.save();
       overlayCtx.setLineDash(picked ? [] : [4 * px, 4 * px]);
       overlayCtx.strokeStyle = "#7a3fd0";
@@ -1625,13 +1680,11 @@
       overlayCtx.setLineDash([]);
       overlayCtx.lineWidth = 1.5 * px;
       overlayCtx.fillStyle = "#ffffff";
-      for (const [lx, ly] of [[-half.x, -half.y], [half.x, -half.y], [half.x, half.y], [-half.x, half.y]]) {
-        const point = at(lx, ly);
+      for (const point of corners) {
         overlayCtx.fillRect(point.x - 4 * px, point.y - 4 * px, 8 * px, 8 * px);
         overlayCtx.strokeRect(point.x - 4 * px, point.y - 4 * px, 8 * px, 8 * px);
       }
       overlayCtx.fillStyle = "#7a3fd0";
-      const grip = at(0, -half.y - 16);
       overlayCtx.beginPath();
       overlayCtx.arc(grip.x, grip.y, 5.5 * px, 0, Math.PI * 2);
       overlayCtx.fill();
@@ -1678,6 +1731,10 @@
     /// outline on the canvas.
     function select(next) {
       selected = next;
+      if (next && next.kind === "image") {
+        picture = next.picture;
+        syncImageControls();
+      }
       for (const row of rows) row.row.classList.toggle("selected", Boolean(next && next.row === row));
       drawBoxes();
     }
@@ -1687,8 +1744,8 @@
     function deleteSelected() {
       if (!selected) return false;
       if (selected.kind === "image") {
-        if (!backgroundImage) return false;
-        removeImage();
+        if (!pictures.includes(selected.picture)) return false;
+        removeImage(selected.picture);
       } else {
         if (!rows.includes(selected.row)) return false;
         record();
@@ -1834,6 +1891,7 @@
       const scale = displayScale(Math.min(maxW / canvas.width, maxH / canvas.height));
       canvas.style.width = Math.max(1, Math.round(canvas.width * scale)) + "px";
       canvas.style.height = Math.max(1, Math.round(canvas.height * scale)) + "px";
+      canvas.style.setProperty("--dot", scale + "px");
       drawOverlay();
     }
 
@@ -2254,7 +2312,7 @@
       const picked = resizing ? resizing.box : (hitHandle(point) || hit(point));
       select(picked
         ? { kind: "field", row: picked.row }
-        : (backgroundImage && imageHit(pressOnRoll(event), imageBox()) ? { kind: "image" } : null));
+        : (pictureAt(pressOnRoll(event)) ? { kind: "image", picture: pictureAt(pressOnRoll(event)).picture } : null));
       if (resizing) {
         startResize(event, resizing.box, resizing.corner);
         return;
@@ -2262,25 +2320,24 @@
       const spinning = hitHandle(point);
       const box = spinning || hit(point);
       if (!box) {
-        // No field box here, so the picture is what is being handled. Its
-        // transform is in roll space, so the press is converted to it.
-        if (backgroundImage) {
-          const onRoll = pressOnRoll(event);
-          const where = imageHit(onRoll, imageBox());
-          if (where) {
-            imageTouched = true;
-            drag = {
-              mode: where === "move" ? "image-move" : where === "rotate" ? "image-rotate" : "image-scale",
-              start: { ...imageTransform },
-              grab: onRoll,
-            };
-            try {
-              canvas.setPointerCapture(event.pointerId);
-            } catch (error) { /* no active pointer */ }
-            canvas.classList.add("dragging");
-            event.preventDefault();
-            return;
-          }
+        // No field box here, so a picture is what is being handled: the
+        // topmost one under the press. Its transform is in roll space, so the
+        // press is converted to it.
+        const onRoll = pressOnRoll(event);
+        const under = pictureAt(onRoll);
+        if (under) {
+          picture = under.picture;
+          picture.touched = true;
+          drag = {
+            mode: under.where === "move" ? "image-move" : under.where === "rotate" ? "image-rotate" : "image-scale",
+            start: { ...picture.transform },
+            grab: onRoll,
+          };
+          try {
+            canvas.setPointerCapture(event.pointerId);
+          } catch (error) { /* no active pointer */ }
+          canvas.classList.add("dragging");
+          event.preventDefault();
         }
         return;
       }
@@ -2330,8 +2387,8 @@
       const point = screenPoint(labelPoint(event));
       if (drag.mode === "image-move") {
         const onRoll = pressOnRoll(event);
-        imageTransform = {
-          ...imageTransform,
+        picture.transform = {
+          ...picture.transform,
           x: Math.round(drag.start.x + (onRoll.x - drag.grab.x)),
           y: Math.round(drag.start.y + (onRoll.y - drag.grab.y)),
         };
@@ -2658,9 +2715,9 @@
     // here and nowhere else: it is not part of the label.
     const smooth = document.querySelector("#smooth");
     try { smooth.checked = localStorage.getItem("niimbench.smooth") === "1"; } catch (error) { /* no storage */ }
-    canvas.classList.toggle("smooth", smooth.checked);
+    canvas.parentElement.classList.toggle("smooth", smooth.checked);
     smooth.addEventListener("change", () => {
-      canvas.classList.toggle("smooth", smooth.checked);
+      canvas.parentElement.classList.toggle("smooth", smooth.checked);
       try { localStorage.setItem("niimbench.smooth", smooth.checked ? "1" : "0"); } catch (error) { /* no storage */ }
     });
 
@@ -2813,8 +2870,9 @@
 
     // One place that turns a control or a drag into the stored transform.
     function setImage(patch) {
-      imageTouched = true;
-      imageTransform = { ...imageTransform, ...patch };
+      if (!picture) return;
+      picture.touched = true;
+      picture.transform = { ...picture.transform, ...patch };
       syncImageControls();
       scheduleRefresh();
     }
@@ -2837,7 +2895,7 @@
     // upright — and lets it follow the view again. Removing it is its own
     // button, and Delete.
     document.querySelector("#image-reset").addEventListener("click", () => {
-      imageTouched = false;
+      if (picture) picture.touched = false;
       placeImage("fit");
       refresh();
     });
@@ -2846,16 +2904,19 @@
       refresh();
     });
 
-    function removeImage() {
-      backgroundImage = null;
-      imageTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
-      imageTouched = false;
-      if (selected && selected.kind === "image") selected = null;
-      document.querySelector("#file").value = "";
+    /// Take one picture off the label, the current one unless told which. The
+    /// panel then acts on the topmost of the rest.
+    function removeImage(p = picture) {
+      const at = pictures.indexOf(p);
+      if (at < 0) return;
+      pictures.splice(at, 1);
+      if (selected && selected.picture === p) selected = null;
+      if (picture === p) picture = pictures[pictures.length - 1] || null;
       syncImageControls();
     }
     document.querySelector("#image-180").addEventListener("click", () => {
-      const turned = ((Math.round(imageTransform.rotation) + 180 + 180) % 360) - 180;
+      if (!picture) return;
+      const turned = ((Math.round(picture.transform.rotation) + 180 + 180) % 360) - 180;
       setImage({ rotation: turned });
       refresh();
     });
@@ -2880,13 +2941,20 @@
     });
 
     document.querySelector("#file").addEventListener("change", (event) => {
-      const file = event.target.files[0];
-      if (!file) { backgroundImage = null; refresh(); return; }
+      // Every file picked is one more picture, on top of the others. The
+      // input is cleared at once, so picking the same file again adds it again.
+      const files = [...event.target.files];
+      event.target.value = "";
+      for (const file of files) addPicture(file);
+    });
+
+    function addPicture(file) {
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        backgroundImage = img;
-        imageTouched = false;
+        const added = { image: img, transform: { x: 0, y: 0, scale: 1, rotation: 0 }, touched: false };
+        pictures.push(added);
+        picture = added;
         // Fit inside by default: the old path stretched every picture to the
         // label, which is the one thing nobody wants.
         placeImage("fit");
@@ -2896,7 +2964,7 @@
         // many bytes go to the server. `image: sent` is the line to look at
         // when the preview is blank: it separates "never drawn" from "drawn and
         // then rejected".
-        const box = imageBox();
+        const box = imageBox(added);
         traceStep("image: import " + (img.naturalWidth || img.width) + "x" + (img.naturalHeight || img.height) +
           " -> " + Math.round(box.width) + "x" + Math.round(box.height) +
           " at " + Math.round(box.x) + "," + Math.round(box.y));
@@ -2907,7 +2975,7 @@
         });
       };
       img.src = url;
-    });
+    }
 
     document.querySelector("#label").addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -3204,8 +3272,9 @@
         addr: "",
         fields: [{ text: "", x: 192, y: 112, size: 16, align_mode: "center" }],
       });
-      backgroundImage = null;
-      document.querySelector("#file").value = "";
+      pictures.length = 0;
+      picture = null;
+      syncImageControls();
       history.length = 0;
       future.length = 0;
       lastPushed = snapshot();
@@ -3625,18 +3694,6 @@
       verdict.ok = Boolean(ink && box) && verdict.line > long &&
         box.minX <= ink.minX + 1 && box.maxX >= ink.maxX - 1 &&
         box.minY <= ink.minY + 1 && box.maxY >= ink.maxY - 1;
-      // Its line starts left of the roll, so a Left anchor is a negative x.
-      // Switching to it must leave the text where it is.
-      const was_mode = field.align_mode;
-      row.controls.align.value = "left";
-      row.controls.align.dispatchEvent(new Event("change", { bubbles: true }));
-      await refresh();
-      const left = window.__niimbenchCanvas().ink;
-      verdict.left = { x: field.x, ink: left && [left.minX, left.minY, left.maxX, left.maxY] };
-      verdict.ok = verdict.ok && field.x < 0 && Boolean(left) &&
-        [left.minX, left.minY, left.maxX, left.maxY].every((v, i) => Math.abs(v - verdict.ink[i]) <= 1);
-      row.controls.align.value = was_mode;
-      field.align_mode = was_mode;
       document.querySelector('.orient button[data-rotate="0"]').click();
       upright.checked = was.checked;
       width.value = was.width;
@@ -3654,32 +3711,6 @@
     function inkBound() {
       const ink = window.__niimbenchCanvas().ink;
       return ink && [ink.minX, ink.minY, ink.maxX, ink.maxY];
-    }
-
-    /// Switch the first row through every alignment, the way a person does,
-    /// and require the text to stay where it is. Alignment chooses which edge
-    /// `x` holds, not where the text goes. Then put the mode and `x` back.
-    async function selfCheckAlign() {
-      const row = rows[0];
-      if (!row) return { ok: false };
-      const field = row.model;
-      const was = { mode: field.align_mode, x: field.x };
-      await refresh();
-      const before = inkBound();
-      const verdict = { before, modes: {} };
-      for (const mode of alignModes.filter((m) => m !== was.mode).concat(was.mode)) {
-        row.controls.align.value = mode;
-        row.controls.align.dispatchEvent(new Event("change", { bubbles: true }));
-        await refresh();
-        verdict.modes[mode] = { x: field.x, ink: inkBound() };
-      }
-      verdict.ok = Boolean(before) && Object.values(verdict.modes).every((seen) =>
-        Boolean(seen.ink) && seen.ink.every((v, i) => Math.abs(v - before[i]) <= 1));
-      row.controls.align.value = was.mode;
-      row.controls.x.value = String(was.x);
-      Object.assign(field, { align_mode: was.mode, x: was.x });
-      await refresh();
-      return verdict;
     }
 
     /// Pick a model whose head takes less density than the input offers, and
@@ -3748,12 +3779,23 @@
       press().click();
       await refresh();
       const vertical = judge();
+      // **Center**, pressed on a field turned and moved off the middle, puts
+      // it back upright in the view and centred, at the size it had.
+      const field = row().model;
+      const before = field.size;
+      Object.assign(field, { rotation: 37, x: field.x + 9, y: field.y + 5 });
+      [...row().row.querySelectorAll("button")].find((b) => b.textContent === "Center").click();
+      await refresh();
+      const centred = { ...judge(), kept_size: field.size === before };
       document.querySelector('.orient button[data-rotate="0"]').click();
       upright.checked = checked;
       restore(was);
       await refresh();
       const good = (seen) => seen.centred && seen.inside && seen.largest;
-      return { horizontal, vertical, ok: good(horizontal) && good(vertical) };
+      return {
+        horizontal, vertical, centred,
+        ok: good(horizontal) && good(vertical) && centred.centred && centred.rotation === 90 && centred.kept_size,
+      };
     }
 
     /// Turn the first field a quarter turn by its round anchor, the way a
@@ -3848,6 +3890,7 @@
     /// Import a picture through the file input, the way a person does, with
     /// the view's own shape so it covers the label.
     async function importPicture() {
+      const count = pictures.length;
       const view = viewSize();
       const art = document.createElement("canvas");
       art.width = view.width;
@@ -3863,28 +3906,91 @@
       files.items.add(new File([blob], "check.png", { type: "image/png" }));
       input.files = files.files;
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      for (let i = 0; i < 200 && !backgroundImage; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      for (let i = 0; i < 200 && pictures.length === count; i++) await new Promise((resolve) => setTimeout(resolve, 10));
       await refresh();
     }
 
-    /// Move, shrink and turn an imported picture, then press **Reset image**:
-    /// the picture stays, centred, fitted and upright, exactly where an import
-    /// puts it.
+    /// Import a picture in each view and require it on the label, centred and
+    /// upright in that view, with its round handle drawn where a press turns
+    /// it, on the label. A picture imported into Vertical used to land off the
+    /// label, its handle was drawn on the side opposite the one the press is
+    /// tested on, and a fitted picture's handle was beyond the label's edge. Then move, shrink and turn a picture and press **Reset image**: it
+    /// stays, exactly where an import puts it. Then add a second picture: it
+    /// goes on top and is the one the panel acts on, and each is removed on
+    /// its own.
     async function selfCheckImage() {
+      const was = orientation;
+      const verdict = { views: {} };
+      for (const turn of [0, 90]) {
+        setOrientation(turn);
+        await importPicture();
+        const added = picture;
+        if (!added) return { ok: false, imported: false, turn };
+        const roll = rollSize();
+        const box = imageBox(added);
+        // The grip as a press on the canvas finds it: where it is drawn,
+        // turned back from the view.
+        const drawn = imageHandles(box).map((h) => (turn === 90 ? toView(h.x, h.y) : h))[4];
+        const pressed = turn === 90 ? toLabel(drawn.x, drawn.y) : drawn;
+        verdict.views[turn] = {
+          centre: [box.x, box.y],
+          roll: [roll.width, roll.height],
+          rotation: added.transform.rotation,
+          on_label: Math.abs(box.x - roll.width / 2) < 1 && Math.abs(box.y - roll.height / 2) < 1,
+          grip: imageHit(pressed, box),
+          grip_on_label: pressed.x >= 0 && pressed.y >= 0 && pressed.x <= roll.width && pressed.y <= roll.height,
+        };
+        // A quarter turn clockwise on screen by that handle, the way a person
+        // drags it, turns the picture a quarter turn clockwise.
+        const canvas = document.querySelector("#preview");
+        const bounds = canvas.getBoundingClientRect();
+        const send = (type, point) => canvas.dispatchEvent(new PointerEvent(type, {
+          clientX: bounds.left + point.x * bounds.width / canvas.width,
+          clientY: bounds.top + point.y * bounds.height / canvas.height,
+          pointerId: 1, pointerType: "mouse", isPrimary: true, bubbles: true, cancelable: true, buttons: 1,
+        }));
+        const centre = turn === 90 ? toView(box.x, box.y) : { x: box.x, y: box.y };
+        const reach = Math.hypot(drawn.x - centre.x, drawn.y - centre.y);
+        const from = Math.atan2(drawn.y - centre.y, drawn.x - centre.x);
+        const along = (a) => ({ x: centre.x + reach * Math.cos(from + a), y: centre.y + reach * Math.sin(from + a) });
+        const start = added.transform.rotation;
+        send("pointerdown", drawn);
+        for (const step of [1, 2, 3]) send("pointermove", along(step * Math.PI / 6));
+        send("pointerup", along(Math.PI / 2));
+        await refresh();
+        const turned = ((added.transform.rotation - start) % 360 + 360) % 360;
+        verdict.views[turn].turned = turned;
+        verdict.views[turn].turned_ok = Math.abs(turned - 90) <= 1;
+        removeImage(added);
+      }
+      setOrientation(was);
+      const placedOk = [0, 90].every((turn) => {
+        const seen = verdict.views[turn];
+        return seen.on_label && seen.rotation === turn && seen.grip === "rotate" && seen.grip_on_label && seen.turned_ok;
+      });
+
       await importPicture();
-      if (!backgroundImage) return { ok: false, imported: false };
-      const placed = { ...imageTransform };
+      if (!picture) return { ...verdict, ok: false, imported: false };
+      const first = picture;
+      const placed = { ...first.transform };
       setImage({ x: placed.x + 20, y: placed.y + 10, scale: placed.scale / 2, rotation: 30 });
-      imageTouched = true;
       document.querySelector("#image-reset").click();
       await refresh();
-      const now = { ...imageTransform };
-      const verdict = { placed, reset: now, kept: Boolean(backgroundImage) };
-      verdict.ok = verdict.kept && ["x", "y", "scale", "rotation"].every((key) => Math.abs(now[key] - placed[key]) < 1e-6);
+      const now = { ...first.transform };
+      Object.assign(verdict, { placed, reset: now, kept: pictures.includes(first) });
+      const resetOk = verdict.kept && ["x", "y", "scale", "rotation"].every((key) => Math.abs(now[key] - placed[key]) < 1e-6);
+
+      await importPicture();
+      const second = picture;
+      verdict.several = { count: pictures.length, on_top: pictures[pictures.length - 1] === second && second !== first };
       document.querySelector("#image-remove").click();
       await refresh();
-      verdict.removed = !backgroundImage;
-      verdict.ok = verdict.ok && verdict.removed;
+      verdict.several.left = pictures.length === 1 && pictures[0] === first && picture === first;
+      document.querySelector("#image-remove").click();
+      await refresh();
+      verdict.removed = pictures.length === 0;
+      verdict.ok = placedOk && resetOk && verdict.several.count === 2 && verdict.several.on_top &&
+        verdict.several.left && verdict.removed;
       return verdict;
     }
 
@@ -3893,7 +3999,7 @@
     /// Delete removes it, and Ctrl+Z brings the field back.
     async function selfCheckSelect() {
       await importPicture();
-      const verdict = { imported: Boolean(backgroundImage) };
+      const verdict = { imported: Boolean(picture) };
       const shown = viewImageBox(imageBox());
       if (!shown || !boxes[0]) return { ...verdict, ok: false };
       // Inside the picture and clear of every field's box.
@@ -3907,7 +4013,7 @@
       verdict.image_selected = Boolean(selected) && selected.kind === "image";
       pressKey("Delete");
       await refresh();
-      verdict.image_deleted = !backgroundImage;
+      verdict.image_deleted = pictures.length === 0;
       const count = rows.length;
       const row = boxes[0].row;
       pressAt(boxes[0].screen_centre);
@@ -3988,7 +4094,6 @@
         report.vertical = harness ? await selfCheckVertical() : null;
         report.roll = harness ? await selfCheckRoll() : null;
         report.turned = harness ? await selfCheckTurned() : null;
-        report.align = harness ? await selfCheckAlign() : null;
         report.density = harness ? await selfCheckDensity() : null;
         report.fit = harness ? await selfCheckFit() : null;
         report.rotate = harness ? await selfCheckRotate() : null;
@@ -4036,7 +4141,6 @@
         " vertical " + (report.vertical ? (report.vertical.ok ? "ok" : "BROKEN") : "not exercised") +
         " roll " + (report.roll ? (report.roll.ok ? "ok" : "BROKEN") : "not exercised") +
         " turned " + (report.turned ? (report.turned.ok ? "ok" : "BROKEN") : "not exercised") +
-        " align " + (report.align ? (report.align.ok ? "ok" : "BROKEN") : "not exercised") +
         " density " + (report.density ? (report.density.ok ? "ok" : "BROKEN") : "not exercised") +
         " fit " + (report.fit ? (report.fit.ok ? "ok" : "BROKEN") : "not exercised") +
         " rotate " + (report.rotate ? (report.rotate.ok ? "ok" : "BROKEN") : "not exercised") +

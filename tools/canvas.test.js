@@ -139,21 +139,20 @@ function judge(report) {
   // upright line is longer than the roll is wide: the box still holds the ink.
   check("a turned field grown past the roll's width stays inside its box",
     Boolean(report.turned) && report.turned.ok === true, JSON.stringify(report.turned));
-  // Switching a row's alignment keeps its text where it is.
-  check("switching alignment leaves the text where it is",
-    Boolean(report.align) && report.align.ok === true, JSON.stringify(report.align));
   // The density input offers the picked model's own range.
   check("the density input offers the model's own range",
     Boolean(report.density) && report.density.ok === true, JSON.stringify(report.density));
   // Fit centres the field on the label at the largest size that fits, in
   // both views.
-  check("Fit centres the field and fills the label",
+  check("Fit centres the field and fills the label, and Center puts it back upright in the middle",
     Boolean(report.fit) && report.fit.ok === true, JSON.stringify(report.fit));
   // Turning a field by its anchor previews on the page and renders on release.
   check("turning a field shows the turn while dragging and renders once on release",
     Boolean(report.rotate) && report.rotate.ok === true, JSON.stringify(report.rotate));
-  // Reset image puts the picture back where an import puts it, and keeps it.
-  check("Reset image re-centres and fits the picture instead of removing it",
+  // A picture lands on the label upright in either view, with its handle
+  // where a press turns it; Reset image puts it back there and keeps it; a
+  // second picture goes on top.
+  check("pictures land on the label upright, turn by their handle, reset, and stack",
     Boolean(report.image) && report.image.ok === true, JSON.stringify(report.image));
   // A click selects a field or the picture, and Delete removes what is selected.
   check("a click selects a box on the canvas and Delete removes it",

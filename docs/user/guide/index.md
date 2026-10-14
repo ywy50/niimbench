@@ -18,7 +18,7 @@ The other panels make room the way a dashboard's do. A moved panel follows the p
 
 The label in **Preview** is drawn as large as the panel allows, in whole multiples of its pixels when it fits at least once, so a bigger **Preview** panel shows a bigger label.
 
-Each pixel of that label is one dot the printer burns, so enlarged it shows as a square. **Smooth**, under the preview, blends the dots instead, which is closer to how they look on paper, where a dot is an eighth of a millimetre. The dots, and what prints, are the same either way, and this browser remembers the choice.
+Each pixel of that label is one dot the printer burns, so enlarged it shows as a square. **Smooth**, under the preview, rounds the dots into each other instead, which is closer to how they look on paper, where a dot is an eighth of a millimetre and bleeds into its neighbours. The dots, and what prints, are the same either way, and this browser remembers the choice.
 
 The arrangement is kept in this browser and comes back the next time the page opens. It is not part of a label: **Save layout** does not write it and **Undo** does not move a panel. **Reset panels**, in the header, puts every panel back where the page first had it.
 
@@ -34,9 +34,9 @@ A roll wider than the print head uses the head width. A 50 mm B21 roll is 384 do
 
 ## Place a field
 
-**Image** takes a picture — a photo, a logo, a QR code saved as a PNG — and draws it on the label in one ink. A picture is fitted to the view when it is imported, so it lands on the label whatever its shape and whichever way the view is turned, and the fitting is redone if the label or the view changes shape while you have not touched it. Once you have moved it, it stays where you put it.
+**Image** takes pictures — a photo, a logo, a QR code saved as a PNG — and draws them on the label in one ink. **Add images** takes one file or several, and each is one more picture, on top of the ones already there. A picture lands centred on the label and upright in the view, fitted to it, whatever its shape and whichever way the view is turned, and the fitting is redone if the label or the view changes shape while you have not touched it. Once you have moved it, it stays where you put it.
 
-The frame drawn round the picture is what you grab: drag inside it to move, drag a corner to scale up or down, and drag the round grip above it to turn it. Scaling always re-samples the picture you imported, so enlarging it does not magnify a reduced copy. The **Scale %**, **Rotation**, **Left** and **Top** boxes do the same thing by number, **Fit** and **Fill** re-place it, **Turn 180°** flips it, **Reset image** puts it back centred, fitted and upright, where an import puts it, and **Remove image** takes it off the label.
+The frame drawn round a picture is what you grab: drag inside it to move, drag a corner to scale up or down, and drag the round grip above it to turn it. The grip stays on the label, inside the top edge when the picture fills the label. Where pictures overlap, a press takes the one on top. Scaling always re-samples the picture you imported, so enlarging it does not magnify a reduced copy. The **Scale %**, **Rotation**, **Left** and **Top** boxes do the same thing by number, **Fit** and **Fill** re-place it, **Turn 180°** flips it, **Reset image** puts it back centred, fitted and upright, where an import puts it, and **Remove image** takes it off the label. They act on the picture you last clicked or added, and the line above them says which one it is when there are several.
 
 Click a field's box or the picture to select it: its outline turns solid and thicker, and a field's row is shaded. **Delete** (or **Backspace**) removes what is selected, the same as the row's **Remove** or **Remove image**, as long as you are not typing in a box. **Undo** brings a removed field back; it does not cover the picture.
 
@@ -44,7 +44,7 @@ Click a field's box or the picture to select it: its outline turns solid and thi
 
 **Grid** draws faint guides on the preview every 16 dots (2 mm), so a field can be placed by eye against something. The guides are drawn over the page only; they never reach the printer.
 
-**Add text** appends a row. Each row has its text, a **font**, a **size**, an alignment, an `x` and `y` in pixels, an angle, and **Wrap**, **Fit**, **Copy** and **Remove**. Size is the line height in dots, any whole number from 1 to 1024 — dragging a corner of the field's box sets the same number — and it is a different thing from **Label** in the **Label and printer** panel, which is the size of the roll itself. 8 dots is 1 mm. Every size is allowed, including one too wide for the roll: the box turns red and the row says it is clipped, and **Fit** or **Wrap** fixes it. **Copy** adds another field with the same text, font, size, and alignment directly below. Inputs apply when they change.
+**Add text** appends a row. Each row has its text, a **font**, a **size**, an `x` and `y` in pixels, an angle, and **Wrap**, **Fit**, **Center**, **Copy** and **Remove**. Size is the line height in dots, any whole number from 1 to 1024 — dragging a corner of the field's box sets the same number — and it is a different thing from **Label** in the **Label and printer** panel, which is the size of the roll itself. 8 dots is 1 mm. Every size is allowed, including one too wide for the roll: the box turns red and the row says it is clipped, and **Fit** or **Wrap** fixes it. **Center** puts the field back where new text starts: in the middle of the label, upright in the view, at the size it has. **Copy** adds another field with the same text, font and size directly below. Inputs apply when they change.
 
 **Font** picks the typeface a row is drawn in, from the fifteen free fonts built into niimbench: sans, serif and monospaced faces from DejaVu, Liberation, Open Sans, Fira Sans, Noto and Hack, with bold versions of the sans faces. A new row starts in DejaVu Sans. The same size can look larger or smaller from one font to the next, because size is the whole line, including the room a font keeps for accents and descenders; the box always shows what that line takes on the label. The list, with each font's licence, is [src/fonts/README.md](../../../src/fonts/README.md).
 
@@ -56,9 +56,9 @@ The arrow keys nudge a field by one pixel while its `x` or `y` input has focus; 
 
 A newline in a row's text starts a second line, so one field can hold a small block. Press Enter to add a line and Ctrl+Enter to print; the box on the preview grows to hold every line, and Save layout keeps them.
 
-The alignment decides what `x` means: the left edge, the centre, or the right edge of the block. `center` and `right` measure the widest line of the block, so a short line in a centred block ends where the row says it should. Each line is placed by its own width, so a short line in a centred block is centred. The box you drag follows the placed line, and the `x` input still shows the anchor.
+A new field is centred: `x` is the middle of its block, and each line of a block is centred on it, so a short line in a block of several is centred too. The box you drag follows the placed line, and the `x` input shows that middle.
 
-Changing the alignment never moves the text: the block stays where it is, and `x` changes to the edge the new alignment names. What it changes is what happens next — the lines of a block line up on that edge, and text that gets longer grows away from it. A left edge left of the label, which a turned field on a narrow roll can have, is a negative `x`.
+The editor has no alignment menu. A layout saved with a field aligned `left` or `right` still loads and prints that way: `x` is then that edge of the block, and a left edge left of the label, which a turned field on a narrow roll can have, is a negative `x`.
 
 ## Turn the text
 
