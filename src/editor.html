@@ -222,10 +222,6 @@
     .field textarea { flex: 1 1 6rem; }
     .field select { flex: 0 0 auto; }
     .field .font { flex: 0 1 8.5rem; }
-    .field .key { flex: 0 1 7rem; }
-    .field [hidden] { display: none; }
-    .source-admin label { margin-bottom: 0.5rem; }
-    .source-admin textarea { font: inherit; font-size: 0.84rem; min-height: 3.5rem; }
     .field input[type="number"] { flex: 0 0 4.6rem; }
     .field .degrees { flex: 0 0 5rem; }
     .field .actions { margin-left: auto; }
@@ -249,7 +245,6 @@
     .field .note:empty { display: none; }
     .field .note.warn { color: var(--danger); }
     .field.clipped textarea { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
-    .field.record textarea { color: var(--accent); }
 
     canvas {
       display: block;
@@ -366,19 +361,6 @@
       <span class="spacer"></span>
       <button type="submit" class="primary">Print</button>
     </div>
-    <div class="tools sources">
-      <label class="toggle">Source <select id="source"><option value="">(no source)</option></select></label>
-      <button type="button" id="fill" title="one row per key of the picked record on an empty label, else fill the rows' key menus">Fill from source</button>
-    </div>
-    <details class="source-admin">
-      <summary>Add or remove a source</summary>
-      <label>Name <input id="source-name" type="text" placeholder="stock"></label>
-      <label>JSON object <textarea id="source-json" rows="3">{"title": "Niimbench", "sku": "NB-2"}</textarea></label>
-      <div class="tools">
-        <button type="button" id="install-source">Add source</button>
-        <button type="button" id="remove-source" title="remove the source picked above; a built-in source cannot be removed">Remove picked source</button>
-      </div>
-    </details>
     <div class="tools">
       <button type="button" id="save">Save layout</button>
       <label class="file">Load layout <input id="load" type="file" accept="application/json,.json"></label>
@@ -449,7 +431,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "source"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -489,8 +471,8 @@
     let fontTables = tablesFrom(metrics);
     let rows = [];
     // Undo works on the same JSON that Save layout writes: the label and the
-    // printer fields. A source record and the background image are not part of
-    // it, so they do not change under Undo.
+    // printer fields. The background image is not part of it, so it does not
+    // change under Undo.
     let history = [];
     let future = [];
     let deep = 0;
@@ -499,7 +481,6 @@
     /// The last box layout written to the trace, so a drag or a refresh does not
     /// repeat a line that has not changed.
     let lastShape = "";
-    let sourceKeys = [];
     // The uploaded picture and where it sits on the roll. The transform is
     // stored in label pixels, not canvas pixels, so it survives a zoom or an
     // orientation change, and the same numbers draw the preview and the bytes.
@@ -761,8 +742,8 @@
     /// alignment, and never left of the page. This is `label.alignedX` and the
     /// clamp after it, written once, so the page never has to ask and never has
     /// to apply the alignment twice.
-    function placedLeft(field, source) {
-      const text = previewText(field, source);
+    function placedLeft(field) {
+      const text = previewText(field);
       const block_w = Math.max(blockWidth(text, sizeOf(field), field.font), 1);
       // Whole dots: the printer draws on them and the server reports them, so a
       // placed edge is one. The box is then the same edge, not a half dot away
@@ -790,7 +771,7 @@
     /// drawn, the thing hit-tested and the thing dragged are one box.
     function showBox(box) {
       const field = box.field;
-      const rect = boxRect(field, placedLeft(field, null), field.y);
+      const rect = boxRect(field, placedLeft(field), field.y);
       box.rect = rect;
       box.quad = boxQuad(rect);
       box.handle = handleOf(rect);
@@ -945,7 +926,6 @@
     function createFieldRow(values) {
       const field = {
         text: values.text || "",
-        key: values.key || "",
         x: values.x ?? 4,
         y: values.y ?? 4,
         size: sizeOf({ size: values.size ?? 16 }),
@@ -969,14 +949,6 @@
       const grow = () => { text.rows = Math.min(blockLines(text.value).length, 8); };
       grow();
 
-      // The record property this row draws instead of its own text, once a
-      // source is picked. Hidden while there is no key to pick and the row has
-      // none, so a plain label shows only what it uses.
-      const key = document.createElement("select");
-      key.className = "key";
-      key.title = "draw this key of the picked source instead of the text";
-      fillKeySelect(key, field.key);
-      key.hidden = sourceKeys.length === 0 && !field.key;
       const font = fontOptions(field.font);
       const size = sizeInput(field.size);
       const align = alignOptions(field.align_mode);
@@ -1004,8 +976,8 @@
       actions.className = "actions";
       actions.append(wrap, fit, copy, remove);
 
-      // One extra line under the controls. `markRows` puts the clip warning
-      // here and `report` puts the resolved record value here.
+      // One extra line under the controls, where `markRows` puts the clip
+      // warning.
       const note = document.createElement("span");
       note.className = "note";
 
@@ -1024,13 +996,12 @@
       rotation.step = "1";
       rotation.value = String(normalizeDegrees(field.rotation));
 
-      row.append(text, key, font, size, align, x, y, rotation, actions, note);
+      row.append(text, font, size, align, x, y, rotation, actions, note);
       list.append(row);
 
       const sync = () => {
         record();
         field.text = text.value;
-        field.key = key.value;
         field.font = font.value;
         field.size = sizeOf({ size: size.value });
         size.value = String(field.size);
@@ -1054,7 +1025,7 @@
         // reaching the form and submitting it.
         event.stopPropagation();
       });
-      for (const control of [key, font, size, align, x, y, rotation]) control.addEventListener("change", sync);
+      for (const control of [font, size, align, x, y, rotation]) control.addEventListener("change", sync);
       for (const control of [x, y]) {
         control.addEventListener("keydown", (event) => {
           nudge(event, field, x, y);
@@ -1113,12 +1084,12 @@
       });
       remove.addEventListener("click", () => {
         record();
-        removeRow({ model: field, row, controls: { text, key, font, size, align, x, y, rotation, note, remove } });
+        removeRow({ model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } });
         refresh();
       });
       // What the rest of the page needs to read back or rewrite this row.
       note.textContent = "";
-      return { model: field, row, controls: { text, key, font, size, align, x, y, rotation, note, remove } };
+      return { model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } };
     }
 
     /// Where a new line starts so the text sits in the middle of what the view
@@ -1185,41 +1156,9 @@
       boxes = [];
     }
 
-    function fillKeySelect(select, selected) {
-      select.replaceChildren();
-      const blank = document.createElement("option");
-      blank.value = "";
-      blank.textContent = "source key";
-      select.append(blank);
-      for (const key of sourceKeys) {
-        const option = document.createElement("option");
-        option.value = key;
-        option.textContent = key;
-        select.append(option);
-      }
-      // A loaded layout can name a key the current record does not carry. Show
-      // it rather than silently clearing the field, so the row keeps saying
-      // what the layout asked for.
-      if (selected && !sourceKeys.includes(selected)) {
-        const extra = document.createElement("option");
-        extra.value = selected;
-        extra.textContent = selected + " (not in this source)";
-        select.append(extra);
-      }
-      select.value = selected || "";
-    }
-
-    // A field with a key draws the source value, so the box measures that.
-    /// The record the label draws values from, or an empty name: the source
-    /// menu's value. The rest of the page asks here instead of reading it.
-    function sourceName() {
-      const select = document.querySelector("#source");
-      return select ? select.value : "";
-    }
-
-    function previewText(field, source) {
+    /// The text the renderer drew, once it has said, else the field's own.
+    function previewText(field) {
       if (typeof field.placed_text === "string") return field.placed_text;
-      if (field.key && source && field.key in source) return String(source[field.key]);
       return field.text || "";
     }
 
@@ -1241,10 +1180,8 @@
       return JSON.stringify({
         width: Number(document.querySelector("#width").value),
         height: Number(document.querySelector("#height").value),
-        source: sourceName(),
         fields: rows.map(({ model }) => ({
           text: model.text,
-          key: model.key,
           x: model.x,
           y: model.y,
           size: model.size,
@@ -1314,10 +1251,8 @@
       const body = {
         width: Number(document.querySelector("#width").value),
         height: Number(document.querySelector("#height").value),
-        source: sourceName(),
         fields: rows.map(({ model }) => ({
           text: model.text,
-          key: model.key,
           x: model.x,
           y: model.y,
           size: model.size,
@@ -1502,14 +1437,6 @@
     }
 
     // ---- canvas ----------------------------------------------------------
-
-    async function currentSource() {
-      const name = sourceName();
-      if (!name) return null;
-      const response = await api("/api/sources/" + encodeURIComponent(name));
-      if (!response.ok) return null;
-      return readJson(response);
-    }
 
     /// Vertical shows the roll turned a quarter turn clockwise, so the tape runs
     /// left to right and the letters stay upright. It is one rotation, not a
@@ -1780,42 +1707,28 @@
 
     /// The clip state of a field, for the row's warning. It builds the same box
     /// the preview does, from the same anchor, so the warning and the box agree.
-    function rowClipped(model, source, width, height) {
+    function rowClipped(model, width, height) {
       const roll = rollSize();
       const box = boxRect(
-        { ...model, text: previewText(model, source) },
-        placedLeft(model, source),
+        { ...model, text: previewText(model) },
+        placedLeft(model),
         Number.isFinite(model.y) ? model.y : 0,
       );
       return boxClipped(box, width ?? roll.width, height ?? roll.height);
     }
 
-    /// Paint every row's note from the two facts that own it: the clip warning
-    /// and the resolved record value. Nothing is cleared here, so the order of
-    /// the render and the report does not matter.
-    function renderNotes() {
-      for (const row of rows) {
-        const note = row.controls.note;
-        const clip = note.dataset.clip;
-        const resolved = note.dataset.report;
-        note.textContent = clip || resolved || "";
-        row.row.classList.toggle("record", Boolean(resolved && !clip));
-      }
-    }
-
     /// The clip marker: a class on the row and the warning in the note line.
-    function markRows(source) {
+    function markRows() {
       for (const row of rows) {
-        const clipped = rowClipped(row.model, source);
+        const clipped = rowClipped(row.model);
         row.row.classList.toggle("clipped", clipped);
         if (clipped) {
-          const box = boxRect({ ...row.model, text: previewText(row.model, source) }, placedLeft(row.model, source), row.model.y);
-          row.controls.note.dataset.clip = "clipped: " + Math.round(box.x + box.w) + "px of text runs past the edge";
+          const box = boxRect({ ...row.model, text: previewText(row.model) }, placedLeft(row.model), row.model.y);
+          row.controls.note.textContent = "clipped: " + Math.round(box.x + box.w) + "px of text runs past the edge";
         } else {
-          delete row.controls.note.dataset.clip;
+          row.controls.note.textContent = "";
         }
       }
-      renderNotes();
     }
 
     async function refresh() {
@@ -1823,7 +1736,7 @@
       if (body.fields.length === 0 && !body.background_b64) {
         boxes = [];
         blankPreview();
-        markRows(null);
+        markRows();
         status.textContent = "empty label";
         return;
       }
@@ -1834,12 +1747,11 @@
         // can still show an empty label of the size the user asked for.
         boxes = [];
         usePage(payload.width || body.width, payload.height || body.height);
-        markRows(null);
+        markRows();
         status.textContent = payload.error || "render failed";
         return;
       }
       showImage(payload);
-      const source = await currentSource();
       // Drop the previous placement, ask for the current one, and only then
       // build the boxes. The answer is what the renderer used.
       for (const { model } of rows) {
@@ -1852,11 +1764,11 @@
       const labelHeight = roll.height;
       boxes = rows.map((row) => {
         const field = row.model;
-        const text = previewText(field, source);
+        const text = previewText(field);
         // Measured here from the field as it is now, so a refresh during a
         // drag or a resize puts the box where the pointer left it. Using the
         // anchor as the left edge instead put a centred box half a block off.
-        const left = placedLeft(field, source);
+        const left = placedLeft(field);
         const rect = boxRect({ ...field, text }, left, field.y);
         const quad = boxQuad(rect);
         // A field with nothing to draw gets no box. The renderer skips it, so
@@ -1881,7 +1793,7 @@
         };
       }).filter(Boolean);
       drawBoxes();
-      markRows(source);
+      markRows();
       const clipped_count = boxes.filter((box) => box.clipped).length;
       status.textContent = clipped_count
         ? "preview \u2014 " + clipped_count + " field(s) clipped"
@@ -1889,23 +1801,17 @@
       canvas.classList.toggle("placing", boxes.length > 0);
     }
 
-    /// Say which fields draw a value from the selected record, using the text
-    /// the server resolved rather than a guess made here.
     /// Ask the server where each line will start and what it will draw, then
     /// store both on the row. `refresh` awaits this before it builds the boxes,
     /// so a box is never drawn from the previous answer.
     async function report() {
       const queried = rows.slice();
-      for (const row of queried) delete row.controls.note.dataset.report;
-      renderNotes();
       if (queried.length === 0) return;
-      // The whole field, not only the key: the server places literal text by
-      // its own width and alignment too, and the editor's box uses that.
+      // The whole field: the server places text by its own width and
+      // alignment, and the editor's box uses that.
       const body = {
-        source: sourceName(),
         fields: queried.map(({ model }) => ({
           text: model.text,
-          key: model.key,
           x: model.x,
           size: model.size,
           font: model.font,
@@ -1927,15 +1833,7 @@
         // both need it, and the clip warning is only text.
         row.model.placed_x = typeof entry.x === "number" ? entry.x : undefined;
         row.model.placed_text = entry.text;
-        if (entry.origin === "record") {
-          row.controls.note.dataset.report = "record " + row.model.key + ": " + entry.text;
-        } else if (entry.origin === "missing-key") {
-          row.controls.note.dataset.report = "no key " + row.model.key;
-        } else if (entry.origin === "unknown-source") {
-          row.controls.note.dataset.report = "no source selected";
-        }
       });
-      renderNotes();
     }
 
     function canvasPoint(event) {
@@ -2044,7 +1942,7 @@
       const field = box.field;
       const reach = Math.hypot(pointer.x - drag.fixed.x, pointer.y - drag.fixed.y);
       const size = sizeOf({ size: drag.start_size * reach / drag.start_reach });
-      const text = previewText(field, null);
+      const text = previewText(field);
       const w = Math.max(blockWidth(text, size, field.font), 1);
       const h = blockHeight(text, size);
       // The grabbed corner is half a block from the centre on each axis, in
@@ -2265,107 +2163,6 @@
     canvas.addEventListener("pointerup", endDrag);
     window.addEventListener("resize", fitCanvas);
     canvas.addEventListener("pointercancel", endDrag);
-
-    // ---- source records --------------------------------------------------
-
-    async function loadSources() {
-      const response = await api("/api/sources");
-      const body = await readJson(response);
-      const select = document.querySelector("#source");
-      if (!select) return;
-      const keep = select.value;
-      select.replaceChildren();
-      const blank = document.createElement("option");
-      blank.value = "";
-      blank.textContent = "(no source)";
-      select.append(blank);
-      for (const name of body.sources) {
-        const option = document.createElement("option");
-        option.textContent = name;
-        option.value = name;
-        select.append(option);
-      }
-      // Nothing is picked until someone picks it: a label of plain text does
-      // not quietly read a record.
-      select.value = body.sources.includes(keep) ? keep : "";
-      await loadKeys();
-    }
-
-    /// What the source menu has started and not finished: loading a record's
-    /// keys and drawing the label with them. The self-check waits on it.
-    let sourceReady = Promise.resolve();
-
-    /// The keys of the picked record, into every row's key menu.
-    async function loadKeys() {
-      const record = await currentSource();
-      sourceKeys = record && typeof record === "object" ? Object.keys(record) : [];
-      for (const row of rows) showKeys(row);
-    }
-
-    /// A row's key menu lists the picked record's keys, and is shown once there
-    /// is a key to pick or the row already draws one.
-    function showKeys(row) {
-      const select = row.controls.key;
-      fillKeySelect(select, row.model.key);
-      select.hidden = sourceKeys.length === 0 && !row.model.key;
-    }
-
-    document.querySelector("#source").addEventListener("change", () => {
-      sourceReady = loadKeys().then(() => refresh());
-    });
-
-    document.querySelector("#fill").addEventListener("click", () => {
-      sourceReady = fillFromSource();
-    });
-
-    /// One row per key of the picked record when the label has nothing on it
-    /// yet; otherwise the rows keep their text and their key menus fill.
-    async function fillFromSource() {
-      const name = sourceName();
-      if (!name) { status.textContent = "no source selected"; return; }
-      const response = await api("/api/sources/" + encodeURIComponent(name));
-      const body = await readJson(response);
-      if (!response.ok) { status.textContent = body.error || "no source"; return; }
-      record();
-      sourceKeys = Object.keys(body);
-      const untouched = rows.length === 0 || rows.every((row) => !row.model.text && !row.model.key);
-      if (untouched) {
-        clearRows();
-        const origins = centeredOrigins(sourceKeys.map((key) => String(body[key] ?? "")));
-        sourceKeys.forEach((key, index) => addRow({ key, ...origins[index] }));
-      } else {
-        for (const row of rows) showKeys(row);
-      }
-      // After the render: `refresh` writes its own line to the status, and the
-      // one that says what the button did would otherwise never be seen.
-      await refresh();
-      status.textContent = "filled from " + name;
-    }
-
-    document.querySelector("#install-source").addEventListener("click", async () => {
-      const name = document.querySelector("#source-name").value.trim();
-      let json;
-      try {
-        json = JSON.parse(document.querySelector("#source-json").value);
-      } catch (error) {
-        status.textContent = "source JSON does not parse";
-        return;
-      }
-      if (!json || typeof json !== "object" || Array.isArray(json)) {
-        status.textContent = "source must be a JSON object";
-        return;
-      }
-      const response = await post("/api/sources", { name, json: JSON.stringify(json) });
-      const payload = await readJson(response);
-      if (!response.ok) { status.textContent = payload.error || "install failed"; return; }
-      await loadSources();
-      // Select the record just installed. `sourceName()` reads the menu; it
-      // cannot be assigned to.
-      document.querySelector("#source").value = name;
-      sourceReady = loadKeys().then(() => refresh()).then(() => {
-        status.textContent = "added source " + name;
-      });
-    });
 
     // ---- found printers --------------------------------------------------
 
@@ -2780,13 +2577,8 @@
     });
 
     // The page size, watched so an edit is undoable and redraws the picture.
-    // Every control here is optional: the record chooser is part of a feature
-    // that is not always on the page, and a listener on a missing element threw
-    // during setup and stopped the rest of the boot, which is why the startup
-    // scan never ran.
     for (const id of ["width", "height"]) {
       const control = document.querySelector("#" + id);
-      if (!control) continue;
       // A snapshot reads the controls, so it has to be taken while they still
       // hold the old value. `change` fires after the new value is in place, and
       // `input` may too depending on how the edit was made; `beforeinput` fires
@@ -2798,14 +2590,6 @@
         markCustomIfEdited();
         refresh();
       });
-    }
-
-    // The record chooser, when the feature is on the page.
-    for (const id of ["source"]) {
-      const control = document.querySelector("#" + id);
-      if (!control) continue;
-      control.addEventListener("beforeinput", () => record());
-      control.addEventListener("change", () => refresh());
     }
 
     for (const button of document.querySelectorAll(".orient button")) {
@@ -2844,23 +2628,12 @@
       // for a device that the layout just replaced.
       picked = -1;
       renderDevices();
-      const source = document.querySelector("#source");
-      if (source && layout.source !== undefined && layout.source !== null) {
-        if (![...source.options].some((option) => option.value === layout.source)) {
-          const option = document.createElement("option");
-          option.value = layout.source;
-          option.textContent = layout.source;
-          source.append(option);
-        }
-        source.value = layout.source;
-      }
       for (const field of layout.fields) {
         if (!field || typeof field !== "object") {
           throw new Error("layout field is not an object");
         }
         addRow({
           text: field.text || "",
-          key: field.key || "",
           x: Number(field.x) || 0,
           y: Number(field.y) || 0,
           size: sizeFromLayout(field),
@@ -2931,7 +2704,6 @@
         status.textContent = error.message;
         return;
       }
-      await loadSources();
       refresh();
     });
 
@@ -2948,7 +2720,6 @@
         rotate: 0,
         conn: "usb",
         addr: "",
-        source: "",
         fields: [{ text: "", x: 192, y: 112, size: 16, align_mode: "center" }],
       });
       backgroundImage = null;
@@ -2958,17 +2729,6 @@
       lastPushed = snapshot();
       updateHistoryButtons();
       refresh();
-    });
-
-    document.querySelector("#remove-source").addEventListener("click", async () => {
-      const name = sourceName();
-      if (!name) { status.textContent = "no source selected"; return; }
-      const response = await api("/api/sources/" + encodeURIComponent(name), { method: "DELETE" });
-      const payload = await readJson(response);
-      if (!response.ok) { status.textContent = payload.error || "remove failed"; return; }
-      await loadSources();
-      await refresh();
-      status.textContent = "removed source " + name;
     });
 
     traceStep("boot: asking for the label sizes");
@@ -3010,14 +2770,9 @@
       // canvas before anything is drawn.
       .then(() => scanDevices(false, true))
       .catch(() => {})
-      .then(loadSources)
       .then(async () => {
         traceStep("boot: placing the first field");
-        // The page opens with one plain text field saying niimbench. Filling
-        // from the selected record instead put whatever keys that record
-        // happened to have on the label before anyone asked, which read as a
-        // stray "NB-1" appearing by itself. **Fill from source** does that on
-        // purpose.
+        // The page opens with one plain text field saying niimbench.
         clearRows();
         // The page opens at the largest size that fits across the roll, so a
         // 96-dot head does not start with a word the renderer would clip.
@@ -3137,7 +2892,7 @@
       if (!canvas || !box) return null;
       const bounds = canvas.getBoundingClientRect();
       if (!bounds.width) return null;
-      const start = { x: box.rect.x, y: box.rect.y, left: placedLeft(box.field, null), field_x: box.field.x, field_y: box.field.y };
+      const start = { x: box.rect.x, y: box.rect.y, left: placedLeft(box.field), field_x: box.field.x, field_y: box.field.y };
       const scale_x = canvas.width / bounds.width;
       const scale_y = canvas.height / bounds.height;
       const at = (x, y) => ({
@@ -3259,45 +3014,9 @@
       return verdict;
     }
 
-    /// Draw a record value the way a person does: pick the `example` source in
-    /// the menu, press **Fill from source**, and pick the `sku` key in the
-    /// first row's key menu. Report whether the row then draws the record's
-    /// value, and put the source and the key back.
-    async function selfCheckSource() {
-      const menu = document.querySelector("#source");
-      const fill = document.querySelector("#fill");
-      const row = rows[0];
-      const verdict = { menu: Boolean(menu), fill: Boolean(fill), row: Boolean(row) };
-      if (!menu || !fill || !row || !row.controls.key) return { ...verdict, ok: false };
-      const before = { source: menu.value, key: row.controls.key.value };
-      verdict.example = Array.from(menu.options).some((option) => option.value === "example");
-      menu.value = "example";
-      menu.dispatchEvent(new Event("change", { bubbles: true }));
-      await sourceReady;
-      fill.click();
-      await sourceReady;
-      verdict.filled = status.textContent === "filled from example";
-      const keys = row.controls.key;
-      verdict.keys = Array.from(keys.options).map((option) => option.value).filter(Boolean);
-      verdict.shown = !keys.hidden;
-      keys.value = "sku";
-      keys.dispatchEvent(new Event("change", { bubbles: true }));
-      await refresh();
-      verdict.drawn = row.model.placed_text;
-      verdict.ok = verdict.example && verdict.filled && verdict.shown &&
-        verdict.keys.includes("sku") && row.model.key === "sku" && verdict.drawn === "NB-1";
-      keys.value = before.key;
-      keys.dispatchEvent(new Event("change", { bubbles: true }));
-      menu.value = before.source;
-      menu.dispatchEvent(new Event("change", { bubbles: true }));
-      await sourceReady;
-      await refresh();
-      return verdict;
-    }
-
     /// Write the report into the page, where `--dump-dom` can read it. A
     /// `--dump-dom` run is a plain subprocess with no protocol to time out.
-    window.__niimbenchSelfCheck = async function selfCheck() {
+    window.__niimbenchSelfCheck = function selfCheck() {
       // The drag and the resize move the user's field and render it, so only the harness
       // runs it: it loads the page with `#selfcheck`, which survives the token
       // redirect where a query parameter would not.
@@ -3313,8 +3032,6 @@
         // The fonts the server carries, and the ones a row offers.
         const menu = rows[0] && rows[0].controls.font;
         report.fonts = { served: metrics.fonts.length, offered: menu ? menu.options.length : 0 };
-        // Last, because it renders: the canvas above is the one the boot drew.
-        report.source = harness ? await selfCheckSource() : null;
       }
       const view = viewSize();
       report.view = { width: view.width, height: view.height };
@@ -3352,8 +3069,7 @@
         " drag " + (report.drag ? (report.drag.ok ? "ok" : "JUMPED") + " over " + report.drag.moves + " moves" : "not exercised") +
         " resize " + (report.resize ? (report.resize.ok ? "ok" : "BROKEN") + " " + report.resize.sizes.join("->") : "not exercised") +
         " edit " + (report.edit ? (report.edit.ok ? "ok" : "BROKEN") : "not exercised") +
-        " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none") +
-        " source " + (report.source ? (report.source.ok ? "ok" : "BROKEN") : "not exercised"));
+        " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none"));
     });
   </script>
 </body>

@@ -6,9 +6,8 @@
   "rotate": 0,
   "conn": "usb",
   "addr": "/dev/ttyACM0",
-  "source": "example",
   "fields": [
     { "text": "niimbench", "x": 4, "y": 4, "size": 32, "font": "dejavu-sans-bold", "align_mode": "left", "rotation": 0 },
-    { "text": "", "key": "sku", "x": 4, "y": 44, "size": 20, "font": "dejavu-sans-mono", "align_mode": "left", "rotation": 0 }
+    { "text": "NB-1", "x": 4, "y": 44, "size": 20, "font": "dejavu-sans-mono", "align_mode": "left", "rotation": 0 }
   ]
 }

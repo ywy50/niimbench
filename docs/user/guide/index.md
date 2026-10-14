@@ -82,21 +82,17 @@ A field whose ink would pass the right or bottom edge is outlined in red and mar
 
 **Undo** and **Redo** walk the label's changes, and `Ctrl+Z` and `Ctrl+Shift+Z` (or `Ctrl+Y`) do the same from the keyboard. A change is a field you add, copy, remove, move, retype, or restyle, a printer setting, or a loaded layout. A drag is one change, recorded when you press rather than when you drop, and a run of keystrokes in one field is one change too.
 
-The history holds the same JSON that **Save layout** writes, so it does not cover a source record or the background image. Typing into a number or text control records the state before the first keystroke, so the first edit to the width or height is undoable like any other. **Reset** is the baseline: it clears the history rather than adding to it, which is why **Undo** starts disabled. The history keeps the last hundred changes.
+The history holds the same JSON that **Save layout** writes, so it does not cover the background image. Typing into a number or text control records the state before the first keystroke, so the first edit to the width or height is undoable like any other. **Reset** is the baseline: it clears the history rather than adding to it, which is why **Undo** starts disabled. The history keeps the last hundred changes.
 
 ## Save and load a layout
 
-**Save layout** downloads `niimbench-label.json`: width, height, source, fields, density, model, connection, address, and rotation, and for each field its text, key, position, font, size, alignment and angle. The picture is left out on purpose.
+**Save layout** downloads `niimbench-label.json`: width, height, fields, density, model, connection, address, and rotation, and for each field its text, position, font, size, alignment and angle. The picture is left out on purpose.
 
 **Load layout** reads that JSON. It needs an object with a `fields` array of at most 64 objects. A field's `size` is its line height in dots. A layout saved before sizes were in dots says `scale` instead, and loads at `scale * 11` dots. A field's `font` is one of the built-in font ids; a layout without one, or naming a font this build does not have, loads in DejaVu Sans, and the row's menu shows it. A `background_b64` field is ignored and the status line says the background was not loaded.
 
-[../../templates/example-label.json](../../templates/example-label.json) is a file in that shape. It draws a literal title in a bold font and binds `sku` from `example`, on a 384×96 B21 label.
+[../../templates/example-label.json](../../templates/example-label.json) is a file in that shape. It draws a title in a bold font and a part number in a mono font, on a 384×96 B21 label.
 
-## Draw values from a source
-
-A source is a named JSON record, such as the built-in `example` with keys `title` and `sku`. **Source** picks the record the label draws from; nothing is picked until you pick it, so a label of plain text never reads one by accident. Once a source is picked, each row shows a key menu next to its text: choose a key and that row draws the record's value instead of its own text, and the line under the row says `record sku: NB-1`. **Fill from source** on an empty label lays one row per key of the record, stacked in the middle; on a label that already has rows, it fills their key menus instead.
-
-**Add or remove a source** installs a record of your own while the server runs: give it a name and a JSON object, and **Add source** picks it. **Remove picked source** drops a record you added; the built-in `example` cannot be removed. Where records live, and how long they last, is [../../subsystems/sources.md](../../subsystems/sources.md).
+The editor has no controls for sources: it draws literal text only, and drops a layout's `source` and its fields' `key` on load. The HTTP routes still take `source` and `key`; how sources are installed and read is [../../subsystems/sources.md](../../subsystems/sources.md).
 
 ## Pick a printer
 

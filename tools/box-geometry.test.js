@@ -134,7 +134,7 @@ for (const orientation of orientations) {
         const y = 40;
         for (const rotation of angles) {
           const field = { text, x: anchor, y, size, align_mode, rotation };
-          const left = placedLeft(field, null);
+          const left = placedLeft(field);
           const rect = boxRect(field, left, field.y);
           const quad = boxQuad(rect);
           const radians = rotation * Math.PI / 180;
@@ -208,7 +208,7 @@ for (const orientation of orientations) {
 {
   context.orientation = 0;
   const upright_field = { text: "niimbench", x: 48, y: 148, size: 10, align_mode: "center", rotation: 0 };
-  const upright_rect = boxRect(upright_field, placedLeft(upright_field, null), upright_field.y);
+  const upright_rect = boxRect(upright_field, placedLeft(upright_field), upright_field.y);
   const upright_quad = boxQuad(upright_rect);
   const corners = boxCorners(upright_rect);
   check("an upright view leaves the box's own coordinates alone",
@@ -245,8 +245,8 @@ check("a right-aligned field shifts by a whole block", shiftFor({ align_mode: "r
   // Nine characters at six tenths of 10 dots are 54 dots, half of which is 27.
   // The server reports 48 - 27 = 21 for this field.
   check("a centred field is placed half a block left of its anchor",
-    placedLeft(boot, null) === 21, String(placedLeft(boot, null)));
-  const rect = boxRect(boot, placedLeft(boot, null), boot.y);
+    placedLeft(boot) === 21, String(placedLeft(boot)));
+  const rect = boxRect(boot, placedLeft(boot), boot.y);
   check("the box starts at the placed edge",
     Math.round(rect.x) === 21, String(rect.x));
   check("the box is four dots above the first row of ink",
@@ -266,7 +266,7 @@ context.orientation = 0;
   const wide = { text: "niimbench", x: 4, y: 40, size: 10, font: "wide", align_mode: "left" };
   const narrow = { ...wide, font: "narrow" };
   const unknown = { ...wide, font: "comic-sans" };
-  const width = (field) => boxRect(field, placedLeft(field, null), field.y).block_w;
+  const width = (field) => boxRect(field, placedLeft(field), field.y).block_w;
   check("a box is as wide as its text in its own font",
     width(wide) === 54 && width(narrow) === 48, `${width(wide)} and ${width(narrow)}`);
   check("an unknown font measures as the default", width(unknown) === width(wide), String(width(unknown)));

@@ -80,9 +80,7 @@ function judge(report) {
     ", overlay " + JSON.stringify(report.overlay) + ", quad " + JSON.stringify(report.quad) +
     ", clipped " + JSON.stringify(report.clipped) + ", stroke " + JSON.stringify(report.colors) +
     ", rects " + JSON.stringify(report.rects) + ", field " + JSON.stringify(report.field) +
-    ", debug " + JSON.stringify(report.debug) +
-    ", shiftFor/src " + JSON.stringify(report.source && report.source.shiftFor) +
-    ", anchorOf/src " + JSON.stringify(report.source && report.source.anchorOf));
+    ", debug " + JSON.stringify(report.debug));
   if (!report.ink || !report.outline) return;
 
   const ink = report.ink;
@@ -130,10 +128,6 @@ function judge(report) {
   // whose handler throws leaves the field as it was.
   check("editing a row's text, size and font changes its field",
     Boolean(report.edit) && report.edit.ok === true, JSON.stringify(report.edit));
-  // The source menu, Fill from source and a row's key menu draw a record's
-  // value, the way the API does.
-  check("picking a source and a key draws the record's value",
-    Boolean(report.source) && report.source.ok === true, JSON.stringify(report.source));
   // Every font the renderer carries is offered in the row's font menu.
   check("a row offers every font the server carries",
     Boolean(report.fonts) && report.fonts.served > 1 && report.fonts.offered === report.fonts.served,

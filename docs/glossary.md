@@ -12,7 +12,7 @@
 
 **Coeffect.** A service key in `inject`. The fiber applies only while every key is present.
 
-**Source.** A named JSON record the editor can request. `json-source` publishes `"example"`; `POST /api/sources` installs one that lasts until the `http` fiber drops or `DELETE /api/sources/<name>` removes it.
+**Source.** A named JSON record a render can draw a field's `key` from. `json-source` publishes `"example"`; `POST /api/sources` installs one that lasts until the `http` fiber drops or `DELETE /api/sources/<name>` removes it.
 
 **Origin.** What a field's text comes from: its own `literal`, or a `record` key. `/api/label/track` reports it.
 

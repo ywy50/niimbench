@@ -1566,14 +1566,16 @@ test "editor page renders fields through the server" {
     // never exist, and they come out clipped.
     try std.testing.expect(std.mem.indexOf(u8, page_html, "function usePage(") != null);
     // The page sizes its field boxes from the renderer's own metrics, marks
-    // the fields the renderer will clip, resolves record values through the
-    // server, and can save and load a layout.
+    // the fields the renderer will clip, and can save and load a layout.
     try std.testing.expect(std.mem.indexOf(u8, page_html, "/api/label/metrics") != null);
     try std.testing.expect(std.mem.indexOf(u8, page_html, "/api/label/sizes") != null);
     try std.testing.expect(std.mem.indexOf(u8, page_html, "id=\"label-size\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, page_html, "/api/label/track") != null);
     try std.testing.expect(std.mem.indexOf(u8, page_html, "clipped") != null);
-    try std.testing.expect(std.mem.indexOf(u8, page_html, "/api/sources") != null);
+    // The editor draws literal text only. Source controls were taken out on
+    // purpose; a source UI is a later design of its own, not this one back.
+    try std.testing.expect(std.mem.indexOf(u8, page_html, "/api/sources") == null);
+    try std.testing.expect(std.mem.indexOf(u8, page_html, "id=\"source\"") == null);
     // The printer comes from a scan, and the page names the list after what
     // the scan found rather than asking for a tty or a MAC by hand.
     try std.testing.expect(std.mem.indexOf(u8, page_html, "/api/devices/scan") != null);

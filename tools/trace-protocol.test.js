@@ -74,8 +74,8 @@ const phases = [
   { name: "the boot asks for the metrics", needle: "api(\"/api/label/metrics\")" },
   // The scan records what it found inside the function the boot calls.
   { name: "the boot scans for a printer", needle: "async function scanDevices(" },
-  // The boot's own placement starts once the sources are loaded.
-  { name: "the boot places its first field", needle: "      .then(loadSources)\n" },
+  // The boot's own placement starts once the startup scan has settled.
+  { name: "the boot places its first field", needle: "      .then(() => scanDevices(false, true))\n      .catch(() => {})\n" },
 ];
 const starts = phases.map((phase) => page.indexOf(phase.needle));
 for (const [i, phase] of phases.entries()) {
