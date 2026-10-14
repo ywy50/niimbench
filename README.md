@@ -1,4 +1,9 @@
-<h1 align="center">🏷️ niimbench</h1>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
+    <img src="docs/assets/logo-light.svg" alt="niimbench" width="420">
+  </picture>
+</p>
 
 <p align="center">
   <em>Lay out a label in your browser, see the exact dots the print head will burn,
@@ -127,7 +132,7 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 | `src/server.zig`, `src/editor.html` | HTTP API and the editor page |
 | `src/plugins.zig`, `src/example_source.zig`, `cordis.patch.yml` | Boot list and plugins |
 | `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness, and the label catalogue fetcher |
-| `docs/assets/` | The README's screenshot and the steps that take it |
+| `docs/assets/` | The logo kit, and the README's screenshot with the steps that take it ([docs/assets/README.md](docs/assets/README.md)) |
 | `Makefile` | `make`, `make serve`, `make test`, `make drive`, `make print`, `make labels` |
 | `docs/` | Index, architecture, subsystems, cookbook, user guide, templates, reviews |
 
