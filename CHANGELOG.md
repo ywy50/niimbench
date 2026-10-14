@@ -11,6 +11,14 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- **Bluetooth on macOS.** On a Mac, niimbench finds and prints to a Niimbot
+  printer over Bluetooth through Apple's CoreBluetooth. Build it from source
+  for now. The first scan asks whether the terminal may use Bluetooth, and a
+  printer's address on a Mac is the UUID macOS gives it. USB on a Mac is not
+  supported yet.
+
 ## [0.2.0] - 2026-10-14
 
 ### Added

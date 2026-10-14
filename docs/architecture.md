@@ -29,7 +29,7 @@ browser or xdg-open
 
 Dimension words are height then width: `SetPageSize` reads its first word as the page's length down the tape ([subsystems/printer.md](subsystems/printer.md#raster)).
 
-`device.zig` opens the two transports and probes serial ports. `discovery.zig` is the found-device list, the finder registry, and the model lookup. `dbus.zig` is the D-Bus client the Bluetooth finder asks BlueZ with, and `ble.zig` writes print frames to a BLE printer through it.
+`device.zig` opens the two transports and probes serial ports. `discovery.zig` is the found-device list, the finder registry, and the model lookup. `dbus.zig` is the D-Bus client the Bluetooth finder asks BlueZ with, and `ble.zig` writes print frames to a BLE printer through it. On macOS `corebluetooth.zig` is both the Bluetooth finder and the print channel, through Apple's CoreBluetooth.
 
 `label.zig` lays a field's text out — font, size, alignment, angle — and `font.zig` draws it from the fonts embedded in the binary. How a line is measured and how glyphs are filled is [subsystems/text.md](subsystems/text.md).
 
