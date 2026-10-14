@@ -38,6 +38,9 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 | [../tools/canvas-test.sh](../tools/canvas-test.sh), [../tools/canvas.test.js](../tools/canvas.test.js) | Load the page in a headless browser and check what it drew and what its self-check reported (`make canvas-test`) |
 | [../tools/trace-test.sh](../tools/trace-test.sh), [../tools/trace-test.js](../tools/trace-test.js) | Load the page once and check the trace both sides wrote (`make trace-test`) |
 | [../tools/trace.sh](../tools/trace.sh) | Clears the trace, runs a command, prints what it recorded |
+| [../tools/with-server.sh](../tools/with-server.sh) | Runs one command against a throwaway server, then stops it: how checks and agents get a server |
+| [../tools/drive.js](../tools/drive.js) | Drives the page in a headless browser with real input and screenshots (`make drive`) |
+| [../tools/stray-test.sh](../tools/stray-test.sh) | Checks no server outlives its launcher, even one killed with SIGKILL (`make stray-test`) |
 | [../tools/fetch-labels.py](../tools/fetch-labels.py) | Refreshes the label catalogue from the vendor cloud (`make labels`); standard library only, run through `uv` |
 
 `make test` runs every check in this table that has a target, then `zig build test`. The browser checks skip themselves, saying so, when no Chromium-family browser is found; `BROWSER=` names one.
@@ -53,6 +56,14 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 Serving runs one at a time. `runServe` takes an exclusive `flock` on `.niimbench.lock` in the working directory before the listener exists, so a second start prints the pid that holds it and exits with `error.AlreadyServing` rather than binding a second port. The kernel releases the lock when the process ends however it ends, so there is no stale lock to clear. Stray servers are worth preventing: each has its own port and its own session token, and a page left open on an old one looks like the page just built.
 
 The HTTP listener and the bytes sent to the printer are process effects. They are not Cordis effects. Stopping the process closes the listener. A print that has already reached `start_print` finishes with `end_print`.
+
+## Throwaway servers
+
+A check or an agent never starts a server with `&`: a server started that way outlives whoever started it. `tools/with-server.sh COMMAND` starts one in a directory of its own, booted from [../tools/harness.patch.yml](../tools/harness.patch.yml) so no printer is reachable, runs the command with `NIIMBENCH_URL`, `NIIMBENCH_PID` and `NIIMBENCH_DIR` in its environment, and stops the server when the command ends. `make trace-test`, `make canvas-test` and `make drive` all run under it.
+
+The server cannot outlive the script. `with-server.sh` passes its own pid as `--parent`, and the server asks the kernel (`PR_SET_PDEATHSIG`) to send it `SIGKILL` when its parent exits, however the parent exits: a launcher killed outright, which never runs its cleanup, still takes its server with it. A `--parent` that is not the server's parent is refused at startup, before the lock is taken. `make stray-test` checks a finished command, a launcher killed with `SIGKILL`, and a wrong `--parent`.
+
+`make drive` loads the page in a headless browser and drives it with real mouse input. `STEPS=` names a steps file, whose API is at the top of [../tools/drive.js](../tools/drive.js); without one it opens the page, screenshots it into `zig-out/drive/`, and fails if the page threw. The browser runs under `setpriv --pdeathsig KILL`, so it dies with the driver.
 
 ## Docs map
 

@@ -42,6 +42,12 @@ Serve the editor on a fixed port:
 make serve PORT=8080
 ```
 
+Look at the page in a headless browser, with your own steps or none (see `tools/drive.js`):
+
+```sh
+make drive STEPS=steps.js
+```
+
 Print a binary PGM over USB:
 
 ```sh
@@ -58,6 +64,7 @@ Zig is 0.17. `make test` is the check for a behavior change. Report the command 
 - `inject` in the patch must match `Plugin.inject`. A mismatch is `error.InjectMismatch`. A missing coeffect leaves the fiber inactive until the service appears.
 - Printer bytes on the wire are outside the effect system. Say so next to the send, and finish a job that has reached `start_print` with `end_print`.
 - A path that reaches a printer or reads a roll says what it asked for and how it ended, through the `trace` service. The log and its routes are [docs/subsystems/trace.md](docs/subsystems/trace.md).
+- **Never start a server with `&`; it outlives you.** Run a command against a throwaway server with `tools/with-server.sh`, and look at the page with `make drive`. The kernel kills that server when its launcher ends. [docs/development.md](docs/development.md#throwaway-servers).
 - **Run `make trace-test` before guessing.** It builds, runs the page once, prints the trace both sides wrote and fails if a declared step is missing. This is enforced, not advised: `make protocol-test` checks the protocol without a browser, so a step that runs without recording itself fails `make test` and names the line to add. Nothing depends on remembering.
 - Preview and print share `compose` in `src/server.zig`. The page does not send its own preview pixels for a field label.
 - The listener binds `127.0.0.1` only. Every route requires the session token, as `?token=` or the `niimbench` cookie. `GET /?token=` redirects to `/`.
