@@ -48,7 +48,7 @@
       font-size: 15px;
       line-height: 1.35;
     }
-    header, .workspace { width: min(76rem, calc(100% - 2rem)); margin-inline: auto; }
+    header, .workspace { width: calc(100% - 2rem); margin-inline: auto; }
     header {
       display: flex; justify-content: space-between; align-items: center; gap: 1rem;
       position: sticky; top: 0; z-index: 5;
@@ -60,58 +60,69 @@
     }
     h1 { margin: 0; font-size: 1.12rem; font-weight: 700; letter-spacing: -0.01em; }
     #status {
-      min-height: 0; margin: 0; max-width: 65%; padding: 0.18rem 0.7rem;
+      min-height: 0; margin: 0 0 0 auto; max-width: 65%; padding: 0.18rem 0.7rem;
       font-size: 0.78rem; color: var(--muted); white-space: nowrap;
       overflow: hidden; text-overflow: ellipsis;
       background: var(--surface-2); border: 1px solid var(--line); border-radius: 999px;
     }
     form { display: block; }
-    .workspace { display: grid; gap: 1rem; padding: 1rem 0 2.5rem; }
-    /* The text work is the tall part of the page, so it keeps the left and the
-       narrower column; the image controls sit in their own pane beside it, and
-       stay in view while the field rows scroll. */
-    .panels { display: grid; grid-template-columns: minmax(0, 1fr) 19rem; gap: 1rem; align-items: start; }
-    /* Swapping is one class on the wrapper: the image pane moves to the first
-       column and the text work takes the rest. */
-    .panels.image-first { grid-template-columns: 19rem minmax(0, 1fr); }
-    .panels.image-first .panel-image { grid-column: 1; grid-row: 1; }
-    .panels.image-first .panel-text { grid-column: 2; grid-row: 1; }
-    .panel { display: grid; gap: 0.7rem; }
-    .panel-image {
-      position: sticky; top: 1rem;
-      padding: 0.8rem; background: var(--surface);
-      border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
-    }
-    .panel-text .fields { min-width: 0; }
-    @media (max-width: 60rem) {
-      .panels { grid-template-columns: 1fr; }
-      .panel-image { position: static; }
-    }
-    .top {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 21rem;
-      gap: 1rem;
-      align-items: start;
-    }
-    .stage {
-      display: grid; justify-items: center; align-content: center; gap: 0.6rem;
-      min-height: 12rem; padding: 1rem;
-      background: var(--surface); border: 1px solid var(--line);
-      border-radius: var(--radius); box-shadow: var(--shadow);
+    /* The workspace is a board of panels on a 24-column grid, the way a
+       dashboard is. A panel's place and size are grid cells, written by
+       `placePanels` into `--col` and `--row`: drag a title to move a panel and
+       its corner to resize it. Rows are fixed, so a panel scrolls what it
+       cannot show rather than pushing the page longer. */
+    .workspace {
+      display: grid; grid-template-columns: repeat(24, minmax(0, 1fr));
+      grid-auto-rows: 1.5rem; gap: 1rem; padding: 1rem 0 2.5rem;
     }
     .panel {
-      display: grid; gap: 0.7rem; align-content: start; padding: 0.85rem;
+      grid-column: var(--col); grid-row: var(--row);
+      position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0;
       background: var(--surface); border: 1px solid var(--line);
       border-radius: var(--radius); box-shadow: var(--shadow);
+    }
+    .panel-head {
+      margin: 0; padding: 0.4rem 0.85rem;
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
+      color: var(--muted); border-bottom: 1px solid var(--line);
+      cursor: grab; touch-action: none; user-select: none;
+    }
+    .panel-body {
+      flex: 1 1 auto; min-height: 0; overflow: auto;
+      display: grid; gap: 0.7rem; align-content: start; padding: 0.85rem;
+    }
+    .panel-grip {
+      position: absolute; right: 1px; bottom: 1px; width: 0.85rem; height: 0.85rem;
+      cursor: nwse-resize; touch-action: none;
+      background: linear-gradient(135deg, transparent 55%, var(--line-strong) 55% 63%, transparent 63% 75%, var(--line-strong) 75% 83%, transparent 83%);
+    }
+    /* While a panel is dragged it follows the pointer above the others, and the
+       dashed cell under it is where it lands. */
+    .panel.moving { z-index: 3; border-color: var(--accent); }
+    .panel.moving .panel-head { cursor: grabbing; }
+    .panel-ghost {
+      grid-column: var(--col); grid-row: var(--row);
+      border: 2px dashed var(--accent); border-radius: var(--radius); background: var(--accent-soft);
+    }
+    /* The preview's canvas is fitted to whatever room its panel leaves it, so
+       resizing the panel resizes the picture. */
+    .stage { display: flex; flex-direction: column; align-items: center; overflow: hidden; }
+    .stage .canvas-box { flex: 1 1 0; min-height: 0; align-self: stretch; display: grid; place-items: center; }
+    /* A narrow window has no room for a board: every panel is full width, as
+       tall as what it holds, in the order the page lists them. The script asks
+       the same query before it fits the preview or starts a drag. */
+    @media (max-width: 52rem) {
+      .workspace { grid-auto-rows: auto; }
+      .panel { grid-column: 1 / -1; grid-row: auto; }
+      .panel-head { cursor: default; }
+      .panel-grip, #reset-panels { display: none; }
+      .stage .canvas-box { flex: none; }
     }
     .panel .row { grid-template-columns: 1fr 1fr; }
     /* The connection name is short and the address is not, so this row trades
        width the other way. */
     .panel .row.connection { grid-template-columns: 9rem minmax(0, 1fr); }
     .panel .span { grid-column: 1 / -1; }
-    @media (max-width: 52rem) {
-      .top { grid-template-columns: 1fr; }
-    }
     label { display: grid; gap: 0.28rem; font-size: 0.78rem; color: var(--muted); }
     .row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.6rem; }
     .tools { display: flex; flex-wrap: wrap; gap: 0.45rem; align-items: center; }
@@ -280,18 +291,24 @@
   <header>
     <h1>niimbench</h1>
     <p id="status" aria-live="polite">idle</p>
+    <button type="button" id="reset-panels" title="put every panel back where the page first had it">Reset panels</button>
   </header>
   <form id="label">
   <div class="workspace">
-  <div class="top">
-    <div class="stage">
-      <canvas id="preview" width="384" height="240"></canvas>
+  <section class="panel" data-panel="preview">
+    <h2 class="panel-head">Preview</h2>
+    <div class="panel-body stage">
+      <div class="canvas-box"><canvas id="preview" width="384" height="240"></canvas></div>
       <p class="hint">Drag a box to move it. Drag the round handle to rotate it.
         <label class="check"><input id="snap" type="checkbox"> Snap 15°</label>
               <span id="view-note" class="view-note" aria-live="polite"></span>
       </p>
     </div>
-    <div class="panel">
+    <span class="panel-grip" aria-hidden="true"></span>
+  </section>
+  <section class="panel" data-panel="printer">
+    <h2 class="panel-head">Label and printer</h2>
+    <div class="panel-body">
       <div class="row">
         <label>Model
           <select id="model">
@@ -345,10 +362,12 @@
         </div>
       </div>
     </div>
-  </div>
+    <span class="panel-grip" aria-hidden="true"></span>
+  </section>
 
-  <div class="panels">
-  <section class="panel panel-text">
+  <section class="panel" data-panel="text">
+    <h2 class="panel-head">Text</h2>
+    <div class="panel-body">
     <div class="fields">
         <div id="field-list"></div>
     </div>
@@ -358,7 +377,6 @@
       <button type="button" id="undo" title="undo (Ctrl+Z)">Undo</button>
       <button type="button" id="redo" title="redo (Ctrl+Shift+Z)">Redo</button>
       <label class="toggle"><input type="checkbox" id="grid"> Grid</label>
-      <button type="button" id="swap-panes" title="put the image controls on the other side">Swap sides</button>
       <span class="spacer"></span>
       <button type="submit" class="primary">Print</button>
     </div>
@@ -367,8 +385,12 @@
       <label class="file">Load layout <input id="load" type="file" accept="application/json,.json"></label>
       <button type="button" id="reset">Reset</button>
     </div>
+    </div>
+    <span class="panel-grip" aria-hidden="true"></span>
   </section>
-  <section class="panel panel-image">
+  <section class="panel" data-panel="image">
+    <h2 class="panel-head">Image</h2>
+    <div class="panel-body">
     <label>Image <input id="file" type="file" accept="image/*"></label>
     <label>Image threshold
     <input id="image-threshold" type="range" min="0" max="255" value="160">
@@ -387,8 +409,10 @@
           <label>Top <input id="image-y" type="number" value="0"></label>
         </div>
     <span class="hint">Drag the picture to move it, a square handle to scale, and the round handle to turn it.</span>
+    </div>
+    <span class="panel-grip" aria-hidden="true"></span>
   </section>
-  </div>
+  <div class="panel-ghost" hidden></div>
   </div>
   </form>
 
@@ -1598,7 +1622,6 @@
       }
     }
 
-    /// Keep the bitmap's pixels crisp, and never larger than the window.
     /// What the page thinks it is showing. A row of numbers under the preview
     /// is worth a screenshot: when the picture and the boxes disagree, this says
     /// which frame each of them is in.
@@ -1616,15 +1639,21 @@
       traceLine("info", "view: " + text);
     }
 
+    /// Keep the bitmap's pixels crisp, and as large as the preview panel has
+    /// room for: a whole multiple when it fits at least once, a fraction when
+    /// it does not. Resizing the panel resizes the picture. A narrow window
+    /// stacks the panels and leaves no height to fill, so there the picture
+    /// takes four tenths of the window. The width is the stylesheet's own
+    /// query, so the two cannot disagree about which layout is showing.
     function fitCanvas() {
-      const stage = canvas.parentElement;
-      const narrow = window.innerWidth <= 832;
-      const maxW = Math.max(160, (stage.clientWidth || 320) - 24);
+      const room = canvas.parentElement;
+      const narrow = window.matchMedia("(max-width: 52rem)").matches;
+      const maxW = Math.max(16, room.clientWidth || 320);
       const maxH = narrow
         ? Math.max(160, Math.round(window.innerHeight * 0.4))
-        : Math.max(200, Math.min(maxW, window.innerHeight - 280));
+        : Math.max(16, room.clientHeight || 240);
       const fit = Math.min(maxW / canvas.width, maxH / canvas.height);
-      const scale = fit >= 1 ? Math.max(1, Math.min(3, Math.floor(fit))) : fit;
+      const scale = fit >= 1 ? Math.max(1, Math.floor(fit)) : fit;
       canvas.style.width = Math.max(1, Math.round(canvas.width * scale)) + "px";
       canvas.style.height = Math.max(1, Math.round(canvas.height * scale)) + "px";
     }
@@ -2204,6 +2233,8 @@
     });
     canvas.addEventListener("pointerup", endDrag);
     window.addEventListener("resize", fitCanvas);
+    // The panel can change size without the window doing so.
+    new ResizeObserver(() => requestAnimationFrame(fitCanvas)).observe(canvas.parentElement);
     canvas.addEventListener("pointercancel", endDrag);
 
     // ---- found printers --------------------------------------------------
@@ -2395,19 +2426,150 @@
     document.querySelector("#scan-devices").addEventListener("click", () => scanDevices(true, true));
     document.querySelector("#grid").addEventListener("change", () => drawBoxes());
 
-    // Which side the image controls sit on is a preference, so it is kept.
-    const panels = document.querySelector(".panels");
-    function showImageFirst(first) {
-      panels.classList.toggle("image-first", first);
-      try { localStorage.setItem("niimbench.imageFirst", first ? "1" : "0"); } catch (error) { /* no storage */ }
-      fitCanvas();
+    // ---- panels ----------------------------------------------------------
+
+    /// Where each panel sits on the board, in grid cells: `x` and `w` count
+    /// the board's 24 columns, `y` and `h` its rows. The board is a CSS grid,
+    /// so these four numbers are the whole layout. Where the panels are is a
+    /// preference of this browser, kept in its storage, and not part of a
+    /// label: Save layout does not write it and Undo does not touch it.
+    const panelColumns = 24;
+    const panelDefaults = {
+      preview: { x: 0, y: 0, w: 17, h: 15 },
+      printer: { x: 17, y: 0, w: 7, h: 17 },
+      text: { x: 0, y: 15, w: 17, h: 13 },
+      image: { x: 17, y: 17, w: 7, h: 11 },
+    };
+    const board = document.querySelector(".workspace");
+    const ghost = document.querySelector(".panel-ghost");
+    let panelLayout = loadPanels();
+    let panelDrag = null;
+
+    /// Put overlapping panels apart the way a dashboard does. Panels are taken
+    /// top to bottom, `held` ahead of any other on its row, and each floats up
+    /// until it would touch one already placed, then drops below any it still
+    /// overlaps, so no panel is left with a gap above it. A moved panel is
+    /// `held`: it takes the cell it is over and the others make room. A resized
+    /// one is `pinned` as well, which places it before any other and where it
+    /// is, so its corner stays under the pointer and the panels it grows into
+    /// move below it. Then all of them settle once more, unpinned, which only
+    /// lifts: a panel that narrowed off the one it rested on floats up.
+    function settlePanels(layout, held, pinned) {
+      const overlaps = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+      const order = Object.keys(layout).sort((a, b) =>
+        layout[a].y - layout[b].y || (b === held) - (a === held) || layout[a].x - layout[b].x);
+      // Stable, so this moves the held panel to the front and nothing else.
+      if (pinned) order.sort((a, b) => (b === held) - (a === held));
+      const placed = [];
+      for (const id of order) {
+        const cell = layout[id];
+        if (pinned && id === held) {
+          placed.push(cell);
+          continue;
+        }
+        while (cell.y > 0 && !placed.some((other) => overlaps({ ...cell, y: cell.y - 1 }, other))) cell.y -= 1;
+        for (let hit = placed.find((other) => overlaps(cell, other)); hit; hit = placed.find((other) => overlaps(cell, other))) {
+          cell.y = hit.y + hit.h;
+        }
+        placed.push(cell);
+      }
+      return pinned ? settlePanels(layout) : layout;
     }
-    document.querySelector("#swap-panes").addEventListener("click", () => {
-      showImageFirst(!panels.classList.contains("image-first"));
+
+    /// The stored layout, panel by panel. A panel the store does not have, or
+    /// has as anything but four whole numbers, starts where the defaults put
+    /// it, and every panel is kept on the board and two cells or more each way.
+    function loadPanels() {
+      let stored = null;
+      try { stored = JSON.parse(localStorage.getItem("niimbench.panels")); } catch (error) { /* no storage */ }
+      const layout = {};
+      for (const [id, fallback] of Object.entries(panelDefaults)) {
+        const cell = stored && stored[id];
+        const { x, y, w, h } = cell && ["x", "y", "w", "h"].every((key) => Number.isInteger(cell[key])) ? cell : fallback;
+        const width = Math.min(Math.max(w, 2), panelColumns);
+        layout[id] = { x: Math.min(Math.max(x, 0), panelColumns - width), y: Math.max(y, 0), w: width, h: Math.max(h, 2) };
+      }
+      return settlePanels(layout);
+    }
+
+    function placeCell(element, cell) {
+      element.style.setProperty("--col", cell.x + 1 + " / span " + cell.w);
+      element.style.setProperty("--row", cell.y + 1 + " / span " + cell.h);
+    }
+
+    function placePanels() {
+      for (const panel of board.querySelectorAll(".panel")) placeCell(panel, panelLayout[panel.dataset.panel]);
+    }
+
+    /// A press on a panel's title moves the panel, and a press on its corner
+    /// resizes it. Every step is measured from the press in whole cells and
+    /// laid out again from the layout the press found, so dragging back puts
+    /// the other panels back too. A moved panel follows the pointer over the
+    /// dashed cell it will land in; a resized one snaps cell by cell. A narrow
+    /// window stacks the panels, so there is nothing to arrange there.
+    board.addEventListener("pointerdown", (event) => {
+      const handle = event.target.closest(".panel-head, .panel-grip");
+      if (!handle || event.button !== 0 || window.matchMedia("(max-width: 52rem)").matches) return;
+      const panel = handle.closest(".panel");
+      const style = getComputedStyle(board);
+      panelDrag = {
+        id: panel.dataset.panel,
+        panel,
+        resize: handle.classList.contains("panel-grip"),
+        start: structuredClone(panelLayout),
+        press: { x: event.clientX, y: event.clientY },
+        at: { x: panel.offsetLeft, y: panel.offsetTop },
+        column: (board.clientWidth + parseFloat(style.columnGap)) / panelColumns,
+        row: parseFloat(style.gridAutoRows) + parseFloat(style.rowGap),
+      };
+      try { handle.setPointerCapture(event.pointerId); } catch (error) { /* no active pointer */ }
+      panel.classList.add("moving");
+      event.preventDefault();
     });
-    try {
-      if (localStorage.getItem("niimbench.imageFirst") === "1") showImageFirst(true);
-    } catch (error) { /* no storage */ }
+
+    board.addEventListener("pointermove", (event) => {
+      if (!panelDrag) return;
+      const { id, panel, start } = panelDrag;
+      const dx = event.clientX - panelDrag.press.x;
+      const dy = event.clientY - panelDrag.press.y;
+      const was = start[id];
+      const cell = panelDrag.resize
+        ? {
+          ...was,
+          w: Math.min(Math.max(Math.round(was.w + dx / panelDrag.column), 2), panelColumns - was.x),
+          h: Math.max(Math.round(was.h + dy / panelDrag.row), 2),
+        }
+        : {
+          ...was,
+          x: Math.min(Math.max(Math.round(was.x + dx / panelDrag.column), 0), panelColumns - was.w),
+          y: Math.max(Math.round(was.y + dy / panelDrag.row), 0),
+        };
+      panelLayout = settlePanels({ ...structuredClone(start), [id]: cell }, id, panelDrag.resize);
+      placePanels();
+      if (panelDrag.resize) return;
+      placeCell(ghost, panelLayout[id]);
+      ghost.hidden = false;
+      panel.style.transform = "translate(" + (panelDrag.at.x + dx - panel.offsetLeft) + "px, " +
+        (panelDrag.at.y + dy - panel.offsetTop) + "px)";
+    });
+
+    function dropPanel() {
+      if (!panelDrag) return;
+      panelDrag.panel.classList.remove("moving");
+      panelDrag.panel.style.transform = "";
+      ghost.hidden = true;
+      panelDrag = null;
+      try { localStorage.setItem("niimbench.panels", JSON.stringify(panelLayout)); } catch (error) { /* no storage */ }
+    }
+    board.addEventListener("pointerup", dropPanel);
+    board.addEventListener("pointercancel", dropPanel);
+
+    document.querySelector("#reset-panels").addEventListener("click", () => {
+      panelLayout = structuredClone(panelDefaults);
+      placePanels();
+      try { localStorage.removeItem("niimbench.panels"); } catch (error) { /* no storage */ }
+    });
+    placePanels();
 
     document.querySelector("#image-threshold").addEventListener("input", () => scheduleRefresh());
 

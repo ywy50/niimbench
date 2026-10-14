@@ -32,6 +32,7 @@ export default [{
       window: "readonly", document: "readonly", location: "readonly", navigator: "readonly",
       localStorage: "readonly", console: "readonly", fetch: "readonly",
       setTimeout: "readonly", clearTimeout: "readonly", requestAnimationFrame: "readonly",
+      ResizeObserver: "readonly", getComputedStyle: "readonly", structuredClone: "readonly",
       Event: "readonly", PointerEvent: "readonly", KeyboardEvent: "readonly",
       Image: "readonly", ImageData: "readonly", FileReader: "readonly", Blob: "readonly", URL: "readonly",
       URLSearchParams: "readonly", atob: "readonly", btoa: "readonly", createImageBitmap: "readonly",

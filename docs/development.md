@@ -34,6 +34,7 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 | [../tools/trace-protocol.test.js](../tools/trace-protocol.test.js) | Checks every boot step the page declares is recorded, without a browser (`make protocol-test`) |
 | [../tools/view-geometry.test.js](../tools/view-geometry.test.js) | Checks the editor's preview geometry under node (`make view-test`) |
 | [../tools/box-geometry.test.js](../tools/box-geometry.test.js) | Checks the field box size, font, angle, anchor and drag under node (`make box-test`) |
+| [../tools/panel-layout.test.js](../tools/panel-layout.test.js) | Checks how the editor's panels make room for a moved or resized one, under node (`make panel-test`) |
 | [../tools/canvas-test.sh](../tools/canvas-test.sh), [../tools/canvas.test.js](../tools/canvas.test.js) | Load the page in a headless browser and check what it drew and what its self-check reported (`make canvas-test`) |
 | [../tools/trace-test.sh](../tools/trace-test.sh), [../tools/trace-test.js](../tools/trace-test.js) | Load the page once and check the trace both sides wrote (`make trace-test`) |
 | [../tools/trace.sh](../tools/trace.sh) | Clears the trace, runs a command, prints what it recorded |
