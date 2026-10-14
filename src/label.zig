@@ -19,13 +19,12 @@ pub const Align = enum {
     /// Clamping it to 0 moved the ink away from the editor's box, and a turned
     /// field, whose upright line may be far longer than the roll is wide,
     /// jumped along the roll as soon as it grew.
-    pub fn place(self: Align, x: usize, text_width: usize) isize {
-        const anchor: isize = @intCast(x);
+    pub fn place(self: Align, x: isize, text_width: usize) isize {
         const width: isize = @intCast(text_width);
         return switch (self) {
-            .left => anchor,
-            .center => anchor - @divFloor(width, 2),
-            .right => anchor - width,
+            .left => x,
+            .center => x - @divFloor(width, 2),
+            .right => x - width,
         };
     }
 };
@@ -35,7 +34,11 @@ pub const Align = enum {
 pub const Field = struct {
     text: []const u8 = "",
     key: []const u8 = "",
-    x: usize = 0,
+    /// The anchor `align_mode` names: the block's left edge, centre or right
+    /// edge. Signed, because a left-aligned block can start left of the label:
+    /// a field turned on a narrow roll does, and changing its alignment must
+    /// not move it.
+    x: isize = 0,
     y: usize = 0,
     /// Line height in dots, any whole number from 1 to `max_size`. A line of
     /// text is exactly this tall, descenders included.
@@ -554,6 +557,23 @@ test "a turned field keeps every ink pixel" {
         const difference = if (count > upright) count - upright else upright - count;
         try std.testing.expect(difference <= upright / 20 + 1);
     }
+}
+
+test "a left-aligned line can start left of the label" {
+    // The same line, anchored two different ways at the same left edge, draws
+    // the same ink: the left-aligned anchor is simply negative.
+    const gpa = std.testing.allocator;
+    const text = "niimbench";
+    const width = blockWidth(sans, text, 16);
+    const centred = Field{ .text = text, .x = 10, .y = 2, .size = 16, .align_mode = .center };
+    const left = try alignedX(gpa, centred, "");
+    try std.testing.expect(left < 0);
+    const a = try render(gpa, 60, 24, &.{centred}, "");
+    defer gpa.free(a.pixels);
+    const b = try render(gpa, 60, 24, &.{.{ .text = text, .x = left, .y = 2, .size = 16, .align_mode = .left }}, "");
+    defer gpa.free(b.pixels);
+    try std.testing.expect(width > 20);
+    try std.testing.expectEqualSlices(u8, a.pixels, b.pixels);
 }
 
 test "a turned centred line turns about its anchor however long it is" {

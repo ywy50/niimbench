@@ -34,7 +34,9 @@ A roll wider than the print head uses the head width. A 50 mm B21 roll is 384 do
 
 **Image** takes a picture — a photo, a logo, a QR code saved as a PNG — and draws it on the label in one ink. A picture is fitted to the view when it is imported, so it lands on the label whatever its shape and whichever way the view is turned, and the fitting is redone if the label or the view changes shape while you have not touched it. Once you have moved it, it stays where you put it.
 
-The frame drawn round the picture is what you grab: drag inside it to move, drag a corner to scale up or down, and drag the round grip above it to turn it. Scaling always re-samples the picture you imported, so enlarging it does not magnify a reduced copy. The **Scale %**, **Rotation**, **Left** and **Top** boxes do the same thing by number, **Fit** and **Fill** re-place it, **Turn 180°** flips it, and **Reset image** takes it off the label.
+The frame drawn round the picture is what you grab: drag inside it to move, drag a corner to scale up or down, and drag the round grip above it to turn it. Scaling always re-samples the picture you imported, so enlarging it does not magnify a reduced copy. The **Scale %**, **Rotation**, **Left** and **Top** boxes do the same thing by number, **Fit** and **Fill** re-place it, **Turn 180°** flips it, **Reset image** puts it back centred, fitted and upright, where an import puts it, and **Remove image** takes it off the label.
+
+Click a field's box or the picture to select it: its outline turns solid and thicker, and a field's row is shaded. **Delete** (or **Backspace**) removes what is selected, the same as the row's **Remove** or **Remove image**, as long as you are not typing in a box. **Undo** brings a removed field back; it does not cover the picture.
 
 **Image threshold** chooses which part of the picture becomes ink: everything darker than the slider prints black and everything lighter prints white. A label has one ink, so a photograph is reduced to two tones rather than dithered, and the slider is how you pick what survives.
 
@@ -44,7 +46,7 @@ The frame drawn round the picture is what you grab: drag inside it to move, drag
 
 **Font** picks the typeface a row is drawn in, from the fifteen free fonts built into niimbench: sans, serif and monospaced faces from DejaVu, Liberation, Open Sans, Fira Sans, Noto and Hack, with bold versions of the sans faces. A new row starts in DejaVu Sans. The same size can look larger or smaller from one font to the next, because size is the whole line, including the room a font keeps for accents and descenders; the box always shows what that line takes on the label. The list, with each font's licence, is [src/fonts/README.md](../../../src/fonts/README.md).
 
-**Fit** steps the size down to the largest one that still keeps the whole field inside the roll, where its alignment places it, so a value that cannot be broken stops being clipped. It never enlarges a field, and it does nothing when the text already fits. If not even a 1-dot line fits, the field is left as it is.
+**Fit** centres the field on the label and makes it as large as the label allows: the largest size whose box, turned the way the field is, stays a millimetre inside every edge. It grows a small field and shrinks a clipped one, in one click. With **Keep text upright** on in **Vertical**, the field is turned with the view, so **Fit** fills the width the preview shows. If not even a 1-dot line fits, the field is left as it is.
 
 **Wrap** breaks a row's text into lines that fit, from the row's `x` to the roll's edge, so a long value stops being clipped. A newline you typed is a paragraph the button keeps and wraps on its own. A word wider than the roll is cut, because the renderer has no hyphen to draw.
 
@@ -53,6 +55,8 @@ The arrow keys nudge a field by one pixel while its `x` or `y` input has focus; 
 A newline in a row's text starts a second line, so one field can hold a small block. Press Enter to add a line and Ctrl+Enter to print; the box on the preview grows to hold every line, and Save layout keeps them.
 
 The alignment decides what `x` means: the left edge, the centre, or the right edge of the block. `center` and `right` measure the widest line of the block, so a short line in a centred block ends where the row says it should. Each line is placed by its own width, so a short line in a centred block is centred. The box you drag follows the placed line, and the `x` input still shows the anchor.
+
+Changing the alignment never moves the text: the block stays where it is, and `x` changes to the edge the new alignment names. What it changes is what happens next — the lines of a block line up on that edge, and text that gets longer grows away from it. A left edge left of the label, which a turned field on a narrow roll can have, is a negative `x`.
 
 ## Turn the text
 
@@ -75,7 +79,7 @@ A new field starts at the view's own turn — `0` in Horizontal, `90` in Vertica
 
 ### Angle: the letters
 
-Each row has a degrees input. `0` is the letters across the tape, `90` turns them to run along it, and any angle between or beyond those is allowed. Drag the round handle on a box to turn it, or type the angle; the input follows the drag, so it always shows where the field is. **Snap 15°** restricts dragging to fifteen-degree steps, and typed angles are never snapped.
+Each row has a degrees input. `0` is the letters across the tape, `90` turns them to run along it, and any angle between or beyond those is allowed. Drag the round handle on a box to turn it, or type the angle; the input follows the drag, so it always shows where the field is. While you drag, the box and its letters turn on the page itself; the server draws the field at its new angle once, when you let go. **Snap 15°** restricts dragging to fifteen-degree steps, and typed angles are never snapped.
 
 ### What a box promises
 
@@ -120,7 +124,11 @@ The scan is in [../../subsystems/printer.md](../../subsystems/printer.md). **Con
 
 The **Printer** line under **Address** says what this page knows: a blue dot and `No address yet` when nothing is chosen, a green dot with the connection, model and `ready` once an address is set, an amber dot while a job is being sent, and a red dot with the reason when a job fails. It is the page's own state, not the printer's indicator light, which is a separate thing described in [manuals/d110.md](../../manuals/d110.md).
 
-Set **Model**, **Density**, **Orientation**, **Connection**, and **Address**. USB wants a tty such as `/dev/ttyACM0`. Bluetooth wants the MAC the printer list shows; a BLE-only model such as the D110_M is reached over its print characteristic, and picking a printer fills in the address, the model and the roll's size for you. **Print** sends the same label body the preview used, plus those printer fields. The status line shows `printed` or the error name. A job takes as long as the printer does, so **Print** is disabled until the answer arrives: a second click or a second `Ctrl+Enter` cannot send the same label twice.
+Set **Model**, **Density**, **Orientation**, **Connection**, and **Address**.
+
+**Density** is how hot the print head burns each dot: higher prints darker and bolder, lower lighter. It changes nothing about which dots print, so the preview, which shows exactly that, looks the same at every density; the difference is only on the paper. Each head has its own range, 1 to 5 on the B1, B21 and other B-series heads and 1 to 3 on the D11, D110 and B18, and the input offers the picked model's range: picking a D110 with density 5 sets it to 3, the most that head takes.
+
+ USB wants a tty such as `/dev/ttyACM0`. Bluetooth wants the MAC the printer list shows; a BLE-only model such as the D110_M is reached over its print characteristic, and picking a printer fills in the address, the model and the roll's size for you. **Print** sends the same label body the preview used, plus those printer fields. The status line shows `printed` or the error name. A job takes as long as the printer does, so **Print** is disabled until the answer arrives: a second click or a second `Ctrl+Enter` cannot send the same label twice.
 
 Text starts upright, in the middle of the label. Drag the round handle on a field to turn that field. The degree box shows the angle and accepts a typed one. **Snap 15°** locks the drag to 15 degree steps. The label itself stays the roll, so a 15 mm head stays 96 dots across. Picking a printer reads the roll and sets the label size when the tag and Niimbot's catalogue both answer.
 

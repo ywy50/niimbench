@@ -216,6 +216,20 @@ check("a free drag moves the box by the pointer's move",
 // Dragging past the far corner keeps the box inside the view, so the field
 // stays on the roll instead of running off it.
 const corner = drag(grab_box, { x: 17, y: 72 }, { x: 9999, y: 9999 });
+// The preview's display scale. A whole multiple keeps every dot the same
+// size, but flooring a fit of 1.6 to 1 left a 96x304 roll a third smaller
+// than its panel. The scale is whole only when that keeps most of the room.
+const scale_start = page.indexOf("    function displayScale(");
+const scale_end = page.indexOf("\n    }", scale_start);
+check("the page has displayScale", scale_start >= 0, "no displayScale in src/editor.html");
+if (scale_start >= 0) {
+  const displayScale = vm.runInContext(page.slice(scale_start, scale_end + 6) + "\n;displayScale", context);
+  check("a portrait roll fills its panel", displayScale(1.61) >= 1.6, String(displayScale(1.61)));
+  check("a whole scale is kept when it costs little", displayScale(5.1) === 5, String(displayScale(5.1)));
+  check("a scale is never above the fit", [0.4, 1, 1.3, 2.5, 3.9, 7].every((fit) => displayScale(fit) <= fit + 1e-9));
+  check("a fit below one shrinks", displayScale(0.5) === 0.5, String(displayScale(0.5)));
+}
+
 check("a drag clamps to the view", corner.x === 304 - 14 && corner.y === 96 - 60, JSON.stringify(corner));
 check("and the field stays on the roll",
   corner.roll.x >= 0 && corner.roll.x < 96 && corner.roll.y >= 0 && corner.roll.y < 304,

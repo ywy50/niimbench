@@ -602,8 +602,8 @@ pub fn labelSizes(service: *HttpService, _: RequestView) !Response {
         const model = @field(raster.Model, name);
         if (!first_model) try out.append(service.allocator, ',');
         first_model = false;
-        try out.print(service.allocator, "\"{s}\":{{\"max_width\":{d},\"default\":\"{s}\",\"sizes\":[", .{
-            name, model.maxWidth(), raster.defaultLabelId(model),
+        try out.print(service.allocator, "\"{s}\":{{\"max_width\":{d},\"max_density\":{d},\"default\":\"{s}\",\"sizes\":[", .{
+            name, model.maxWidth(), model.maxDensity(), raster.defaultLabelId(model),
         });
         var first_size = true;
         for (raster.label_sizes) |size| {
@@ -1530,7 +1530,7 @@ test "the editor route disappears when its fiber is disposed" {
 test "editor page renders fields through the server" {
     // The page as it is used: a label editor with a printer, not the record
     // feature. The source-record controls are deliberately not here.
-    const control = [_][]const u8{ "save", "load", "reset", "add-field", "device", "scan-devices", "upright" };
+    const control = [_][]const u8{ "save", "load", "reset", "add-field", "device", "scan-devices", "upright", "density-hint", "image-remove" };
 
     try std.testing.expect(std.mem.indexOf(u8, page_html, "/api/render") != null);
     try std.testing.expect(std.mem.indexOf(u8, page_html, "field-list") != null);
@@ -2113,11 +2113,11 @@ test "label sizes for a model omit the other series" {
     defer if (response.owned) gpa.free(response.body);
     try std.testing.expectEqual(std.http.Status.ok, response.status);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"dots_per_mm\":8") != null);
-    try std.testing.expect(std.mem.indexOf(u8, response.body, "\"b21\":{\"max_width\":384,\"default\":\"50x30\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response.body, "\"b21\":{\"max_width\":384,\"max_density\":5,\"default\":\"50x30\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"id\":\"50x30\",\"width_mm\":50,\"height_mm\":30,\"round\":false,\"width\":384,\"height\":240") != null);
-    try std.testing.expect(std.mem.indexOf(u8, response.body, "\"d11\":{\"max_width\":96,\"default\":\"12x40\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response.body, "\"d11\":{\"max_width\":96,\"max_density\":3,\"default\":\"12x40\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"id\":\"15x30\",\"width_mm\":15,\"height_mm\":30,\"round\":false,\"width\":96,\"height\":240") != null);
-    try std.testing.expect(std.mem.indexOf(u8, response.body, "\"b18\":{\"max_width\":384,\"default\":\"b18-14x50\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response.body, "\"b18\":{\"max_width\":384,\"max_density\":3,\"default\":\"b18-14x50\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"id\":\"b18-14x50\",\"width_mm\":14,\"height_mm\":50,\"round\":false,\"width\":112,\"height\":400") != null);
 
     const d11_at = std.mem.indexOf(u8, response.body, "\"d11\":").?;

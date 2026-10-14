@@ -34,6 +34,7 @@ export default [{
       setTimeout: "readonly", clearTimeout: "readonly", requestAnimationFrame: "readonly",
       ResizeObserver: "readonly", getComputedStyle: "readonly", structuredClone: "readonly",
       Event: "readonly", PointerEvent: "readonly", KeyboardEvent: "readonly",
+      DataTransfer: "readonly", File: "readonly",
       Image: "readonly", ImageData: "readonly", FileReader: "readonly", Blob: "readonly", URL: "readonly",
       URLSearchParams: "readonly", atob: "readonly", btoa: "readonly", createImageBitmap: "readonly",
       Map: "readonly", Set: "readonly", Promise: "readonly", Uint8Array: "readonly", Uint8ClampedArray: "readonly",
