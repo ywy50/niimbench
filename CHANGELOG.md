@@ -13,19 +13,41 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ### Added
 
-- A **Smooth** toggle under the preview blends the enlarged dots instead of
-  drawing each as a square, roughly how they look on paper. The dots, and what
-  prints, are the same either way; the choice is remembered in this browser.
+- A **Smooth** toggle under the preview rounds the enlarged dots into each
+  other instead of drawing each as a square, roughly how they look on paper.
+  The dots, and what prints, are the same either way; the choice is remembered
+  in this browser.
+- More than one picture on a label. **Add images** takes one file or several,
+  each goes on top of the others, a press takes the topmost, and the Image
+  panel's controls act on the picture last clicked or added.
+- A **Center** button on each text row puts the field back in the middle of
+  the label, upright in the view, at the size it has.
 
 ### Changed
 
+- The row under the preview keeps the hint and its toggles on one line and
+  the view's numbers on a small line of their own, instead of running into
+  each other.
 - The Label and printer panel opens with the printer: its status and last
-  job, the found devices, then connection and address, then the cloud opt-in, which now reads "Ask
-  the cloud for unknown label rolls" on one line. The label's model, size,
-  density and orientation follow.
+  job, the found devices, then connection and address, then the cloud opt-in,
+  which now reads "Ask the cloud for unknown label rolls" on one line. The
+  label's model, size, density and orientation follow.
+
+### Removed
+
+- The Left, Center and Right menu on each text row. New fields are centred; a
+  layout saved with another alignment still loads and prints as saved.
 
 ### Fixed
 
+- A picture added in the Vertical view lands on the label, upright. It was
+  centred by the view's shape, which put it off the narrow roll until a switch
+  to Horizontal re-placed it.
+- A picture's round grip is drawn where a press finds it, and stays on the
+  label. In Vertical it was drawn on the opposite side, and a picture fitted
+  to the label had its grip beyond the edge, so it could not be turned by
+  hand.
+- **Copy** keeps the field's font.
 - Dragging a field's round anchor in the Vertical view no longer flips the
   text upside down on the first move: the drag added the view's quarter turn
   the wrong way round.
