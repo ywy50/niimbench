@@ -65,6 +65,10 @@ The server cannot outlive the script. `with-server.sh` passes its own pid as `--
 
 `make drive` loads the page in a headless browser and drives it with real mouse input. `STEPS=` names a steps file, whose API is at the top of [../tools/drive.js](../tools/drive.js); without one it opens the page, screenshots it into `zig-out/drive/`, and fails if the page threw. The browser runs under `setpriv --pdeathsig KILL`, so it dies with the driver.
 
+## CI and releases
+
+[../.github/workflows/ci.yml](../.github/workflows/ci.yml) runs `zig fmt --check` and `make test` on every push to `main` and every pull request, on Ubuntu with the runner's own Chrome, so the browser checks run there rather than skip. [../.github/workflows/release.yml](../.github/workflows/release.yml) publishes a `vX.Y.Z` tag. The version is written once, in `build.zig.zon`, which `build.zig` passes to the code as `build_options.version` and `niimbench --version` prints. Cutting a release is [cookbook/releasing.md](cookbook/releasing.md).
+
 ## Docs map
 
 The index of every page is [README.md](README.md), and the rules for writing them are [AGENTS.md](AGENTS.md).

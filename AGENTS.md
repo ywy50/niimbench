@@ -69,6 +69,7 @@ Zig is 0.17. `make test` is the check for a behavior change. Report the command 
 - Preview and print share `compose` in `src/server.zig`. The page does not send its own preview pixels for a field label.
 - The listener binds `127.0.0.1` only. Every route requires the session token, as `?token=` or the `niimbench` cookie. `GET /?token=` redirects to `/`.
 - `docs/reviews/cordis-review.md` is the checklist for the plugin model. It is a copy of a review checklist from another project, not a niimbench status report.
+- A user-visible change adds a line under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md). Releases are tag-driven: [docs/cookbook/releasing.md](docs/cookbook/releasing.md).
 - Docs accompany a behavior change: update the owning page in the same change. One fact, one home. [docs/AGENTS.md](docs/AGENTS.md).
 - Text is drawn from the fonts in `src/fonts/`. A new font is an `embed` line in `src/font.zig`, its file and licence in `src/fonts/`, and a row in [src/fonts/README.md](src/fonts/README.md); `make test` then draws every letter of it. [docs/subsystems/text.md](docs/subsystems/text.md).
 - `make lint` fails on a name the page script uses but nothing declares, on a relative doc link that does not resolve, and on another project named outside the README's one credit line.

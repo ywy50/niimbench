@@ -30,11 +30,22 @@ pub fn run(init: std.process.Init) !void {
         try runPrint(init, args[2..]);
         return;
     }
+    if (args.len >= 2 and (std.mem.eql(u8, args[1], "--version") or std.mem.eql(u8, args[1], "version"))) {
+        try writeStdout(init.io, "niimbench " ++ version ++ "\n");
+        return;
+    }
     if (args.len >= 2 and (std.mem.eql(u8, args[1], "--help") or std.mem.eql(u8, args[1], "help"))) {
         try writeStdout(init.io, help_text);
         return;
     }
     try runServe(init, args[1..]);
+}
+
+/// The version in build.zig.zon, which is the only place it is written.
+pub const version = @import("build_options").version;
+
+test "the version is a semantic version" {
+    _ = try std.SemanticVersion.parse(version);
 }
 
 const help_text =
@@ -46,6 +57,8 @@ const help_text =
     \\  print a PGM image
     \\    print --image label.pgm --addr /dev/ttyACM0 [--model b21] [--conn usb|bluetooth]
     \\          [--density 5] [--rotate 0|90|180|270]
+    \\  print the version
+    \\    --version
     \\
 ;
 

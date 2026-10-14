@@ -1,0 +1,46 @@
+name: CI
+
+# Every push to main and every pull request runs the formatter check and the
+# whole of `make test`: the page lint, the node checks, the headless-browser
+# harnesses and `zig build test`. CI runs exactly what a person runs, so a
+# green check means the same thing in both places.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Least privilege: nothing here writes back to the repository, and without
+# this the token inherits the repository default, which every action in the
+# run would get.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      # Actions are pinned by full commit SHA, the tag in the comment, so a
+      # moved tag or a compromised release cannot change what runs here.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      # tools/drive.js speaks to the browser over the WebSocket global, which
+      # Node has from 22; the runner's own Node is older.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Check Zig formatting
+        run: zig fmt --check build.zig build.zig.zon src
+      # The runner ships Google Chrome, which the Makefile finds by itself, so
+      # the browser checks run here rather than skip.
+      - name: make test
+        run: make test

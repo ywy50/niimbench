@@ -1,0 +1,165 @@
+name: release
+
+# Tag-driven releases. Pushing vX.Y.Z checks that the tag is on main and
+# matches build.zig.zon, creates a GitHub Release whose notes are that
+# version's CHANGELOG.md section, then, on each platform with a runner, re-runs
+# the suite on the tagged tree, builds a static ReleaseSafe binary, checks it
+# reports the tag, and uploads a tarball, its checksum and a signed build
+# provenance attestation. The procedure is docs/cookbook/releasing.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+# Two pushes of one tag must not race to publish it.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The ancestry check reads main's history, which a clone of one tag
+          # does not carry.
+          fetch-depth: 0
+
+      # A release is cut from main. A tag on a branch that never merged would
+      # publish code no review saw.
+      - name: Check the tag is on main
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "ERROR: ${GITHUB_REF_NAME} ($GITHUB_SHA) is not on main; tag a commit that main contains" >&2
+            exit 1
+          fi
+          echo "ok: ${GITHUB_REF_NAME} is on main"
+
+      # The version has one home, build.zig.zon, and `niimbench --version`
+      # reads it at build time. A tag that disagrees fails here instead of
+      # publishing a binary that reports a version nobody tagged.
+      - name: Check the tag matches build.zig.zon
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          case "$TAG" in v*) ;; *) echo "ERROR: tag '$TAG' does not start with 'v'" >&2; exit 1;; esac
+          SHIPPED="$(sed -n 's/^ *\.version = "\([^"]*\)",.*/\1/p' build.zig.zon | head -1)"
+          if [ -z "$SHIPPED" ]; then
+            echo "ERROR: no .version = \"...\" in build.zig.zon" >&2
+            exit 1
+          fi
+          if [ "$SHIPPED" != "${TAG#v}" ]; then
+            echo "ERROR: tag $TAG but build.zig.zon says $SHIPPED; make them match before tagging" >&2
+            exit 1
+          fi
+          echo "ok: tag $TAG matches build.zig.zon ($SHIPPED)"
+
+      # The notes are this version's own CHANGELOG.md section, so a release
+      # cannot ship without its entry and the notes are never boilerplate.
+      - name: Create the GitHub Release from the changelog section
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          NOTES="$(awk -v ver="$VERSION" '
+            $0 ~ "^## \\[" ver "\\]" { found = 1; next }
+            found && (/^## / || /^\[[^]]+\]: /) { exit }
+            found { print }
+          ' CHANGELOG.md)"
+          if [ -z "$(printf '%s' "$NOTES" | tr -d '[:space:]')" ]; then
+            echo "ERROR: CHANGELOG.md has no ## [$VERSION] section; add one before tagging $TAG" >&2
+            exit 1
+          fi
+          if gh release view "$TAG" --json id -q .id >/dev/null 2>&1; then
+            echo "release $TAG already exists; the binaries are re-uploaded below"
+          else
+            gh release create "$TAG" --verify-tag --title "niimbench ${VERSION}" --notes "$NOTES"
+          fi
+
+  publish:
+    needs: release
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      # The attestation is signed with the runner's OIDC identity and stored
+      # through the attestations API; no other step needs either.
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # niimbench links no libc, so each build is a static binary that
+          # runs on any distribution, and each target has a runner of its own
+          # architecture that tests it before it ships.
+          - os: ubuntu-24.04
+            target: x86_64-linux
+          - os: ubuntu-24.04-arm
+            target: aarch64-linux
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      # The whole suite, on the tagged tree. Where the runner has no Chromium
+      # browser the Makefile says so and skips the browser checks; CI on every
+      # push runs them on x86_64.
+      - name: Test the tagged tree
+        run: make test
+      - name: Build a static ReleaseSafe binary
+        run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }} --prefix "$RUNNER_TEMP/niimbench"
+      # The binary proves its version before it ships, and the fonts compiled
+      # into it travel with their licences, which their terms require.
+      - name: Package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          BIN="$RUNNER_TEMP/niimbench/bin/niimbench"
+          REPORTED="$("$BIN" --version | awk '{print $2}')"
+          if [ "$REPORTED" != "$VERSION" ]; then
+            echo "ERROR: the binary reports $REPORTED, the tag says $VERSION" >&2
+            exit 1
+          fi
+          if file "$BIN" | grep -q dynamically; then
+            echo "ERROR: $BIN is dynamically linked; releases are static" >&2
+            exit 1
+          fi
+          # A name without the version, so releases/latest/download/<name>
+          # always means the newest one.
+          NAME="niimbench-${{ matrix.target }}"
+          mkdir -p "dist/$NAME/licenses/fonts"
+          cp "$BIN" LICENSE README.md CHANGELOG.md "dist/$NAME/"
+          cp src/fonts/README.md src/fonts/*LICENSE* src/fonts/*OFL* "dist/$NAME/licenses/fonts/"
+          tar -C dist --owner=0 --group=0 --numeric-owner -czf "dist/$NAME.tar.gz" "$NAME"
+          (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
+          cat "dist/$NAME.tar.gz.sha256"
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*.tar.gz
+      - name: Upload to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/*.tar.gz dist/*.sha256 --clobber

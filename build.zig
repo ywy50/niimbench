@@ -40,6 +40,12 @@ pub fn build(b: *std.Build) void {
         // which requires us to specify a target.
         .target = target,
     });
+    // The version `niimbench --version` reports comes from build.zig.zon, the
+    // one place it is declared, so the binary and the manifest cannot drift.
+    // The release workflow checks a tag against the same field.
+    const build_options = b.addOptions();
+    build_options.addOption([]const u8, "version", @import("build.zig.zon").version);
+    mod.addOptions("build_options", build_options);
 
     // Here we define an executable. An executable needs to have a root module
     // which needs to expose a `main` function. While we could add a main function
