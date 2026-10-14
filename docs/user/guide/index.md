@@ -18,6 +18,8 @@ The other panels make room the way a dashboard's do. A moved panel follows the p
 
 The label in **Preview** is drawn as large as the panel allows, in whole multiples of its pixels when it fits at least once, so a bigger **Preview** panel shows a bigger label.
 
+Each pixel of that label is one dot the printer burns, so enlarged it shows as a square. **Smooth**, under the preview, blends the dots instead, which is closer to how they look on paper, where a dot is an eighth of a millimetre. The dots, and what prints, are the same either way, and this browser remembers the choice.
+
 The arrangement is kept in this browser and comes back the next time the page opens. It is not part of a label: **Save layout** does not write it and **Undo** does not move a panel. **Reset panels**, in the header, puts every panel back where the page first had it.
 
 A window 52rem (832 pixels) wide or narrower has no room for a grid. There the panels are stacked full width in the order above, each as tall as what it holds, and they do not move.

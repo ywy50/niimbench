@@ -285,6 +285,10 @@
     }
     canvas.dragging { cursor: grabbing; }
     canvas.placing { cursor: grab; }
+    /* Smooth: the browser blends the enlarged dots instead of drawing each as
+       a square, which is closer to how they look on paper, where a dot is an
+       eighth of a millimetre and bleeds into its neighbours. */
+    #preview.smooth { image-rendering: auto; }
     /* The boxes, handles and guides are a layer of their own over the label,
        at the screen's resolution, so they stay sharp however far the label's
        dots are enlarged. It shares the label's cell and lets every press
@@ -336,6 +340,7 @@
       <div class="canvas-box"><canvas id="preview" width="384" height="240"></canvas><canvas id="overlay" aria-hidden="true"></canvas></div>
       <p class="hint">Drag a box to move it. Drag the round handle to rotate it.
         <label class="check"><input id="snap" type="checkbox"> Snap 15°</label>
+        <label class="check" title="blend the enlarged dots, roughly how they look on paper; the dots, and what prints, are the same"><input id="smooth" type="checkbox"> Smooth</label>
               <span id="view-note" class="view-note" aria-live="polite"></span>
       </p>
     </div>
@@ -2649,6 +2654,15 @@
 
     document.querySelector("#scan-devices").addEventListener("click", () => scanDevices(true, true));
     document.querySelector("#grid").addEventListener("change", () => drawBoxes());
+    // Smooth is how this browser likes the preview shown, so it is remembered
+    // here and nowhere else: it is not part of the label.
+    const smooth = document.querySelector("#smooth");
+    try { smooth.checked = localStorage.getItem("niimbench.smooth") === "1"; } catch (error) { /* no storage */ }
+    canvas.classList.toggle("smooth", smooth.checked);
+    smooth.addEventListener("change", () => {
+      canvas.classList.toggle("smooth", smooth.checked);
+      try { localStorage.setItem("niimbench.smooth", smooth.checked ? "1" : "0"); } catch (error) { /* no storage */ }
+    });
 
     // ---- panels ----------------------------------------------------------
 

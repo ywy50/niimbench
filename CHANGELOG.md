@@ -11,6 +11,12 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- A **Smooth** toggle under the preview blends the enlarged dots instead of
+  drawing each as a square, roughly how they look on paper. The dots, and what
+  prints, are the same either way; the choice is remembered in this browser.
+
 ### Changed
 
 - The Label and printer panel opens with the printer: its status and last
