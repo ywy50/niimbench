@@ -11,6 +11,12 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Fixed
+
+- Dragging a field's round anchor in the Vertical view no longer flips the
+  text upside down on the first move: the drag added the view's quarter turn
+  the wrong way round.
+
 ## [0.1.0] - 2026-10-14
 
 The first public release.

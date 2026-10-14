@@ -2318,12 +2318,14 @@
       }
       if (drag.mode === "rotate") {
         // The anchor points at the text's top side, which is the text's own
-        // angle less a quarter turn, so the angle the pointer expresses is the
-        // roll's angle plus the view's turn. Taking the turn and the quarter
-        // back out leaves the field's angle.
+        // angle less a quarter turn. Vertical shows the roll turned a quarter
+        // counter-clockwise, so on screen every angle is the view's turn less
+        // than on the roll. Putting the quarter and the turn back gives the
+        // field's angle; taking the turn out instead put the text a half turn
+        // from the pointer on the first move of every drag in Vertical.
         const centre = drag.box.screen_centre;
         const here = Math.atan2(point.y - centre.y, point.x - centre.x) * 180 / Math.PI;
-        const degrees = normalizeDegrees(snapDegrees(here + 90) - pageTurn());
+        const degrees = normalizeDegrees(snapDegrees(here + 90) + pageTurn());
         drag.box.field.rotation = degrees;
         if (drag.controls.rotation) drag.controls.rotation.value = String(degrees);
         // The box and the lifted ink turn here, on the page. The server is
@@ -3691,8 +3693,23 @@
     /// canvas to have turned with the box — a wide word becomes a tall one —
     /// and no render to have been asked for, even after a pause. On release
     /// the server renders once, and its ink lands where the preview showed it.
-    /// Then put the angle back.
+    /// Then put the angle back. Both views, because Vertical turns every angle
+    /// on screen, and a drag that got the turn wrong spun the text a half turn
+    /// away from the pointer there.
     async function selfCheckRotate() {
+      const was = orientation;
+      const views = {};
+      for (const turn of [0, 90]) {
+        setOrientation(turn);
+        await refresh();
+        views[turn] = await rotateOnce();
+      }
+      setOrientation(was);
+      await refresh();
+      return { horizontal: views[0], vertical: views[90], ok: views[0].ok && views[90].ok };
+    }
+
+    async function rotateOnce() {
       const canvas = document.querySelector("#preview");
       const box = boxes[0];
       if (!box) return { ok: false };
@@ -3735,7 +3752,7 @@
         server_ink: after,
       };
       verdict.ok = normalizeDegrees(field.rotation - start) === 90 &&
-        Boolean(before && held && after) && verdict.before.w > verdict.before.h && verdict.held.h > verdict.held.w &&
+        Boolean(before && held && after) && verdict.before.w > verdict.before.h === verdict.held.h > verdict.held.w &&
         during === 0 && held.every((v, i) => Math.abs(v - after[i]) <= 3);
       field.rotation = start;
       if (box.row) box.row.controls.rotation.value = String(start);
