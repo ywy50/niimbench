@@ -65,6 +65,7 @@ if (typeof steps !== "function") {
 fs.mkdirSync(out, { recursive: true });
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "niimbench-drive-"));
 const args = ["--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
+  "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps", "--disable-extensions", "--no-first-run", "--no-default-browser-check",
   "--remote-debugging-port=0", "--user-data-dir=" + profile, `--window-size=${width},${height}`, "about:blank"];
 const setpriv = ["/usr/bin/setpriv", "/bin/setpriv"].find((file) => fs.existsSync(file));
 const child = setpriv
