@@ -16,5 +16,6 @@ niimbench docs follow the DeepSeek Harness folder layout, scoped to this printer
 | [labels/](labels/README.md) | reference | Every label roll the vendor catalogues, by size and barcode |
 | [manuals/](manuals/README.md) | manual | Vendor documents for the hardware, e.g. the D110 |
 | [reviews/](reviews/README.md) | checklist | Copied Cordis review, not a tree status report |
+| [assets/](assets/README.md) | asset | The logo kit and the README screenshot |
 
 The root [README](../README.md) is the project entry. Standing orders for agents are in the root [AGENTS.md](../AGENTS.md).

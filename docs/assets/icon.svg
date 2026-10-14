@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="niimbench">
+  <title>niimbench</title>
+  <desc>The niimbench icon: an n in square thermal dots on a blue label.</desc>
+  <rect width="128" height="128" rx="28" fill="#0b62d4"/>
+  <g fill="#ffffff">
+    <rect x="25.25" y="25.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="57.25" y="25.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="73.25" y="25.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="25.25" y="41.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="41.25" y="41.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="89.25" y="41.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="25.25" y="57.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="89.25" y="57.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="25.25" y="73.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="89.25" y="73.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="25.25" y="89.25" width="13.5" height="13.5" rx="2"/>
+    <rect x="89.25" y="89.25" width="13.5" height="13.5" rx="2"/>
+  </g>
+</svg>
