@@ -98,7 +98,7 @@ var held_write_buffer: [256]u8 = undefined;
 /// parent may already be gone, and then the signal would never come.
 fn dieWithParent(pid: std.os.linux.pid_t) !void {
     const linux = std.os.linux;
-    const rc = linux.prctl(@intFromEnum(linux.PR.SET_PDEATHSIG), @intFromEnum(linux.SIG.KILL), 0, 0, 0);
+    const rc = linux.prctl(@backingInt(linux.PR.SET_PDEATHSIG), @backingInt(linux.SIG.KILL), 0, 0, 0);
     if (linux.errno(rc) != .SUCCESS) return error.ParentWatchFailed;
     if (linux.getppid() != pid) return error.ParentGone;
 }
