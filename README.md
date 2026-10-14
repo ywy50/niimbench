@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-dark.svg">
-    <img src="docs/assets/logo-light.svg" alt="niimbench" width="420">
+    <img src="docs/assets/logo-light.svg" alt="niimbench, a label editor for Niimbot label printers" width="420">
   </picture>
 </p>
 
@@ -19,7 +19,7 @@
   <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
-A local label bench for Niimbot printers, written in Zig. niimbench is inspired by [niimprint](https://github.com/AndBondStyle/niimprint).
+niimbench designs and prints labels on Niimbot label printers, the D110, D11, B21, B1 and B18, from Linux or a Raspberry Pi, over USB or Bluetooth, with no phone app or account. It is one static binary written in Zig, and it is inspired by [niimprint](https://github.com/AndBondStyle/niimprint).
 
 ## Quick start
 
@@ -68,7 +68,7 @@ Everything below is detail.
 ## What it is
 
 <p align="center">
-  <img src="docs/assets/editor.png" alt="The niimbench editor: a 50×30 mm label in the preview with three text fields in their dashed boxes, beside the label and printer panel" width="900">
+  <img src="docs/assets/editor.png" alt="The niimbench label editor for Niimbot printers: a 50×30 mm label in the preview with three text fields in their dashed boxes, beside the label and printer panel" width="900">
 </p>
 
 One process serves the editor page on `127.0.0.1`, renders labels, and prints them over USB serial or Bluetooth Low Energy through BlueZ. The browser is a client of that server, and so is anything else that calls its HTTP API.

@@ -13,7 +13,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 hits=$(git ls-files --cached --others --exclude-standard -z \
   | xargs -0 grep -nIiE 'niimprint|libreniim' -- 2>/dev/null \
-  | grep -v '^README\.md:[0-9]*:A local label bench for Niimbot printers, written in Zig\. niimbench is inspired by \[niimprint\]' \
+  | grep -v '^README\.md:[0-9]*:niimbench designs and prints labels on Niimbot label printers.* it is inspired by \[niimprint\]' \
   | grep -v '^tools/check-references\.sh:' || true)
 if [ -n "$hits" ]; then
   echo "check-references: niimprint or libreniim is named outside the README's credit line:"
