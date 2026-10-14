@@ -122,7 +122,7 @@ The scan is in [../../subsystems/printer.md](../../subsystems/printer.md). **Con
 
 ## Print
 
-The **Printer** line on the header, left of the status line and **Print**, says what this page knows: a blue dot and `No address yet` when nothing is chosen, a green dot with the connection, model and `ready` once an address is set, and an amber dot while a job is being sent. It always describes the printer picked now: picking another one from the list, or loading a layout, updates it at once. Under it, `Last job:` says how the last print went — `printed`, or the error in red — and stays until the next print, so a failure is still there to read without hiding which printer is picked. It is the page's own state, not the printer's indicator light, which is a separate thing described in [manuals/d110.md](../../manuals/d110.md).
+The **Printer** line at the top of the **Label and printer** panel says what this page knows: a blue dot and `No address yet` when nothing is chosen, a green dot with the connection, model and `ready` once an address is set, and an amber dot while a job is being sent. It always describes the printer picked now: picking another one from the list, or loading a layout, updates it at once. Under it, `Last job:` says how the last print went — `printed`, or the error in red — and stays until the next print, so a failure is still there to read without hiding which printer is picked. It is the page's own state, not the printer's indicator light, which is a separate thing described in [manuals/d110.md](../../manuals/d110.md).
 
 Set **Model**, **Density**, **Orientation**, **Connection**, and **Address**.
 
