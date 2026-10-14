@@ -18,7 +18,7 @@ The other panels make room the way a dashboard's do. A moved panel follows the p
 
 The label in **Preview** is drawn as large as the panel allows, in whole multiples of its pixels when it fits at least once, so a bigger **Preview** panel shows a bigger label.
 
-The arrangement is kept in this browser and comes back the next time the page opens. It is not part of a label: **Save layout** does not write it and **Undo** does not move a panel. **Reset panels**, at the top right, puts every panel back where the page first had it.
+The arrangement is kept in this browser and comes back the next time the page opens. It is not part of a label: **Save layout** does not write it and **Undo** does not move a panel. **Reset panels**, in the header, puts every panel back where the page first had it.
 
 A window 52rem (832 pixels) wide or narrower has no room for a grid. There the panels are stacked full width in the order above, each as tall as what it holds, and they do not move.
 
@@ -98,13 +98,13 @@ A field whose ink would pass the right or bottom edge is outlined in red and mar
 
 ## Undo and redo
 
-**Undo** and **Redo** walk the label's changes, and `Ctrl+Z` and `Ctrl+Shift+Z` (or `Ctrl+Y`) do the same from the keyboard. A change is a field you add, copy, remove, move, retype, or restyle, a printer setting, or a loaded layout. A drag is one change, recorded when you press rather than when you drop, and a run of keystrokes in one field is one change too.
+**Undo** and **Redo**, in the header, walk the label's changes, and `Ctrl+Z` and `Ctrl+Shift+Z` (or `Ctrl+Y`) do the same from the keyboard. A change is a field you add, copy, remove, move, retype, or restyle, a printer setting, or a loaded layout. A drag is one change, recorded when you press rather than when you drop, and a run of keystrokes in one field is one change too.
 
-The history holds the same JSON that **Save layout** writes, so it does not cover the background image. Typing into a number or text control records the state before the first keystroke, so the first edit to the width or height is undoable like any other. **Reset** is the baseline: it clears the history rather than adding to it, which is why **Undo** starts disabled. The history keeps the last hundred changes.
+The history holds the same JSON that **Save layout** writes, so it does not cover the background image. Typing into a number or text control records the state before the first keystroke, so the first edit to the width or height is undoable like any other. **Reset label** is the baseline: it clears the history rather than adding to it, which is why **Undo** starts disabled. The history keeps the last hundred changes.
 
 ## Save and load a layout
 
-**Save layout** downloads `niimbench-label.json`: width, height, fields, density, model, connection, address, and rotation, and for each field its text, position, font, size, alignment and angle. The picture is left out on purpose.
+**Save layout**, in the header, downloads `niimbench-label.json`: width, height, fields, density, model, connection, address, and rotation, and for each field its text, position, font, size, alignment and angle. The picture is left out on purpose.
 
 **Load layout** reads that JSON. It needs an object with a `fields` array of at most 64 objects. A field's `size` is its line height in dots. A layout saved before sizes were in dots says `scale` instead, and loads at `scale * 11` dots. A field's `font` is one of the built-in font ids; a layout without one, or naming a font this build does not have, loads in DejaVu Sans, and the row's menu shows it. A `background_b64` field is ignored and the status line says the background was not loaded.
 
