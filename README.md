@@ -37,6 +37,8 @@ curl -fsSL https://github.com/ywy50/niimbench/releases/latest/download/niimbench
 ./niimbench-aarch64-linux/niimbench
 ```
 
+On Windows, run the x86_64 build inside WSL 2 and open the address it prints in your Windows browser. What works there, and macOS, are under [Windows and macOS](#windows-and-macos).
+
 From source you need Zig 0.17. Node and a Chromium-family browser are only needed for `make test`.
 
 Serve the editor and open it in your browser:
@@ -153,6 +155,14 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 | `.github/workflows/` | CI on every push and pull request, and the tag-driven release |
 | `CHANGELOG.md` | What each release changed |
 | `docs/` | Index, architecture, subsystems, cookbook, user guide, templates, reviews |
+
+## Windows and macOS
+
+niimbench runs on Linux for now. It reaches printers through Linux's own interfaces: BlueZ for Bluetooth, and the kernel's serial ports for USB.
+
+On Windows, the Linux build runs inside WSL 2. Start it there and open the address it prints in your Windows browser, which WSL forwards to it. A printer on USB, such as the B21, is reached once [usbipd-win](https://github.com/dorssel/usbipd-win) attaches it to WSL, where it shows up as `/dev/ttyACM0`. Bluetooth is not available inside WSL, so a Bluetooth-only printer such as the D110 cannot print from there.
+
+There is no macOS build yet.
 
 ## Releases
 
