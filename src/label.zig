@@ -190,70 +190,60 @@ fn drawText(gpa: std.mem.Allocator, pixels: []u8, width: usize, height: usize, f
     const bh = blockHeight(text, size);
     if (bw == 0) return;
     const margin = size / 2 + 2;
-    const gw = bw + 2 * margin;
-    const gh = bh + 2 * margin;
     // A block bigger than the largest label could not be shown anyway.
-    if (gw * gh > 4096 * 4096) return error.TextTooLarge;
+    if ((bw + 2 * margin) * (bh + 2 * margin) > 4096 * 4096) return error.TextTooLarge;
+
+    // Each letter's outline is turned about the block's centre before it is
+    // filled, so a stroke is put on the dots once. Filling the block upright
+    // and then turning its dots put every stroke on the dots twice, and at
+    // most angles a thin one came out stepped and broken.
+    //
+    // The block is drawn into a grid of its own, at the same coordinates
+    // whatever the angle, and the grid is then laid on the label a whole
+    // number of dots away. Drawing at the label's own coordinates instead moved
+    // a dot or two of upright text, because a sum of floats rounds differently
+    // at a different offset. Turned, the block reaches no farther from its
+    // centre than half the diagonal of its upright grid, so the grid is padded
+    // to that on each side.
+    const turned = @mod(field.rotation, 360) != 0;
+    const upright_w = bw + 2 * margin;
+    const upright_h = bh + 2 * margin;
+    const diagonal: usize = if (turned) @intFromFloat(@ceil(std.math.hypot(@as(f32, @floatFromInt(upright_w)), @as(f32, @floatFromInt(upright_h))))) else 0;
+    const pad_x = if (turned) (diagonal - @min(diagonal, upright_w)) / 2 + 1 else 0;
+    const pad_y = if (turned) (diagonal - @min(diagonal, upright_h)) / 2 + 1 else 0;
+    const gw = upright_w + 2 * pad_x;
+    const gh = upright_h + 2 * pad_y;
     const grid = try gpa.alloc(u8, gw * gh);
     defer gpa.free(grid);
     @memset(grid, 0);
 
     const left = field.align_mode.place(field.x, bw);
-    var top: usize = margin;
+    const radians = @as(f32, @floatFromInt(@mod(field.rotation, 360))) * std.math.pi / 180.0;
+    const turn: font.Turn = if (!turned) .{} else .{
+        .cx = @as(f32, @floatFromInt(margin + pad_x)) + @as(f32, @floatFromInt(bw)) / 2.0,
+        .cy = @as(f32, @floatFromInt(margin + pad_y)) + @as(f32, @floatFromInt(bh)) / 2.0,
+        .cos = @cos(radians),
+        .sin = @sin(radians),
+    };
+    var top: usize = margin + pad_y;
     var lines = std.mem.splitScalar(u8, text, '\n');
     while (lines.next()) |line| {
         const line_left = field.align_mode.place(field.x, lineWidth(face, line, size));
-        const at: f32 = @floatFromInt(line_left - left + @as(isize, @intCast(margin)));
-        try font.drawLine(gpa, face, grid, gw, at, @floatFromInt(top), size, line);
+        const at: f32 = @floatFromInt(line_left - left + @as(isize, @intCast(margin + pad_x)));
+        try font.drawLine(gpa, face, grid, gw, at, @floatFromInt(top), size, line, turn);
         top += size;
     }
 
-    // The grid's (0, 0) on the label, and the block's centre, which is the
-    // point it turns around.
-    const ox = @as(f32, @floatFromInt(left)) - @as(f32, @floatFromInt(margin));
-    const oy = @as(f32, @floatFromInt(field.y)) - @as(f32, @floatFromInt(margin));
-    const cx = @as(f32, @floatFromInt(left)) + @as(f32, @floatFromInt(bw)) / 2.0;
-    const cy = @as(f32, @floatFromInt(field.y)) + @as(f32, @floatFromInt(bh)) / 2.0;
-
-    // Walk the grid's bounding box once it has been turned, and for each pixel
-    // ask the inverse rotation which upright dot would land on it. Sampling
-    // this way covers every destination pixel, so a turned glyph is solid;
-    // turning each ink dot the other way and stamping where it lands leaves
-    // gaps between the dots, which show up as white speckles in the letters.
-    const radians = @as(f32, @floatFromInt(@mod(field.rotation, 360))) * std.math.pi / 180.0;
-    const co = @cos(radians);
-    const si = @sin(radians);
-    var min_x: f32 = std.math.floatMax(f32);
-    var max_x: f32 = -std.math.floatMax(f32);
-    var min_y: f32 = std.math.floatMax(f32);
-    var max_y: f32 = -std.math.floatMax(f32);
-    for ([_][2]f32{ .{ 0, 0 }, .{ 1, 0 }, .{ 0, 1 }, .{ 1, 1 } }) |corner| {
-        const dx = ox + corner[0] * @as(f32, @floatFromInt(gw)) - cx;
-        const dy = oy + corner[1] * @as(f32, @floatFromInt(gh)) - cy;
-        min_x = @min(min_x, cx + dx * co - dy * si);
-        max_x = @max(max_x, cx + dx * co - dy * si);
-        min_y = @min(min_y, cy + dx * si + dy * co);
-        max_y = @max(max_y, cy + dx * si + dy * co);
-    }
-    const from_x: isize = @intFromFloat(@max(@floor(min_x) - 1, 0));
-    const to_x: isize = @intFromFloat(@min(@ceil(max_x) + 1, @as(f32, @floatFromInt(width))));
-    const from_y: isize = @intFromFloat(@max(@floor(min_y) - 1, 0));
-    const to_y: isize = @intFromFloat(@min(@ceil(max_y) + 1, @as(f32, @floatFromInt(height))));
-    var py = from_y;
-    while (py < to_y) : (py += 1) {
-        var px = from_x;
-        while (px < to_x) : (px += 1) {
-            // The pixel's centre, turned back by the field's angle.
-            const dx = @as(f32, @floatFromInt(px)) + 0.5 - cx;
-            const dy = @as(f32, @floatFromInt(py)) + 0.5 - cy;
-            const gx = @floor(cx + dx * co + dy * si - ox);
-            const gy = @floor(cy - dx * si + dy * co - oy);
-            if (gx < 0 or gy < 0) continue;
-            const ux: usize = @intFromFloat(gx);
-            const uy: usize = @intFromFloat(gy);
-            if (ux >= gw or uy >= gh) continue;
-            if (grid[uy * gw + ux] == 0) continue;
-            pixels[@as(usize, @intCast(py)) * width + @as(usize, @intCast(px))] = 0;
+    // The grid's (0, 0) on the label.
+    const ox = left - @as(isize, @intCast(margin + pad_x));
+    const oy = @as(isize, @intCast(field.y)) - @as(isize, @intCast(margin + pad_y));
+    for (0..gh) |gy| {
+        const y = oy + @as(isize, @intCast(gy));
+        if (y < 0 or y >= height) continue;
+        for (0..gw) |gx| {
+            const x = ox + @as(isize, @intCast(gx));
+            if (x < 0 or x >= width or grid[gy * gw + gx] == 0) continue;
+            pixels[@as(usize, @intCast(y)) * width + @as(usize, @intCast(x))] = 0;
         }
     }
 }
@@ -646,4 +636,46 @@ test "a font this build does not carry is an error, not a fallback" {
     const gpa = std.testing.allocator;
     try std.testing.expectError(error.UnknownFont, render(gpa, 40, 20, &.{.{ .text = "A", .font = "comic-sans" }}, ""));
     try std.testing.expectError(error.UnknownFont, alignedX(gpa, .{ .text = "A", .font = "comic-sans" }, ""));
+}
+
+/// A letter drawn alone and centred on a label of its own, turned by
+/// `degrees`, as ink pieces and holes.
+fn turnedTopology(gpa: std.mem.Allocator, id: []const u8, letter: []const u8, size: usize, degrees: i32) !font.Topology {
+    const face = try faceOf(.{ .font = id });
+    const side = 4 * size;
+    const bw = blockWidth(face, letter, size);
+    const field = Field{ .text = letter, .x = @intCast((side - @min(bw, side)) / 2), .y = (side - size) / 2, .size = size, .rotation = degrees, .font = id };
+    const gray = try render(gpa, side, side, &.{field}, "");
+    defer gpa.free(gray.pixels);
+    for (gray.pixels) |*pixel| pixel.* = @intFromBool(pixel.* == 0);
+    return font.topology(gpa, gray.pixels, side, side);
+}
+
+test "turned letters keep their strokes and counters, in every font" {
+    // A letter at any angle has no more pieces and no more holes than the same
+    // letter drawn huge and upright, the rule `font.zig` holds upright letters
+    // to. Filling a letter upright and then turning its dots put every stroke
+    // on the dots twice, and at most angles a thin stroke came out stepped and
+    // broken: `niimbench` at 70 degrees was a scatter of pieces.
+    const gpa = std.testing.allocator;
+    const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    const angles = [_]i32{ 10, 25, 40, 55, 70, 110, 160, 290 };
+    const sizes = [_]usize{ 16, 20, 24 };
+    var failures: usize = 0;
+    for (font.fonts) |each| {
+        for (0..letters.len) |i| {
+            const letter = letters[i .. i + 1];
+            const want = try turnedTopology(gpa, each.id, letter, 200, 0);
+            for (sizes) |size| {
+                for (angles) |degrees| {
+                    const got = try turnedTopology(gpa, each.id, letter, size, degrees);
+                    if (got.pieces <= want.pieces and got.holes <= want.holes) continue;
+                    failures += 1;
+                    if (failures <= 20) std.debug.print("  {s} {s} at {d} turned {d}: {d} pieces {d} holes, want {d} and {d}\n", .{ each.id, letter, size, degrees, got.pieces, got.holes, want.pieces, want.holes });
+                }
+            }
+        }
+    }
+    if (failures > 0) std.debug.print("  {d} broken\n", .{failures});
+    try std.testing.expectEqual(@as(usize, 0), failures);
 }
