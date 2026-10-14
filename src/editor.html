@@ -65,18 +65,14 @@
     .brand { width: 1.6rem; height: 1.6rem; flex: none; }
     .brand .frame { fill: none; stroke: var(--accent); stroke-width: 7; }
     .brand g { fill: currentColor; }
-    /* The printer's status, the page's, Reset panels and Print keep together
-       at the right: a header too narrow for one line wraps them as a group, so
-       Print never ends up alone at the start of a line. */
+    /* The status, Reset panels and Print keep together at the right: a header
+       too narrow for one line wraps them as a group, so Print never ends up
+       alone at the start of a line. */
     .header-end { display: flex; align-items: center; gap: 1rem; min-width: 0; margin-left: auto; }
-    /* Two short lines, the printer and its last job, cut rather than wrapped
-       so the header keeps its height; the last job's full text is its title. */
-    .printer-status { display: grid; min-width: 0; max-width: 20rem; }
-    .printer-status p { min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .printer-status .state { display: flex; font-size: 0.8rem; }
-    .printer-status .state > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    /* The printer and its last job open the Label and printer panel. On the
+       header they were easy to overlook. */
+    .printer-status .state { margin: 0; }
     .printer-status .printers-title { color: var(--ink); }
-    .printer-status .last { font-size: 0.74rem; }
     #status {
       min-height: 0; min-width: 0; margin: 0; max-width: 24rem; padding: 0.18rem 0.7rem;
       font-size: 0.78rem; color: var(--muted); white-space: nowrap;
@@ -309,8 +305,7 @@
   <header>
     <h1><svg class="brand" viewBox="4 8 112 112" aria-hidden="true"><rect class="frame" x="10" y="14" width="100" height="100" rx="18"/><g><rect x="28.5" y="32.5" width="11" height="11" rx="1.5"/><rect x="54.5" y="32.5" width="11" height="11" rx="1.5"/><rect x="67.5" y="32.5" width="11" height="11" rx="1.5"/><rect x="28.5" y="45.5" width="11" height="11" rx="1.5"/><rect x="41.5" y="45.5" width="11" height="11" rx="1.5"/><rect x="80.5" y="45.5" width="11" height="11" rx="1.5"/><rect x="28.5" y="58.5" width="11" height="11" rx="1.5"/><rect x="80.5" y="58.5" width="11" height="11" rx="1.5"/><rect x="28.5" y="71.5" width="11" height="11" rx="1.5"/><rect x="80.5" y="71.5" width="11" height="11" rx="1.5"/><rect x="28.5" y="84.5" width="11" height="11" rx="1.5"/><rect x="80.5" y="84.5" width="11" height="11" rx="1.5"/></g></svg>niimbench</h1>
     <!-- What acts on the whole label lives on the header, which stays in view
-         however the panels are arranged: its history, its file, the printer's
-         status, and Print. -->
+         however the panels are arranged: its history, its file, and Print. -->
     <div class="tools">
       <button type="button" id="undo" title="undo (Ctrl+Z)">Undo</button>
       <button type="button" id="redo" title="redo (Ctrl+Shift+Z)">Redo</button>
@@ -321,15 +316,6 @@
       <button type="button" id="reset" title="put the label back to the one the page opens with">Reset label</button>
     </div>
     <div class="header-end">
-    <div class="printer-status">
-      <p id="printer-state" class="state idle" aria-live="polite"
-         title="This is what niimbench knows: the connection you picked, the printer it found, and whether a job is running. It is not the printer's own light — that is in docs/manuals/d110.md.">
-        <span class="printers-title">Printer</span>
-        <span class="dot" aria-hidden="true"></span>
-        <span id="printer-state-text">No address yet</span>
-      </p>
-      <p id="printer-last" class="last" aria-live="polite" hidden></p>
-    </div>
     <p id="status" aria-live="polite">idle</p>
     <button type="button" id="reset-panels" title="put every panel back where the page first had it">Reset panels</button>
     <!-- `form` lets Print submit the form it is not inside. -->
@@ -352,6 +338,15 @@
   <section class="panel" data-panel="printer">
     <h2 class="panel-head">Label and printer</h2>
     <div class="panel-body">
+      <div class="printer-status span">
+        <p id="printer-state" class="state idle" aria-live="polite"
+           title="This is what niimbench knows: the connection you picked, the printer it found, and whether a job is running. It is not the printer's own light — that is in docs/manuals/d110.md.">
+          <span class="printers-title">Printer</span>
+          <span class="dot" aria-hidden="true"></span>
+          <span id="printer-state-text">No address yet</span>
+        </p>
+        <p id="printer-last" class="last" aria-live="polite" hidden></p>
+      </div>
       <div class="printers span">
         <div class="printers-head">
           <span class="printers-title">Found Niimbot devices</span>
@@ -2564,7 +2559,6 @@
       const line = document.querySelector("#printer-last");
       line.hidden = false;
       line.textContent = "Last job: " + text;
-      line.title = line.textContent;
       line.classList.toggle("failed", failed);
     }
 
