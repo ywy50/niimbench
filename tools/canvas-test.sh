@@ -25,15 +25,21 @@ dir=$(mktemp -d)
 dom="$dir/dom.html"
 trap 'rm -rf "$dir"' EXIT INT TERM
 
+echo "browser: $browser $("$browser" --version 2>/dev/null)"
+
 # Virtual time makes the wait a number rather than a guess: the browser runs the
 # page's timers as fast as it can and dumps the DOM when the budget is spent.
-"$browser" \
+# Virtual time stands still while a request is open, so a request that never
+# finishes would keep the browser running for ever; it is killed after its
+# budget and half a minute, and the empty DOM then fails the check below.
+budget_ms=${CANVAS_BUDGET_MS:-30000}
+timeout -k 5 "$((budget_ms / 1000 + 30))" "$browser" \
   --headless=new \
   --disable-gpu \
   --no-sandbox \
   --disable-dev-shm-usage \
   --user-data-dir="$dir/profile" \
-  --virtual-time-budget="${CANVAS_BUDGET_MS:-30000}" \
+  --virtual-time-budget="$budget_ms" \
   --dump-dom \
   "$@" \
   "$url#selfcheck" > "$dom" 2>"$dir/browser.log" || true
