@@ -158,6 +158,10 @@ function judge(report) {
   // A click selects a field or the picture, and Delete removes what is selected.
   check("a click selects a box on the canvas and Delete removes it",
     Boolean(report.select) && report.select.ok === true, JSON.stringify(report.select));
+  // A failed job keeps its own line; picking a printer updates the status and
+  // narrows the label to the head.
+  check("the status follows the picked printer and the last job keeps its own line",
+    Boolean(report.printer) && report.printer.ok === true, JSON.stringify(report.printer));
   // Every font the renderer carries is offered in the row's font menu.
   check("a row offers every font the server carries",
     Boolean(report.fonts) && report.fonts.served > 1 && report.fonts.offered === report.fonts.served,

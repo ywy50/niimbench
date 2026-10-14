@@ -138,13 +138,13 @@
       width: 0.6rem; height: 0.6rem; border-radius: 50%;
       background: var(--line-strong); flex: none;
     }
-    /* Blue reads as "connected, nothing running" and red as "needs a look",
-       the same two colours the printer's own indicator uses. */
+    /* Blue reads as "connected, nothing running", the colour the printer's
+       own indicator uses. A failed job is reported on its own line. */
     .state.idle .dot { background: #2f6fd0; }
     .state.ready .dot { background: #1e9e5a; }
     .state.busy .dot { background: #d08a1e; animation: blink 0.9s steps(2, start) infinite; }
-    .state.error { color: var(--danger); }
-    .state.error .dot { background: var(--danger); animation: blink 0.6s steps(2, start) infinite; }
+    .last { margin: 0.1rem 0 0; font-size: 0.8rem; color: var(--muted); }
+    .last.failed { color: var(--danger); }
     @keyframes blink { 50% { opacity: 0.25; } }
     @media (prefers-reduced-motion: reduce) { .state .dot { animation: none !important; } }
     .toggle { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
@@ -379,6 +379,7 @@
             <span class="dot" aria-hidden="true"></span>
             <span id="printer-state-text">No address yet</span>
           </p>
+          <p id="printer-last" class="last" aria-live="polite" hidden></p>
         </div>
       </div>
     </div>
@@ -468,7 +469,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "align", "density", "fit", "rotate", "image", "select"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "align", "density", "fit", "rotate", "image", "select", "printer"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -1922,10 +1923,18 @@
     /// looks the same at every level. Each model's head has its own range — a
     /// D-series takes 1 to 3 — and the input offers that range and holds a
     /// value inside it, so it never shows a level the printer will not use.
-    function limitDensity() {
+    ///
+    /// The page is likewise never wider than the head: a 384-dot page on a
+    /// 96-dot D110 is a job the server refuses as `TooWide`, and it happened
+    /// whenever a printer was picked whose roll could not be read.
+    function limitToModel() {
       const model = document.querySelector("#model").value;
       const entry = sizeCatalog && sizeCatalog.models && sizeCatalog.models[model];
-      if (!entry || !entry.max_density) return;
+      if (!entry) return;
+      const width = document.querySelector("#width");
+      width.max = String(entry.max_width);
+      if (Number(width.value) > entry.max_width) width.value = String(entry.max_width);
+      if (!entry.max_density) return;
       const input = document.querySelector("#density");
       input.max = String(entry.max_density);
       if (Number(input.value) > entry.max_density) input.value = String(entry.max_density);
@@ -1936,7 +1945,7 @@
     async function refresh() {
       // Every change of model ends here: picked by hand, from a found
       // printer, or by a loaded layout.
-      limitDensity();
+      limitToModel();
       const now = rollSize();
       if (laidOutOn && (laidOutOn.width !== now.width || laidOutOn.height !== now.height)) {
         for (const row of rows) {
@@ -2493,6 +2502,8 @@
         model.value = device.model;
         model.dispatchEvent(new Event("change"));
       }
+      // Set from code, so no control fires its own change: say so here.
+      refreshPrinterStatus();
       status.textContent = device.model
         ? "printer: " + device.name
         : "printer: " + device.name + " \u2014 model unknown, pick one by hand";
@@ -2500,9 +2511,10 @@
       readRoll();
     }
 
-    /// What niimbench knows about the printer, in the printer's own colours: a
-    /// blue dot when a job has to be sent, green when the model and the roll
-    /// are known, amber while a job runs, and red when the last job failed.
+    /// What niimbench knows about the printer now, in the printer's own
+    /// colours: a blue dot when a job has to be sent, green when the model and
+    /// the roll are known, amber while a job runs. How the last job went is on
+    /// a line of its own, so it never hides which printer is picked.
     /// The printer's own indicator is a separate thing, described in the
     /// manual; nothing here tries to read it.
     function updatePrinterStatus(state, text) {
@@ -2514,22 +2526,28 @@
     }
 
     /// Derive that state from the controls, for the moments nothing is running.
-    function statusFor(addr, model, conn, problem) {
-      if (problem) return { state: "error", text: problem };
+    function statusFor(addr, model, conn) {
       if (!addr) return { state: "idle", text: "No address yet" };
       const where = conn === "bluetooth" ? "Bluetooth" : "USB";
       return { state: "ready", text: where + " · " + model + " · ready" };
     }
 
     /// Derive that state from the controls, for the moments nothing is running.
-    function refreshPrinterStatus(problem) {
+    function refreshPrinterStatus() {
       const { state, text } = statusFor(
         document.querySelector("#addr").value.trim(),
         document.querySelector("#model").value,
         document.querySelector("#conn").value,
-        problem,
       );
       updatePrinterStatus(state, text);
+    }
+
+    /// The last job's outcome, kept on its own line until the next job.
+    function showLastJob(text, failed) {
+      const line = document.querySelector("#printer-last");
+      line.hidden = false;
+      line.textContent = "Last job: " + text;
+      line.classList.toggle("failed", failed);
     }
 
     /// The printer's tag names the roll. The size comes back as millimetres
@@ -2843,12 +2861,12 @@
         const response = await post("/api/print", body);
         const payload = await readJson(response);
         status.textContent = payload.error || "printed";
-        if (payload.error) refreshPrinterStatus("Last job: " + payload.error);
-        else refreshPrinterStatus();
+        showLastJob(payload.error || "printed", Boolean(payload.error));
       } catch (error) {
         status.textContent = "print failed: " + error.message;
-        refreshPrinterStatus("Print failed");
+        showLastJob("print failed, " + error.message, true);
       } finally {
+        refreshPrinterStatus();
         button.disabled = false;
       }
     });
@@ -2915,6 +2933,9 @@
       // change asks the printer again. Only a machine with no printer falls
       // back to filling the menu with the model's presets.
       if (document.querySelector("#addr").value) {
+        // The roll answer sets the page when it comes; until then, and when it
+        // never does, the page is already no wider than this head.
+        refresh();
         readRoll();
         return;
       }
@@ -3012,6 +3033,7 @@
       // for a device that the layout just replaced.
       picked = -1;
       renderDevices();
+      refreshPrinterStatus();
       for (const field of layout.fields) {
         if (!field || typeof field !== "object") {
           throw new Error("layout field is not an object");
@@ -3810,6 +3832,49 @@
       return verdict;
     }
 
+    /// Print to an address nothing answers at, the way a person does, then
+    /// pick a printer with the narrowest head from the list. The failed job is
+    /// reported on its own line and stays there; the status line says what is
+    /// picked now; and the label narrows to that head even though its roll
+    /// cannot be read, so the next print is not refused as too wide. The
+    /// harness serves no transports, so nothing here reaches a printer.
+    async function selfCheckPrinter() {
+      const was = snapshot();
+      const state = () => document.querySelector("#printer-state-text").textContent;
+      const last = document.querySelector("#printer-last");
+      const button = document.querySelector("#print");
+      document.querySelector("#conn").value = "usb";
+      document.querySelector("#addr").value = "/nonexistent/niimbench-check";
+      document.querySelector("#label").requestSubmit();
+      for (let i = 0; i < 300 && button.disabled; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      const verdict = { after_print: { state: state(), last: last ? last.textContent : null } };
+      const narrow = Object.entries((sizeCatalog && sizeCatalog.models) || {})
+        .sort((a, b) => a[1].max_width - b[1].max_width)[0];
+      devices = [{ name: "check", conn: "usb", addr: "/nonexistent/niimbench-pick", model: narrow[0] }];
+      renderDevices();
+      document.querySelector("#device .device").click();
+      for (let i = 0; i < 300 && status.textContent === "reading the roll"; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      await refresh();
+      verdict.after_pick = {
+        state: state(),
+        last: last ? last.textContent : null,
+        model: narrow[0],
+        width: Number(document.querySelector("#width").value),
+        head: narrow[1].max_width,
+      };
+      verdict.ok = Boolean(last) &&
+        verdict.after_print.last.startsWith("Last job: ") && !verdict.after_print.state.startsWith("Last job") &&
+        verdict.after_pick.state.endsWith(narrow[0] + " · ready") &&
+        verdict.after_pick.last === verdict.after_print.last &&
+        verdict.after_pick.width <= narrow[1].max_width;
+      devices = [];
+      picked = -1;
+      renderDevices();
+      restore(was);
+      await refresh();
+      return verdict;
+    }
+
     /// Write the report into the page, where `--dump-dom` can read it. A
     /// `--dump-dom` run is a plain subprocess with no protocol to time out.
     window.__niimbenchSelfCheck = async function selfCheck() {
@@ -3838,6 +3903,7 @@
         report.rotate = harness ? await selfCheckRotate() : null;
         report.image = harness ? await selfCheckImage() : null;
         report.select = harness ? await selfCheckSelect() : null;
+        report.printer = harness ? await selfCheckPrinter() : null;
       }
       const view = viewSize();
       report.view = { width: view.width, height: view.height };
@@ -3884,7 +3950,8 @@
         " fit " + (report.fit ? (report.fit.ok ? "ok" : "BROKEN") : "not exercised") +
         " rotate " + (report.rotate ? (report.rotate.ok ? "ok" : "BROKEN") : "not exercised") +
         " image " + (report.image ? (report.image.ok ? "ok" : "BROKEN") : "not exercised") +
-        " select " + (report.select ? (report.select.ok ? "ok" : "BROKEN") : "not exercised"));
+        " select " + (report.select ? (report.select.ok ? "ok" : "BROKEN") : "not exercised") +
+        " printer " + (report.printer ? (report.printer.ok ? "ok" : "BROKEN") : "not exercised"));
     });
   </script>
 </body>
