@@ -16,7 +16,7 @@ The `editor` plugin injects `http` and registers `GET /`. Disposing that fiber r
 | GET | `/api/sources/<name>` | One JSON record |
 | DELETE | `/api/sources/<name>` | Drop a record installed at runtime |
 | GET | `/api/label/metrics` | Every embedded font's advance table, for editor boxes |
-| GET | `/api/label/sizes` | Die-cut rolls for each model, with the pixel width and height |
+| GET | `/api/label/sizes` | Die-cut rolls for each model, with the pixel width and height, and each model's `max_width` and `max_density` |
 | POST | `/api/label/track` | What each field draws, and where it came from |
 | POST | `/api/label/roll` | The roll in the printer, sized for the model |
 | GET | `/api/trace` | What has happened so far, one line per event |

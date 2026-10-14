@@ -255,6 +255,7 @@
     .field .note { grid-column: 1 / -1; font-size: 0.74rem; color: var(--accent); overflow-wrap: anywhere; }
     .field .note:empty { display: none; }
     .field .note.warn { color: var(--danger); }
+    .field.selected { background: color-mix(in srgb, var(--accent) 12%, transparent); }
     .field.clipped textarea { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
 
     canvas {
@@ -326,6 +327,7 @@
       </div>
       <div class="row">
         <label>Density <input id="density" type="number" min="1" max="5" value="5"></label>
+        <span class="hint" id="density-hint">How dark the head burns each dot.</span>
       </div>
       <div class="row">
         <label class="span">Orientation
@@ -399,7 +401,8 @@
         <div class="tools">
           <button type="button" id="image-fit">Fit</button>
           <button type="button" id="image-fill">Fill</button>
-          <button type="button" id="image-reset">Reset image</button>
+          <button type="button" id="image-reset" title="put the picture back centred, fitted and upright">Reset image</button>
+          <button type="button" id="image-remove" title="take the picture off the label; Delete does the same when it is selected">Remove image</button>
           <button type="button" id="image-180">Turn 180&deg;</button>
         </div>
         <div class="row">
@@ -456,7 +459,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "align", "density", "fit", "rotate", "image", "select"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -520,6 +523,10 @@
     // fitting is redone whenever the view changes shape, so a picture imported
     // into the vertical view is not left hanging off the label.
     let imageTouched = false;
+    /// What the last press on the canvas picked: `{ kind: "field", row }` or
+    /// `{ kind: "image" }`, or null. It is drawn highlighted, and Delete
+    /// removes it.
+    let selected = null;
     let drag = null;
     let sizeCatalog = null;
     let refreshTimer = null;
@@ -997,7 +1004,7 @@
       const fit = document.createElement("button");
       fit.type = "button";
       fit.textContent = "Fit";
-      fit.title = "use the largest size that still fits the roll";
+      fit.title = "centre on the label at the largest size that fits";
 
       const remove = document.createElement("button");
       remove.type = "button";
@@ -1012,9 +1019,10 @@
       const note = document.createElement("span");
       note.className = "note";
 
+      // No minimum: a left-aligned line that starts left of the label, as a
+      // turned field on a narrow roll can, has a negative anchor.
       const x = document.createElement("input");
       x.type = "number";
-      x.min = "0";
       x.value = String(field.x);
       const y = document.createElement("input");
       y.type = "number";
@@ -1036,8 +1044,18 @@
         field.font = font.value;
         field.size = sizeOf({ size: size.value });
         size.value = String(field.size);
+        if (align.value !== field.align_mode) {
+          // Alignment chooses which edge `x` holds, not where the text is:
+          // the block keeps its left edge and `x` moves to the new anchor.
+          // That is the server's rule run backwards, so a left edge left of
+          // the label gives a negative `x`, which the renderer takes.
+          const left = placedLeft(field);
+          field.align_mode = align.value;
+          const w = Math.max(blockWidth(previewText(field), sizeOf(field), field.font), 1);
+          x.value = String(left + Math.floor(shiftFor(field, w)));
+        }
         field.align_mode = align.value;
-        field.x = Math.max(0, Number(x.value) || 0);
+        field.x = Math.round(Number(x.value) || 0);
         field.y = Math.max(0, Number(y.value) || 0);
         field.rotation = normalizeDegrees(rotation.value);
         rotation.value = String(field.rotation);
@@ -1076,29 +1094,7 @@
         grow();
         sync();
       });
-      fit.addEventListener("click", () => {
-        // Wrap is the better answer when the text can break; Fit is for a word
-        // or a value that cannot, so it steps the size down and stops at the
-        // largest one whose block, placed by its alignment, stays on the roll.
-        const roll = rollSize();
-        const fits = (candidate) => {
-          const w = Math.max(blockWidth(text.value, candidate, field.font), 1);
-          const left = Math.round(field.x - shiftFor(field, w));
-          return left >= 0 && left + w <= roll.width && field.y + blockHeight(text.value, candidate) <= roll.height;
-        };
-        const wanted = sizeOf(field);
-        // Walk down from the current size so a press never enlarges a field.
-        for (let candidate = wanted; candidate >= 1; candidate -= 1) {
-          if (!fits(candidate)) continue;
-          if (candidate === wanted) return;
-          record();
-          size.value = String(candidate);
-          sync();
-          return;
-        }
-        // Nothing fits even at one dot; leave the field alone rather than
-        // shrink it to something unreadable.
-      });
+      fit.addEventListener("click", () => fitToLabel(field, { size, x, y }));
       copy.addEventListener("click", () => {
         record();
         const made = addRow({
@@ -1121,6 +1117,40 @@
       // What the rest of the page needs to read back or rewrite this row.
       note.textContent = "";
       return { model: field, row, controls: { text, font, size, align, x, y, rotation, note, remove } };
+    }
+
+    /// Centre a field on the label at the largest size whose box, turned as
+    /// the field is, fits with a millimetre to spare on every side. One press,
+    /// whichever way the view is turned: a field turned with the view fills
+    /// the width the view shows. The block's top is never above the label,
+    /// because the renderer takes no negative `y`.
+    function fitToLabel(field, controls) {
+      const roll = rollSize();
+      const margin = (sizeCatalog && sizeCatalog.dots_per_mm) || 8;
+      const text = previewText(field);
+      const cx = roll.width / 2;
+      const cy = roll.height / 2;
+      const most = Math.min(metrics.max_size || 1024, Math.max(roll.width, roll.height));
+      for (let size = most; size >= 1; size -= 1) {
+        const w = Math.max(blockWidth(text, size, field.font), 1);
+        const h = blockHeight(text, size);
+        const left = Math.round(cx - w / 2);
+        const top = Math.round(cy - h / 2);
+        if (top < 0) continue;
+        const trial = { ...field, size, x: left + Math.floor(shiftFor(field, w)), y: top };
+        const box = boxRect({ ...trial, text }, placedLeft(trial), trial.y);
+        if (box.x < margin || box.y < margin ||
+          box.x + box.w > roll.width - margin || box.y + box.h > roll.height - margin) continue;
+        record();
+        Object.assign(field, { size, x: trial.x, y: trial.y });
+        controls.size.value = String(size);
+        controls.x.value = String(field.x);
+        controls.y.value = String(field.y);
+        refresh();
+        return;
+      }
+      // Not even a one-dot line fits inside the margin; leave the field alone
+      // rather than shrink it to nothing.
     }
 
     /// Where a new line starts so the text sits in the middle of what the view
@@ -1193,9 +1223,9 @@
       return field.text || "";
     }
 
-    /// The printer settings every request shares. The render route reads these
-    /// too, so a preview is made with the same head and density the print will
-    /// use. Turning is per field and travels with each field instead.
+    /// The printer settings every request shares. A print uses all of them;
+    /// the preview is drawn for the same head. Turning is per field and
+    /// travels with each field instead.
     function printerFields() {
       return {
         density: Number(document.querySelector("#density").value),
@@ -1549,16 +1579,18 @@
       const sn = Math.sin(box.rotation);
       const at = (lx, ly) => ({ x: box.x + (lx * c - ly * sn), y: box.y + (lx * sn + ly * c) });
       const corners = [at(-half.x, -half.y), at(half.x, -half.y), at(half.x, half.y), at(-half.x, half.y)];
+      const picked = Boolean(selected && selected.kind === "image");
       previewCtx.save();
-      previewCtx.setLineDash([3, 3]);
+      previewCtx.setLineDash(picked ? [] : [3, 3]);
       previewCtx.strokeStyle = "#7a3fd0";
-      previewCtx.lineWidth = 1;
+      previewCtx.lineWidth = picked ? 2 : 1;
       previewCtx.beginPath();
       previewCtx.moveTo(corners[0].x, corners[0].y);
       for (const point of corners.slice(1)) previewCtx.lineTo(point.x, point.y);
       previewCtx.closePath();
       previewCtx.stroke();
       previewCtx.setLineDash([]);
+      previewCtx.lineWidth = 1;
       previewCtx.fillStyle = "#ffffff";
       for (const [lx, ly] of [[-half.x, -half.y], [half.x, -half.y], [half.x, half.y], [-half.x, half.y]]) {
         const point = at(lx, ly);
@@ -1573,8 +1605,83 @@
       previewCtx.restore();
     }
 
+    /// Cut a field's ink out of the last render, so a turn can be shown on the
+    /// page while it is dragged: `base` is the render with that ink painted
+    /// out, `sprite` the ink alone on a clear canvas at `origin`, and
+    /// `from` the angle it was drawn at. The cut is the field's box grown by
+    /// a few pixels, for glyphs that overhang their advance; ink of another
+    /// field inside it would turn too, until the release renders the truth.
+    function liftInk(box) {
+      if (!lastImage) return {};
+      const centre = box.screen_centre;
+      const quad = box.quad.map((p) => {
+        const reach = Math.hypot(p.x - centre.x, p.y - centre.y) || 1;
+        return { x: centre.x + (p.x - centre.x) * (1 + 3 / reach), y: centre.y + (p.y - centre.y) * (1 + 3 / reach) };
+      });
+      const x0 = Math.max(0, Math.floor(Math.min(...quad.map((p) => p.x))));
+      const y0 = Math.max(0, Math.floor(Math.min(...quad.map((p) => p.y))));
+      const x1 = Math.min(lastImage.width, Math.ceil(Math.max(...quad.map((p) => p.x))));
+      const y1 = Math.min(lastImage.height, Math.ceil(Math.max(...quad.map((p) => p.y))));
+      const base = new ImageData(new Uint8ClampedArray(lastImage.data), lastImage.width, lastImage.height);
+      const sprite = document.createElement("canvas");
+      sprite.width = Math.max(1, x1 - x0);
+      sprite.height = Math.max(1, y1 - y0);
+      const ink = sprite.getContext("2d").createImageData(sprite.width, sprite.height);
+      for (let y = y0; y < y1; y++) {
+        for (let x = x0; x < x1; x++) {
+          const i = (y * lastImage.width + x) * 4;
+          if (base.data[i] >= 128 || !inQuad(quad, { x: x + 0.5, y: y + 0.5 })) continue;
+          const j = ((y - y0) * sprite.width + (x - x0)) * 4;
+          ink.data[j] = ink.data[j + 1] = ink.data[j + 2] = base.data[i];
+          ink.data[j + 3] = 255;
+          base.data[i] = base.data[i + 1] = base.data[i + 2] = 255;
+        }
+      }
+      sprite.getContext("2d").putImageData(ink, 0, 0);
+      return { base, sprite, origin: { x: x0, y: y0 }, from: box.field.rotation || 0 };
+    }
+
+    /// Highlight what is picked: the field's row, and its box or the picture's
+    /// outline on the canvas.
+    function select(next) {
+      selected = next;
+      for (const row of rows) row.row.classList.toggle("selected", Boolean(next && next.row === row));
+      drawBoxes();
+    }
+
+    /// Delete whatever is selected: a field's row, as its Remove button does
+    /// and as undoably, or the picture, as Remove image does.
+    function deleteSelected() {
+      if (!selected) return false;
+      if (selected.kind === "image") {
+        if (!backgroundImage) return false;
+        removeImage();
+      } else {
+        if (!rows.includes(selected.row)) return false;
+        record();
+        removeRow(selected.row);
+        selected = null;
+      }
+      refresh();
+      return true;
+    }
+
     function drawBoxes() {
-      if (lastImage) previewCtx.putImageData(lastImage, 0, 0);
+      if (drag && drag.mode === "rotate" && drag.sprite) {
+        // The render without the turning field, then its ink turned about the
+        // box's centre by as much as the field has turned since the press.
+        previewCtx.putImageData(drag.base, 0, 0);
+        previewCtx.save();
+        previewCtx.imageSmoothingEnabled = false;
+        const centre = drag.box.screen_centre;
+        previewCtx.translate(centre.x, centre.y);
+        previewCtx.rotate(((drag.field.rotation || 0) - drag.from) * Math.PI / 180);
+        previewCtx.drawImage(drag.sprite, drag.origin.x - centre.x, drag.origin.y - centre.y);
+        previewCtx.restore();
+        drag.composed = previewCtx.getImageData(0, 0, canvas.width, canvas.height);
+      } else if (lastImage) {
+        previewCtx.putImageData(lastImage, 0, 0);
+      }
       drawGrid();
       drawImageOutline();
       // One line per layout, only when it changes. When a box and its text
@@ -1598,10 +1705,12 @@
         previewCtx.closePath();
         previewCtx.fillStyle = box.clipped ? "rgba(200,0,0,0.12)" : "rgba(0,90,200,0.10)";
         previewCtx.fill();
-        previewCtx.setLineDash([4, 3]);
+        const picked = Boolean(selected && selected.row === box.row);
+        previewCtx.setLineDash(picked ? [] : [4, 3]);
         previewCtx.strokeStyle = box.clipped ? "#c00" : "#06c";
-        previewCtx.lineWidth = 1;
+        previewCtx.lineWidth = picked ? 2 : 1;
         previewCtx.stroke();
+        previewCtx.lineWidth = 1;
         previewCtx.setLineDash([]);
         // A square on each corner: drag one to resize the text, the way the
         // picture's corners scale the picture.
@@ -1640,11 +1749,19 @@
     }
 
     /// Keep the bitmap's pixels crisp, and as large as the preview panel has
-    /// room for: a whole multiple when it fits at least once, a fraction when
-    /// it does not. Resizing the panel resizes the picture. A narrow window
+    /// room for: see `displayScale`. Resizing the panel resizes the picture. A narrow window
     /// stacks the panels and leaves no height to fill, so there the picture
     /// takes four tenths of the window. The width is the stylesheet's own
     /// query, so the two cannot disagree about which layout is showing.
+    /// How many screen pixels a label dot takes, given how many would fill the
+    /// room. A whole multiple keeps every dot the same size, so it is used when
+    /// it keeps most of the room; otherwise the fit itself, because flooring
+    /// 1.6 to 1 left a portrait roll a third smaller than its panel.
+    function displayScale(fit) {
+      const whole = Math.floor(fit);
+      return whole >= 1 && whole / fit >= 0.85 ? whole : fit;
+    }
+
     function fitCanvas() {
       const room = canvas.parentElement;
       const narrow = window.matchMedia("(max-width: 52rem)").matches;
@@ -1652,8 +1769,7 @@
       const maxH = narrow
         ? Math.max(160, Math.round(window.innerHeight * 0.4))
         : Math.max(16, room.clientHeight || 240);
-      const fit = Math.min(maxW / canvas.width, maxH / canvas.height);
-      const scale = fit >= 1 ? Math.max(1, Math.floor(fit)) : fit;
+      const scale = displayScale(Math.min(maxW / canvas.width, maxH / canvas.height));
       canvas.style.width = Math.max(1, Math.round(canvas.width * scale)) + "px";
       canvas.style.height = Math.max(1, Math.round(canvas.height * scale)) + "px";
     }
@@ -1792,7 +1908,26 @@
       }
     }
 
+    /// Density is how hot the head burns each dot: the same dots, darker or
+    /// lighter on the paper, so the preview, which shows which dots print,
+    /// looks the same at every level. Each model's head has its own range — a
+    /// D-series takes 1 to 3 — and the input offers that range and holds a
+    /// value inside it, so it never shows a level the printer will not use.
+    function limitDensity() {
+      const model = document.querySelector("#model").value;
+      const entry = sizeCatalog && sizeCatalog.models && sizeCatalog.models[model];
+      if (!entry || !entry.max_density) return;
+      const input = document.querySelector("#density");
+      input.max = String(entry.max_density);
+      if (Number(input.value) > entry.max_density) input.value = String(entry.max_density);
+      document.querySelector("#density-hint").textContent = "How dark the head burns each dot: 1 to " +
+        entry.max_density + " on a " + model + ". The preview shows which dots print, not how dark.";
+    }
+
     async function refresh() {
+      // Every change of model ends here: picked by hand, from a found
+      // printer, or by a loaded layout.
+      limitDensity();
       const now = rollSize();
       if (laidOutOn && (laidOutOn.width !== now.width || laidOutOn.height !== now.height)) {
         for (const row of rows) {
@@ -2043,6 +2178,12 @@
     canvas.addEventListener("pointerdown", (event) => {
       const point = screenPoint(labelPoint(event));
       const resizing = hitCorner(point);
+      // What the press lands on is selected: a field's box, corner or anchor,
+      // else the picture, else nothing.
+      const picked = resizing ? resizing.box : (hitHandle(point) || hit(point));
+      select(picked
+        ? { kind: "field", row: picked.row }
+        : (backgroundImage && imageHit(pressOnRoll(event), imageBox()) ? { kind: "image" } : null));
       if (resizing) {
         startResize(event, resizing.box, resizing.corner);
         return;
@@ -2079,7 +2220,7 @@
       // the text leaping on the first pixel of a drag.
       const grabbed = labelPoint(event);
       drag = spinning
-        ? { mode: "rotate", box, controls: box.row.controls, field: box.field }
+        ? { mode: "rotate", box, controls: box.row.controls, field: box.field, ...liftInk(box) }
         : {
           mode: "move",
           box,
@@ -2161,8 +2302,11 @@
         const degrees = normalizeDegrees(snapDegrees(here + 90) - pageTurn());
         drag.box.field.rotation = degrees;
         if (drag.controls.rotation) drag.controls.rotation.value = String(degrees);
+        // The box and the lifted ink turn here, on the page. The server is
+        // asked once, on release: a render per pointer move lagged the turn
+        // behind the pointer and showed the text standing still.
+        showBox(drag.box);
         drawBoxes();
-        scheduleRefresh();
         return;
       }
       // On the roll, the frame the press measured its offset in. The view
@@ -2220,6 +2364,9 @@
 
     function endDrag(event) {
       if (!drag) return;
+      // A turn's preview stays on screen until the render it asks for
+      // arrives, so the text does not flick back to its old angle meanwhile.
+      if (drag.composed) lastImage = drag.composed;
       drag = null;
       canvas.classList.remove("dragging");
       if (event && event.pointerId !== undefined && canvas.hasPointerCapture(event.pointerId)) {
@@ -2595,15 +2742,27 @@
     });
     document.querySelector("#image-fit").addEventListener("click", () => { placeImage("fit"); refresh(); });
     document.querySelector("#image-fill").addEventListener("click", () => { placeImage("fill"); refresh(); });
+    // Reset puts the picture back where an import puts it — centred, fitted,
+    // upright — and lets it follow the view again. Removing it is its own
+    // button, and Delete.
     document.querySelector("#image-reset").addEventListener("click", () => {
+      imageTouched = false;
+      placeImage("fit");
+      refresh();
+    });
+    document.querySelector("#image-remove").addEventListener("click", () => {
+      removeImage();
+      refresh();
+    });
+
+    function removeImage() {
       backgroundImage = null;
       imageTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
       imageTouched = false;
-      const input = document.querySelector("#file");
-      input.value = "";
+      if (selected && selected.kind === "image") selected = null;
+      document.querySelector("#file").value = "";
       syncImageControls();
-      refresh();
-    });
+    }
     document.querySelector("#image-180").addEventListener("click", () => {
       const turned = ((Math.round(imageTransform.rotation) + 180 + 180) % 360) - 180;
       setImage({ rotation: turned });
@@ -2883,6 +3042,15 @@
 
     document.querySelector("#undo").addEventListener("click", undo);
     document.querySelector("#redo").addEventListener("click", redo);
+
+    // Delete (or Backspace) removes what is selected on the canvas. Not while
+    // typing, where those keys edit the text.
+    document.addEventListener("keydown", (event) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      const tag = (event.target && event.target.tagName) || "";
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (deleteSelected()) event.preventDefault();
+    });
 
     // Ctrl+Z and Ctrl+Shift+Z (or Ctrl+Y). Not while typing in a row, where the
     // browser's own text undo belongs to the user.
@@ -3350,6 +3518,18 @@
       verdict.ok = Boolean(ink && box) && verdict.line > long &&
         box.minX <= ink.minX + 1 && box.maxX >= ink.maxX - 1 &&
         box.minY <= ink.minY + 1 && box.maxY >= ink.maxY - 1;
+      // Its line starts left of the roll, so a Left anchor is a negative x.
+      // Switching to it must leave the text where it is.
+      const was_mode = field.align_mode;
+      row.controls.align.value = "left";
+      row.controls.align.dispatchEvent(new Event("change", { bubbles: true }));
+      await refresh();
+      const left = window.__niimbenchCanvas().ink;
+      verdict.left = { x: field.x, ink: left && [left.minX, left.minY, left.maxX, left.maxY] };
+      verdict.ok = verdict.ok && field.x < 0 && Boolean(left) &&
+        [left.minX, left.minY, left.maxX, left.maxY].every((v, i) => Math.abs(v - verdict.ink[i]) <= 1);
+      row.controls.align.value = was_mode;
+      field.align_mode = was_mode;
       document.querySelector('.orient button[data-rotate="0"]').click();
       upright.checked = was.checked;
       width.value = was.width;
@@ -3360,6 +3540,264 @@
       row.controls.y.value = String(was.y);
       row.controls.rotation.value = String(was.rotation);
       await refresh();
+      return verdict;
+    }
+
+    /// The ink the server drew, as a bound on the canvas.
+    function inkBound() {
+      const ink = window.__niimbenchCanvas().ink;
+      return ink && [ink.minX, ink.minY, ink.maxX, ink.maxY];
+    }
+
+    /// Switch the first row through every alignment, the way a person does,
+    /// and require the text to stay where it is. Alignment chooses which edge
+    /// `x` holds, not where the text goes. Then put the mode and `x` back.
+    async function selfCheckAlign() {
+      const row = rows[0];
+      if (!row) return { ok: false };
+      const field = row.model;
+      const was = { mode: field.align_mode, x: field.x };
+      await refresh();
+      const before = inkBound();
+      const verdict = { before, modes: {} };
+      for (const mode of alignModes.filter((m) => m !== was.mode).concat(was.mode)) {
+        row.controls.align.value = mode;
+        row.controls.align.dispatchEvent(new Event("change", { bubbles: true }));
+        await refresh();
+        verdict.modes[mode] = { x: field.x, ink: inkBound() };
+      }
+      verdict.ok = Boolean(before) && Object.values(verdict.modes).every((seen) =>
+        Boolean(seen.ink) && seen.ink.every((v, i) => Math.abs(v - before[i]) <= 1));
+      row.controls.align.value = was.mode;
+      row.controls.x.value = String(was.x);
+      Object.assign(field, { align_mode: was.mode, x: was.x });
+      await refresh();
+      return verdict;
+    }
+
+    /// Pick a model whose head takes less density than the input offers, and
+    /// require the input to offer that model's range, hold a value inside it,
+    /// and say what it is. Then put the page back as it was.
+    async function selfCheckDensity() {
+      const model = document.querySelector("#model");
+      const density = document.querySelector("#density");
+      const hint = document.querySelector("#density-hint");
+      const most = Number(density.max);
+      const pick = Object.entries((sizeCatalog && sizeCatalog.models) || {})
+        .find(([, entry]) => entry.max_density && entry.max_density < most);
+      if (!pick || !hint) return { ok: false, pick: Boolean(pick), hint: Boolean(hint) };
+      const was = snapshot();
+      density.value = String(most);
+      model.value = pick[0];
+      model.dispatchEvent(new Event("change", { bubbles: true }));
+      await refresh();
+      const verdict = { model: pick[0], range: pick[1].max_density, max: density.max, value: density.value, hint: hint.textContent };
+      verdict.ok = density.max === String(pick[1].max_density) &&
+        Number(density.value) === pick[1].max_density && hint.textContent.includes(String(pick[1].max_density));
+      restore(was);
+      await refresh();
+      return verdict;
+    }
+
+    /// Press a row's **Fit** the way a person does, in Horizontal and then in
+    /// Vertical with **Keep text upright** on, and require the field's box to
+    /// be centred on the label, inside it with a millimetre to spare, and at
+    /// the largest size that does both: one size up, centred the same way,
+    /// crosses the margin. Then put the page back.
+    async function selfCheckFit() {
+      const upright = document.querySelector("#upright");
+      const row = () => rows[0];
+      const press = () => [...row().row.querySelectorAll("button")].find((b) => b.textContent === "Fit");
+      if (!row() || !upright || !press()) return { ok: false, row: Boolean(row()), button: Boolean(row() && press()) };
+      const was = snapshot();
+      const checked = upright.checked;
+      const margin = (sizeCatalog && sizeCatalog.dots_per_mm) || 8;
+      const judge = () => {
+        const field = row().model;
+        const roll = rollSize();
+        const text = previewText(field);
+        const box = boxRect({ ...field, text }, placedLeft(field), field.y);
+        const inside = (rect) => rect.x >= margin && rect.y >= margin &&
+          rect.x + rect.w <= roll.width - margin && rect.y + rect.h <= roll.height - margin;
+        const w = blockWidth(text, field.size + 1, field.font);
+        const h = blockHeight(text, field.size + 1);
+        const bigger = boxRect({ ...field, size: field.size + 1, text }, box.centre.x - w / 2, box.centre.y - h / 2);
+        return {
+          size: field.size,
+          rotation: field.rotation,
+          centre: [box.centre.x, box.centre.y],
+          roll: [roll.width, roll.height],
+          centred: Math.abs(box.centre.x - roll.width / 2) <= 1 && Math.abs(box.centre.y - roll.height / 2) <= 1,
+          inside: inside(box),
+          largest: !inside(bigger),
+        };
+      };
+      press().click();
+      await refresh();
+      const horizontal = judge();
+      upright.checked = true;
+      document.querySelector('.orient button[data-rotate="90"]').click();
+      await refresh();
+      press().click();
+      await refresh();
+      const vertical = judge();
+      document.querySelector('.orient button[data-rotate="0"]').click();
+      upright.checked = checked;
+      restore(was);
+      await refresh();
+      const good = (seen) => seen.centred && seen.inside && seen.largest;
+      return { horizontal, vertical, ok: good(horizontal) && good(vertical) };
+    }
+
+    /// Turn the first field a quarter turn by its round anchor, the way a
+    /// person does, and while the pointer is still held require the ink on the
+    /// canvas to have turned with the box — a wide word becomes a tall one —
+    /// and no render to have been asked for, even after a pause. On release
+    /// the server renders once, and its ink lands where the preview showed it.
+    /// Then put the angle back.
+    async function selfCheckRotate() {
+      const canvas = document.querySelector("#preview");
+      const box = boxes[0];
+      if (!box) return { ok: false };
+      const field = box.field;
+      const start = field.rotation || 0;
+      const bounds = canvas.getBoundingClientRect();
+      const send = (type, point) => canvas.dispatchEvent(new PointerEvent(type, {
+        clientX: bounds.left + point.x * bounds.width / canvas.width,
+        clientY: bounds.top + point.y * bounds.height / canvas.height,
+        pointerId: 1, pointerType: "mouse", isPrimary: true, bubbles: true, cancelable: true, buttons: 1,
+      }));
+      const size = (ink) => ink && { w: ink[2] - ink[0], h: ink[3] - ink[1] };
+      const before = inkBound();
+      // Around the box's centre, from the anchor, a quarter turn clockwise.
+      const centre = box.screen_centre;
+      const reach = Math.hypot(box.handle.x - centre.x, box.handle.y - centre.y);
+      const from = Math.atan2(box.handle.y - centre.y, box.handle.x - centre.x);
+      const at = (turn) => ({ x: centre.x + reach * Math.cos(from + turn), y: centre.y + reach * Math.sin(from + turn) });
+      let renders = 0;
+      const realFetch = window.fetch;
+      window.fetch = (...args) => {
+        if (String(args[0]).includes("/api/render")) renders += 1;
+        return realFetch(...args);
+      };
+      send("pointerdown", box.handle);
+      for (const step of [1, 2, 3]) send("pointermove", at(step * Math.PI / 6));
+      const held = inkBound();
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const during = renders;
+      send("pointerup", at(Math.PI / 2));
+      await refresh();
+      window.fetch = realFetch;
+      const after = inkBound();
+      const verdict = {
+        rotation: field.rotation,
+        before: size(before),
+        held: size(held),
+        renders_while_held: during,
+        held_ink: held,
+        server_ink: after,
+      };
+      verdict.ok = normalizeDegrees(field.rotation - start) === 90 &&
+        Boolean(before && held && after) && verdict.before.w > verdict.before.h && verdict.held.h > verdict.held.w &&
+        during === 0 && held.every((v, i) => Math.abs(v - after[i]) <= 3);
+      field.rotation = start;
+      if (box.row) box.row.controls.rotation.value = String(start);
+      await refresh();
+      return verdict;
+    }
+
+    /// Click and key events the way a person makes them, in the preview's own
+    /// pixels.
+    function pressAt(point) {
+      const canvas = document.querySelector("#preview");
+      const bounds = canvas.getBoundingClientRect();
+      const init = {
+        clientX: bounds.left + point.x * bounds.width / canvas.width,
+        clientY: bounds.top + point.y * bounds.height / canvas.height,
+        pointerId: 1, pointerType: "mouse", isPrimary: true, bubbles: true, cancelable: true, buttons: 1,
+      };
+      canvas.dispatchEvent(new PointerEvent("pointerdown", init));
+      canvas.dispatchEvent(new PointerEvent("pointerup", init));
+    }
+    function pressKey(key, extra = {}) {
+      document.body.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...extra }));
+    }
+
+    /// Import a picture through the file input, the way a person does, with
+    /// the view's own shape so it covers the label.
+    async function importPicture() {
+      const view = viewSize();
+      const art = document.createElement("canvas");
+      art.width = view.width;
+      art.height = view.height;
+      const ctx = art.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, art.width, art.height);
+      ctx.fillStyle = "#000";
+      ctx.fillRect(2, 2, 12, 12);
+      const blob = await new Promise((resolve) => art.toBlob(resolve, "image/png"));
+      const input = document.querySelector("#file");
+      const files = new DataTransfer();
+      files.items.add(new File([blob], "check.png", { type: "image/png" }));
+      input.files = files.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      for (let i = 0; i < 200 && !backgroundImage; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+      await refresh();
+    }
+
+    /// Move, shrink and turn an imported picture, then press **Reset image**:
+    /// the picture stays, centred, fitted and upright, exactly where an import
+    /// puts it.
+    async function selfCheckImage() {
+      await importPicture();
+      if (!backgroundImage) return { ok: false, imported: false };
+      const placed = { ...imageTransform };
+      setImage({ x: placed.x + 20, y: placed.y + 10, scale: placed.scale / 2, rotation: 30 });
+      imageTouched = true;
+      document.querySelector("#image-reset").click();
+      await refresh();
+      const now = { ...imageTransform };
+      const verdict = { placed, reset: now, kept: Boolean(backgroundImage) };
+      verdict.ok = verdict.kept && ["x", "y", "scale", "rotation"].every((key) => Math.abs(now[key] - placed[key]) < 1e-6);
+      document.querySelector("#image-remove").click();
+      await refresh();
+      verdict.removed = !backgroundImage;
+      verdict.ok = verdict.ok && verdict.removed;
+      return verdict;
+    }
+
+    /// Click the picture and press Delete, then click a field's box and press
+    /// Delete, the way a person does. Each click highlights what it picked,
+    /// Delete removes it, and Ctrl+Z brings the field back.
+    async function selfCheckSelect() {
+      await importPicture();
+      const verdict = { imported: Boolean(backgroundImage) };
+      const shown = viewImageBox(imageBox());
+      if (!shown || !boxes[0]) return { ...verdict, ok: false };
+      // Inside the picture and clear of every field's box.
+      const c = Math.cos(shown.rotation);
+      const s = Math.sin(shown.rotation);
+      const lx = -0.4 * shown.width;
+      const ly = -0.4 * shown.height;
+      const corner = { x: shown.x + lx * c - ly * s, y: shown.y + lx * s + ly * c };
+      verdict.clear_of_fields = !hit(corner);
+      pressAt(corner);
+      verdict.image_selected = Boolean(selected) && selected.kind === "image";
+      pressKey("Delete");
+      await refresh();
+      verdict.image_deleted = !backgroundImage;
+      const count = rows.length;
+      const row = boxes[0].row;
+      pressAt(boxes[0].screen_centre);
+      verdict.field_selected = Boolean(selected) && selected.row === row && row.row.classList.contains("selected");
+      pressKey("Delete");
+      await refresh();
+      verdict.field_deleted = rows.length === count - 1 && !rows.includes(row);
+      pressKey("z", { ctrlKey: true });
+      await refresh();
+      verdict.undone = rows.length === count;
+      verdict.ok = verdict.imported && verdict.clear_of_fields && verdict.image_selected && verdict.image_deleted &&
+        verdict.field_selected && verdict.field_deleted && verdict.undone;
       return verdict;
     }
 
@@ -3385,6 +3823,12 @@
         report.vertical = harness ? await selfCheckVertical() : null;
         report.roll = harness ? await selfCheckRoll() : null;
         report.turned = harness ? await selfCheckTurned() : null;
+        report.align = harness ? await selfCheckAlign() : null;
+        report.density = harness ? await selfCheckDensity() : null;
+        report.fit = harness ? await selfCheckFit() : null;
+        report.rotate = harness ? await selfCheckRotate() : null;
+        report.image = harness ? await selfCheckImage() : null;
+        report.select = harness ? await selfCheckSelect() : null;
       }
       const view = viewSize();
       report.view = { width: view.width, height: view.height };
@@ -3425,7 +3869,13 @@
         " fonts " + (report.fonts ? report.fonts.offered + "/" + report.fonts.served : "none") +
         " vertical " + (report.vertical ? (report.vertical.ok ? "ok" : "BROKEN") : "not exercised") +
         " roll " + (report.roll ? (report.roll.ok ? "ok" : "BROKEN") : "not exercised") +
-        " turned " + (report.turned ? (report.turned.ok ? "ok" : "BROKEN") : "not exercised"));
+        " turned " + (report.turned ? (report.turned.ok ? "ok" : "BROKEN") : "not exercised") +
+        " align " + (report.align ? (report.align.ok ? "ok" : "BROKEN") : "not exercised") +
+        " density " + (report.density ? (report.density.ok ? "ok" : "BROKEN") : "not exercised") +
+        " fit " + (report.fit ? (report.fit.ok ? "ok" : "BROKEN") : "not exercised") +
+        " rotate " + (report.rotate ? (report.rotate.ok ? "ok" : "BROKEN") : "not exercised") +
+        " image " + (report.image ? (report.image.ok ? "ok" : "BROKEN") : "not exercised") +
+        " select " + (report.select ? (report.select.ok ? "ok" : "BROKEN") : "not exercised"));
     });
   </script>
 </body>
