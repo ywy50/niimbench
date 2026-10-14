@@ -642,9 +642,11 @@ test "a font this build does not carry is an error, not a fallback" {
 /// `degrees`, as ink pieces and holes.
 fn turnedTopology(gpa: std.mem.Allocator, id: []const u8, letter: []const u8, size: usize, degrees: i32) !font.Topology {
     const face = try faceOf(.{ .font = id });
-    const side = 4 * size;
     const bw = blockWidth(face, letter, size);
-    const field = Field{ .text = letter, .x = @intCast((side - @min(bw, side)) / 2), .y = (side - size) / 2, .size = size, .rotation = degrees, .font = id };
+    // Room for the block turned any way, and no more: its diagonal is under
+    // twice its longer side, and every pixel here is one the test walks.
+    const side = 2 * @max(bw, size) + 8;
+    const field = Field{ .text = letter, .x = @intCast((side - bw) / 2), .y = (side - size) / 2, .size = size, .rotation = degrees, .font = id };
     const gray = try render(gpa, side, side, &.{field}, "");
     defer gpa.free(gray.pixels);
     for (gray.pixels) |*pixel| pixel.* = @intFromBool(pixel.* == 0);
@@ -654,7 +656,8 @@ fn turnedTopology(gpa: std.mem.Allocator, id: []const u8, letter: []const u8, si
 test "turned letters keep their strokes and counters, in every font" {
     // A letter at any angle has no more pieces and no more holes than the same
     // letter drawn huge and upright, the rule `font.zig` holds upright letters
-    // to. Filling a letter upright and then turning its dots put every stroke
+    // to (100 dots is as huge as that needs, and a quarter of the walk of
+    // 200). Filling a letter upright and then turning its dots put every stroke
     // on the dots twice, and at most angles a thin stroke came out stepped and
     // broken: `niimbench` at 70 degrees was a scatter of pieces.
     const gpa = std.testing.allocator;
@@ -665,7 +668,7 @@ test "turned letters keep their strokes and counters, in every font" {
     for (font.fonts) |each| {
         for (0..letters.len) |i| {
             const letter = letters[i .. i + 1];
-            const want = try turnedTopology(gpa, each.id, letter, 200, 0);
+            const want = try turnedTopology(gpa, each.id, letter, 100, 0);
             for (sizes) |size| {
                 for (angles) |degrees| {
                     const got = try turnedTopology(gpa, each.id, letter, size, degrees);
