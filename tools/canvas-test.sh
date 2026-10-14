@@ -9,9 +9,8 @@
 # those flags; nothing here speaks a debugging protocol, so there is nothing to
 # time out and nothing to keep in step with a browser version.
 #
-# The server is started in a temporary working directory of its own, because the
-# single-server lock is per directory: a server left running in this checkout
-# cannot block the check, and the check cannot block it.
+# The server is tools/with-server.sh's, which starts a throwaway one for this
+# script and stops it after.
 #
 # To check a page some other way, dump its DOM yourself and pass the file:
 #
@@ -19,50 +18,12 @@
 set -eu
 
 browser="${1:?usage: canvas-test.sh <browser> [browser args...]}"
+[ -n "${NIIMBENCH_PID:-}" ] || exec "$(dirname "$0")/with-server.sh" "$0" "$@"
 shift
+url=$NIIMBENCH_URL
 dir=$(mktemp -d)
-server_log="$dir/server.log"
 dom="$dir/dom.html"
-
-cleanup() {
-  if [ -n "${server_pid:-}" ]; then kill "$server_pid" 2>/dev/null || true; fi
-  rm -rf "$dir"
-}
-trap cleanup EXIT INT TERM
-
-binary="$(pwd)/zig-out/bin/niimbench"
-[ -x "$binary" ] || { echo "canvas-test: $binary is missing; run make build first"; exit 1; }
-
-# No printer finders: the page boots the same whatever is plugged in or paired.
-cp "$(dirname "$0")/harness.patch.yml" "$dir/cordis.patch.yml"
-( cd "$dir" && "$binary" --no-open > "$server_log" 2>&1 ) &
-server_pid=$!
-
-url=""
-i=0
-while [ $i -lt 80 ]; do
-  url=$(sed -n 's|^\(http://127\.0\.0\.1:[0-9]*/?token=[0-9a-f]*\).*|\1|p' "$server_log" | head -1)
-  [ -n "$url" ] && break
-  i=$((i + 1))
-  sleep 0.25
-done
-if [ -z "$url" ]; then
-  echo "canvas-test: the server never printed a URL:"
-  sed 's/^/  /' "$server_log"
-  exit 1
-fi
-
-# A URL on stdout is a promise, not a fact.
-i=0
-while [ $i -lt 80 ]; do
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsS "$url" >/dev/null 2>&1 && break
-  else
-    break
-  fi
-  i=$((i + 1))
-  sleep 0.25
-done
+trap 'rm -rf "$dir"' EXIT INT TERM
 
 # Virtual time makes the wait a number rather than a guess: the browser runs the
 # page's timers as fast as it can and dumps the DOM when the budget is spent.

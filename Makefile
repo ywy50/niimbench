@@ -7,9 +7,12 @@ CONN ?= usb
 DENSITY ?= 5
 ROTATE ?= 0
 ARGS ?=
+STEPS ?=
+SIZE ?= 1600x1000
+DRIVE_OUT ?= zig-out/drive
 
 .DEFAULT_GOAL := run
-.PHONY: help test build run serve print labels lint protocol-test view-test box-test panel-test canvas-test trace-test
+.PHONY: help test build run serve print labels lint protocol-test view-test box-test panel-test canvas-test trace-test stray-test drive
 
 help:
 	@printf '%s\n' \
@@ -27,6 +30,8 @@ help:
 		'  make panel-test      check the editor'\''s panel layout with node' \
 		'  make canvas-test     check the drawn canvas in headless Chrome' \
 		'  make trace-test      run the page once and check the trace it wrote' \
+		'  make stray-test      check no server outlives whoever started it' \
+		'  make drive           drive the page in a headless browser (see DRIVE)' \
 		'' \
 		'PRINT' \
 		'  IMAGE=label.pgm      binary P5 file to print (required)' \
@@ -35,6 +40,11 @@ help:
 		'  CONN=$(CONN)             usb or bluetooth' \
 		'  DENSITY=$(DENSITY)            print density' \
 		'  ROTATE=$(ROTATE)             page turn in degrees' \
+		'' \
+		'DRIVE' \
+		'  STEPS=steps.js       a steps file, see tools/drive.js (default: one screenshot)' \
+		'  SIZE=$(SIZE)       window size' \
+		'  DRIVE_OUT=dir        where screenshots go (default: zig-out/drive)' \
 		'' \
 		'VARIABLES' \
 		'  PORT=8080            listen port for run and serve (default: ephemeral)' \
@@ -50,7 +60,7 @@ serve:
 build:
 	$(ZIG) build $(ARGS)
 
-test: lint protocol-test view-test box-test panel-test trace-test canvas-test
+test: lint protocol-test view-test box-test panel-test stray-test trace-test canvas-test drive
 	$(ZIG) build test $(ARGS)
 
 # The page script runs only in a browser, so nothing else would notice a name
@@ -100,6 +110,21 @@ canvas-test: build
 	@command -v node >/dev/null 2>&1 || { echo "node is needed for make canvas-test"; exit 1; }
 	@if [ -z "$(BROWSER)" ]; then echo "canvas-test: no Chromium-family browser found, skipping (set BROWSER= to run it)"; exit 0; fi
 	@tools/canvas-test.sh "$(BROWSER)"
+
+# A server started by hand with `&` outlives whoever started it. These are the
+# two ways a check or an agent gets one instead: tools/with-server.sh starts a
+# throwaway server that the kernel kills when the script ends, however it ends,
+# and stray-test proves that holds even for a launcher killed with SIGKILL.
+stray-test: build
+	@tools/stray-test.sh
+
+# The page with real input, for a look the self-check does not cover. Without
+# STEPS it opens the page, screenshots it and fails if the page threw, which is
+# also what keeps the driver itself working.
+drive: build
+	@command -v node >/dev/null 2>&1 || { echo "node is needed for make drive"; exit 1; }
+	@if [ -z "$(BROWSER)" ]; then echo "drive: no Chromium-family browser found, skipping (set BROWSER= to run it)"; exit 0; fi
+	@BROWSER="$(BROWSER)" SIZE="$(SIZE)" DRIVE_OUT="$(DRIVE_OUT)" tools/with-server.sh node tools/drive.js $(STEPS)
 
 print:
 	@test -n "$(IMAGE)" || { echo "set IMAGE= to a binary P5 file"; exit 1; }

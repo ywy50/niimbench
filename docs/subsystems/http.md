@@ -34,7 +34,7 @@ The listen address is `127.0.0.1` and the port comes from `ctx.http_port` (`0` a
 http://127.0.0.1:<port>/?token=<32 hex chars>
 ```
 
-Pass `--no-open` to skip `xdg-open`. The token is generated with `getrandom` for that process only.
+Pass `--no-open` to skip `xdg-open`. `--parent PID` makes the server die with its parent, which is how the harnesses start it ([../development.md](../development.md#throwaway-servers)). The token is generated with `getrandom` for that process only.
 
 `GET /?token=` answers `302` with `Set-Cookie: niimbench=<token>; HttpOnly; Path=/; SameSite=Strict` and `Location: /`. The next request sends that cookie and receives the page. API calls from the page send the cookie and do not put the token back on the URL. A request with neither a matching query token nor that cookie is `401`.
 

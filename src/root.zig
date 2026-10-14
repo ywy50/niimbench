@@ -42,6 +42,7 @@ const help_text =
     \\  serve the editor (default)
     \\    --port 8080
     \\    --no-open
+    \\    --parent PID   die with PID, which must be this process's parent
     \\  print a PGM image
     \\    print --image label.pgm --addr /dev/ttyACM0 [--model b21] [--conn usb|bluetooth]
     \\          [--density 5] [--rotate 0|90|180|270]
@@ -87,9 +88,25 @@ fn takeServeLock(io: std.Io) !std.Io.File {
 
 var held_write_buffer: [256]u8 = undefined;
 
+/// A server started for a check or by an agent dies with the process that
+/// started it. The kernel sends it SIGKILL when its parent exits, however the
+/// parent exits, so a harness killed outright, which never runs its cleanup,
+/// still cannot leave a server behind. The lock above keeps one server per
+/// directory; this keeps a throwaway one from outliving its owner.
+///
+/// `pid` must be the parent. It is checked after the request because the
+/// parent may already be gone, and then the signal would never come.
+fn dieWithParent(pid: std.os.linux.pid_t) !void {
+    const linux = std.os.linux;
+    const rc = linux.prctl(@intFromEnum(linux.PR.SET_PDEATHSIG), @intFromEnum(linux.SIG.KILL), 0, 0, 0);
+    if (linux.errno(rc) != .SUCCESS) return error.ParentWatchFailed;
+    if (linux.getppid() != pid) return error.ParentGone;
+}
+
 fn runServe(init: std.process.Init, args: []const []const u8) !void {
     var open_browser = true;
     var port: u16 = 0;
+    var parent: ?std.os.linux.pid_t = null;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--no-open")) {
@@ -98,10 +115,16 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
             i += 1;
             if (i >= args.len) return error.MissingPort;
             port = try std.fmt.parseInt(u16, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--parent")) {
+            i += 1;
+            if (i >= args.len) return error.MissingParent;
+            parent = try std.fmt.parseInt(std.os.linux.pid_t, args[i], 10);
         } else {
             return error.UnknownArgument;
         }
     }
+
+    if (parent) |pid| try dieWithParent(pid);
 
     // Claim the single-server slot before the listener exists, so a second
     // start cannot get as far as binding. Being told the server is already
