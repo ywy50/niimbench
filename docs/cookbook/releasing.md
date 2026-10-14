@@ -21,7 +21,7 @@ Releases are tag-driven. The version is written once, in `build.zig.zon`, and pu
    git push origin "v$version"
    ```
 
-7. Watch the release workflow. It fails, publishing nothing, if the tag is not on `main`, if it disagrees with `build.zig.zon`, or if `CHANGELOG.md` has no section for it. Otherwise it creates the release, then on an x86_64 and an arm64 runner re-runs `make test`, builds a static `ReleaseSafe` binary, checks that it reports the tag, and uploads its tarball, checksum and build provenance.
+7. Watch the release workflow. It fails, publishing nothing, if the tag is not on `main`, if it disagrees with `build.zig.zon`, or if `CHANGELOG.md` has no section for it. Otherwise it creates the release, then on an x86_64 and an arm64 runner re-runs `make test` (on arm64 without the browser checks, which need stable Chrome and run on x86_64), builds a static `ReleaseSafe` binary, checks that it reports the tag, and uploads its tarball, checksum and build provenance.
 
    A failed tag is deleted, fixed on `main` through a pull request, and pushed again. Deleting it takes:
 
