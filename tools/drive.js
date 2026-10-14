@@ -65,6 +65,7 @@ if (typeof steps !== "function") {
 fs.mkdirSync(out, { recursive: true });
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "niimbench-drive-"));
 const args = ["--headless=new", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
+  "--disable-background-networking", "--disable-component-update", "--disable-sync", "--disable-default-apps", "--disable-extensions", "--no-first-run", "--no-default-browser-check",
   "--remote-debugging-port=0", "--user-data-dir=" + profile, `--window-size=${width},${height}`, "about:blank"];
 const setpriv = ["/usr/bin/setpriv", "/bin/setpriv"].find((file) => fs.existsSync(file));
 const child = setpriv
@@ -101,10 +102,18 @@ async function main() {
       waiting.delete(message.id);
     }
   });
+  // A command the browser never answers fails after half a minute, rather
+  // than leaving the run waiting on a dead connection.
   const send = (method, params = {}) => new Promise((resolve, reject) => {
     next += 1;
-    waiting.set(next, (message) => (message.error ? reject(new Error(method + ": " + message.error.message)) : resolve(message.result)));
-    socket.send(JSON.stringify({ id: next, method, params }));
+    const id = next;
+    const timer = setTimeout(() => { waiting.delete(id); reject(new Error(method + ": no answer in 30 s")); }, 30000);
+    waiting.set(id, (message) => {
+      clearTimeout(timer);
+      if (message.error) reject(new Error(method + ": " + message.error.message));
+      else resolve(message.result);
+    });
+    socket.send(JSON.stringify({ id, method, params }));
   });
 
   const evaluate = async (expression) => {

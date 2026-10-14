@@ -77,17 +77,35 @@ function getTrace(url) {
 async function main() {
   const pageHtml = fs.readFileSync(path.join(__dirname, "..", "src", "editor.html"), "utf8");
   const dir = fs.mkdtempSync(os.tmpdir() + "/niimbench-trace-");
+  // Which browser this is, first: a run that goes wrong on one machine and
+  // not another usually differs here.
+  const version = spawnSync(args.chrome, ["--version"], { encoding: "utf8", timeout: 20000 });
+  console.error("browser: " + args.chrome + " " + String(version.stdout || version.stderr || "").trim());
+  // The browser exits when its virtual time is spent, and virtual time stands
+  // still while any request is open, so a request that never finishes is a
+  // browser that never exits. It is killed after its budget and half a
+  // minute, and the trace below then says how far the page got.
+  const limit = args.timeout + 30000;
   const run = spawnSync(args.chrome, [
     "--headless=new",
     "--disable-gpu",
     "--no-sandbox",
     "--disable-dev-shm-usage",
+    // No background traffic of its own: see tools/canvas-test.sh.
+    "--disable-background-networking",
+    "--disable-component-update",
+    "--disable-sync",
+    "--disable-default-apps",
+    "--disable-extensions",
+    "--no-first-run",
+    "--no-default-browser-check",
     "--user-data-dir=" + dir + "/profile",
     "--virtual-time-budget=" + args.timeout,
     "--dump-dom",
     args.url + "#selfcheck",
-  ], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+  ], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: limit, killSignal: "SIGKILL" });
   fs.rmSync(dir, { recursive: true, force: true });
+  const timedOut = Boolean(run.error) && run.error.code === "ETIMEDOUT";
 
   // The page posts its lines as it goes; give the last one a moment to land.
   let trace = "";
@@ -104,7 +122,13 @@ async function main() {
     console.error(`  FAIL ${name}${detail ? " \u2014 " + detail : ""}`);
   };
 
-  if (run.error) throw run.error;
+  if (run.error && !timedOut) throw run.error;
+  check("the browser finished within its budget", !timedOut,
+    `it was still running after ${limit} ms and was killed; the trace below is as far as the page got`);
+  if (timedOut || run.status) {
+    console.error("--- browser stderr ---");
+    console.error(String(run.stderr || "").trim().split("\n").slice(-25).join("\n") || "(none)");
+  }
   console.error("--- page errors ---");
   console.error((await getTrace(args.url)).split("\n").filter((line) => line.indexOf("error   page") >= 0).join("\n") || "(none)");
   console.error("--- trace as recorded ---");

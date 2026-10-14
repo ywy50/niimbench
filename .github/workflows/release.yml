@@ -107,10 +107,16 @@ jobs:
           # niimbench links no libc, so each build is a static binary that
           # runs on any distribution, and each target has a runner of its own
           # architecture that tests it before it ships.
+          #
+          # The browser checks need stable Google Chrome, which has no arm64
+          # Linux build; the Chromium on that runner never exits --dump-dom.
+          # They run on x86_64 here and on every push in CI.
           - os: ubuntu-24.04
             target: x86_64-linux
+            browser_checks: true
           - os: ubuntu-24.04-arm
             target: aarch64-linux
+            browser_checks: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -121,10 +127,16 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      # The whole suite, on the tagged tree. Where the runner has no Chromium
-      # browser the Makefile says so and skips the browser checks; CI on every
-      # push runs them on x86_64.
+      # The whole suite, on the tagged tree.
       - name: Test the tagged tree
+        if: matrix.browser_checks
+        run: make test
+      # An empty BROWSER is the Makefile's way to skip the browser checks,
+      # loudly; everything else still runs, `zig build test` included.
+      - name: Test the tagged tree, without the browser checks
+        if: ${{ !matrix.browser_checks }}
+        env:
+          BROWSER: ""
         run: make test
       - name: Build a static ReleaseSafe binary
         run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }} --prefix "$RUNNER_TEMP/niimbench"
