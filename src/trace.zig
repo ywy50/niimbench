@@ -98,18 +98,22 @@ pub const Trace = struct {
             // bug in the logger rather than a message that was too long. Render
             // into room of its own, keep the head, and mark where it was cut,
             // because the head is the part that says what happened.
+            // When the line does not fit even the room, no rendered head exists
+            // at all: keep the format string's head instead, which still says
+            // what happened.
             var room: [message_len * 4]u8 = undefined;
-            const whole = std.fmt.bufPrint(&room, format, args) catch &room;
+            const whole: []const u8 = std.fmt.bufPrint(&room, format, args) catch format;
             const mark = "...[cut]";
             const keep = @min(whole.len, entry.message.len);
             if (keep == entry.message.len) {
                 const tail = @min(mark.len, entry.message.len);
                 @memcpy(entry.message[0 .. entry.message.len - tail], whole[0 .. entry.message.len - tail]);
                 @memcpy(entry.message[entry.message.len - tail ..], mark[0..tail]);
+                entry.message_len_used = entry.message.len;
             } else {
                 @memcpy(entry.message[0..keep], whole[0..keep]);
+                entry.message_len_used = keep;
             }
-            entry.message_len_used = entry.message.len;
             return;
         };
         entry.message_len_used = text.len;
