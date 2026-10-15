@@ -91,32 +91,20 @@ pub const Trace = struct {
         entry.source_len_used = source_used;
 
         entry.level = level;
-        const text = std.fmt.bufPrint(&entry.message, format, args) catch {
-            // Too long for the line. `bufPrint` leaves the buffer untouched when
-            // it cannot fit, and copying the format string instead put a bare
-            // "{s}" in the log — a line that says nothing, and that reads like a
-            // bug in the logger rather than a message that was too long. Render
-            // into room of its own, keep the head, and mark where it was cut,
-            // because the head is the part that says what happened.
-            // When the line does not fit even the room, no rendered head exists
-            // at all: keep the format string's head instead, which still says
-            // what happened.
-            var room: [message_len * 4]u8 = undefined;
-            const whole: []const u8 = std.fmt.bufPrint(&room, format, args) catch format;
+        // Too long for the line: keep the head, because the head is the part
+        // that says what happened, and mark where it was cut. A fixed writer
+        // fills the line before it gives up, so the head is there however long
+        // the whole message would have been, with no second buffer to render
+        // it into and no fallback to the bare format string.
+        var line: std.Io.Writer = .fixed(&entry.message);
+        line.print(format, args) catch {
             const mark = "...[cut]";
-            const keep = @min(whole.len, entry.message.len);
-            if (keep == entry.message.len) {
-                const tail = @min(mark.len, entry.message.len);
-                @memcpy(entry.message[0 .. entry.message.len - tail], whole[0 .. entry.message.len - tail]);
-                @memcpy(entry.message[entry.message.len - tail ..], mark[0..tail]);
-                entry.message_len_used = entry.message.len;
-            } else {
-                @memcpy(entry.message[0..keep], whole[0..keep]);
-                entry.message_len_used = keep;
-            }
+            const cut = @min(line.end, entry.message.len - mark.len);
+            @memcpy(entry.message[cut..][0..mark.len], mark);
+            entry.message_len_used = cut + mark.len;
             return;
         };
-        entry.message_len_used = text.len;
+        entry.message_len_used = line.end;
     }
 
     pub fn info(self: *Trace, source: []const u8, comptime format: []const u8, args: anytype) void {
@@ -211,4 +199,14 @@ test "a message too long for the line is clipped, not dropped" {
     try std.testing.expectEqual(@as(usize, 1), trace.held());
     try std.testing.expect(trace.at(0).messageText().len > 0);
     try std.testing.expect(trace.at(0).messageText().len <= Trace.message_len);
+
+    // Far longer than the line, such as a page error with its whole stack: the
+    // head is still the message's own, never the format string.
+    var longer: [Trace.message_len * 8]u8 = undefined;
+    @memset(&longer, 'y');
+    trace.info("page", "{s}", .{longer});
+    const clipped = trace.at(1).messageText();
+    try std.testing.expectEqual(Trace.message_len, clipped.len);
+    try std.testing.expect(std.mem.startsWith(u8, clipped, "yyyy"));
+    try std.testing.expect(std.mem.endsWith(u8, clipped, "...[cut]"));
 }
