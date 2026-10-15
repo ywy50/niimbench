@@ -48,6 +48,8 @@ Pass `--no-open` to skip `xdg-open`. `--parent PID` makes the server die with it
 
 `POST /api/devices/scan` runs the scan and answers in the same shape. An empty body, or a body that is not JSON, is the passive scan: the serial probe plus the devices BlueZ already knows. `{"discover":true}` also starts a Bluetooth inquiry, which takes about two seconds.
 
+When a finder of the scan failed, the answer keeps the finding it made anyway and carries the failure with it — `"scan_error":"usb:NoBluetooth"` names the transport and the cause — so a partial scan does not read as a clean one. The scan's trace line says the same.
+
 `model` is null when the model id, or a Bluetooth name, is not one of the five heads this bench prints to. `model_id` is 0 for a Bluetooth device, because a name is the only signal there. `spp` says the device advertises the Bluetooth serial profile. The finders and the model table are in [printer.md](printer.md).
 
 ## Label body
@@ -114,6 +116,8 @@ The barcode is resolved from the catalogue compiled into the binary, which holds
 ```
 
 `NothingToPrint` is a `render` body with no fields, no background, and no `pixels_b64`. `UnknownSource` is a 404. Everything else is 400. The `sources` routes answer `{"error":"..."}` only.
+
+A body larger than the server accepts answers `413` with the reason named, rather than dropping the connection.
 
 After a successful print the context emits `print/done`.
 
