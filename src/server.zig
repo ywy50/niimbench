@@ -451,6 +451,10 @@ fn compose(service: *HttpService, job: LabelRequest) !raster.Gray {
     // `pxHeight` — so a caller asks for the page it wants and gets that page.
     // Subtracting it here as well would take it off twice.
     const height = job.height;
+    // The protocol's own limit, a 16-bit word each way, checked before any
+    // path multiplies the two: past it the product can wrap, and in a safe
+    // build an overflow is a panic that takes the server down.
+    if (job.width > 65535 or job.height > 65535) return error.BadSize;
     const source_json = if (job.source.len == 0)
         ""
     else
@@ -489,13 +493,8 @@ fn compose(service: *HttpService, job: LabelRequest) !raster.Gray {
 fn decodeBackground(allocator: std.mem.Allocator, encoded: []const u8, width: usize, height: usize) ![]u8 {
     const raw = try decodePixels(allocator, encoded);
     errdefer allocator.free(raw);
-    // width*height and row_bytes*height are compared against raw.len below,
-    // so neither may wrap: a wrapped product that equals raw.len would pass
-    // the check, and the unpack loop would then run past the end of raw.
-    if (width == 0 or height == 0 or height > std.math.maxInt(usize) / width) return error.BadPixels;
     if (raw.len == width * height) return raw;
     const row_bytes = raster.packedRowBytes(width);
-    if (height > std.math.maxInt(usize) / row_bytes) return error.BadPixels;
     if (raw.len != row_bytes * height) return error.BadPixels;
     const pixels = try allocator.alloc(u8, width * height);
     errdefer allocator.free(pixels);
@@ -2062,6 +2061,12 @@ test "a failed render still reports the label size" {
     try std.testing.expect(std.mem.indexOf(u8, response.body, "NothingToPrint") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"width\":120") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"height\":40") != null);
+
+    // A size whose product wraps is refused before anything multiplies it.
+    const huge = try postToken(http, gpa, "/api/render", "{\"width\":4294967296,\"height\":4294967296,\"pixels_b64\":\"AA==\"}");
+    defer if (huge.owned) gpa.free(huge.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, huge.status);
+    try std.testing.expect(std.mem.indexOf(u8, huge.body, "BadSize") != null);
 
     const missing = try postToken(http, gpa, "/api/render", "{\"width\":80,\"height\":24,\"source\":\"nope\",\"fields\":[{\"text\":\"x\"}]}");
     defer if (missing.owned) gpa.free(missing.body);

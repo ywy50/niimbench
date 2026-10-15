@@ -17,6 +17,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 - A scan whose finder failed answered as if it had run clean. The answer now keeps the finding it made anyway and names the failure — `"scan_error":"usb:NoBluetooth"` — and the scan's trace line says the same. A Bluetooth inquiry that cannot start is reported the same way, with the passive answer kept.
 - A request body larger than the server takes was dropped with no answer. It now receives `413` and an error name.
 - A roll read that failed — the barcode read, or the cloud lookup — reached no record at all. It now lands in the trace with the device and the cause, and a print failure names the connection, address and model it was aimed at.
+- A label size past the printer protocol's 16-bit limit could overflow while it was checked, which in a release build stops the server. It is refused as `BadSize` before anything multiplies it.
 
 ## [0.2.0] - 2026-10-14
 

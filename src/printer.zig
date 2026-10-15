@@ -66,10 +66,9 @@ pub const Client = struct {
         height: usize,
         density: u8,
     ) !void {
-        // width*height is compared with pixels.len below, so it must not wrap.
-        if (width != 0 and height > std.math.maxInt(usize) / width) return error.BadSize;
-        if (pixels.len != width * height) return error.BadSize;
+        // The bound first: below it width*height cannot wrap.
         if (width > 65535 or height > 65535) return error.BadSize;
+        if (pixels.len != width * height) return error.BadSize;
         if (density < 1 or density > 5) return error.BadDensity;
         _ = try self.command(.set_density, &.{density}, 16);
         _ = try self.command(.set_label_type, &.{1}, 16);
