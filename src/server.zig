@@ -9,10 +9,11 @@ const labels = @import("labels_catalogue.zig");
 const trace_mod = @import("trace.zig");
 
 /// Every `trace` call goes through here, because a context may have no trace
-/// plugin (a test that mounts only what it needs). A missing log is not a
-/// reason to fail a render.
+/// plugin (a test that mounts only what it needs). The lookup is live rather
+/// than cached: the plugin may appear after, or be withdrawn during, this
+/// service's life, and a missing log is not a reason to fail a render.
 fn tracer(service: *HttpService) ?*trace_mod.Trace {
-    return service.trace;
+    return if (service.ctx.get("trace")) |raw| @ptrCast(@alignCast(raw)) else null;
 }
 
 const printer = @import("printer.zig");
@@ -2427,6 +2428,44 @@ test "the trace records what the routes did, and reads back oldest first" {
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "cleared") != null);
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "view: vertical") == null);
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "failed") == null);
+}
+
+test "the trace plugin may join or leave after the http fiber applied" {
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    _ = try mountHttp(&ctx);
+    const http = ctx.require(HttpService, "http");
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    const job = "{\"width\":96,\"height\":304,\"fields\":[{\"text\":\"X\",\"x\":4,\"y\":4}],\"model\":\"d110\",\"conn\":\"usb\",\"addr\":\"/no/such/tty\"}";
+
+    // The consumer applied with the plugin absent: the route still answers,
+    // and there is nowhere yet to record.
+    const before = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/print", .query = query, .body = job });
+    defer if (before.owned) gpa.free(before.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, before.status);
+
+    // The plugin arrives after the consumer applied. Every logged route from
+    // now on must reach its lines, whatever order the two mounted in.
+    const trace_fiber = try ctx.mount("trace", .{ .name = "trace", .apply = trace_mod.applyTrace });
+    const logged = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/print", .query = query, .body = job });
+    defer if (logged.owned) gpa.free(logged.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, logged.status);
+    const read = try http.dispatch(.{ .io = std.testing.io, .method = .GET, .path = "/api/trace", .query = query, .body = "" });
+    defer if (read.owned) gpa.free(read.body);
+    try std.testing.expectEqual(std.http.Status.ok, read.status);
+    try std.testing.expect(std.mem.indexOf(u8, read.body, "print") != null);
+
+    // The plugin leaves again: the consumer keeps serving with nowhere to
+    // record, instead of following a freed pointer.
+    trace_fiber.dispose();
+    const after = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/print", .query = query, .body = job });
+    defer if (after.owned) gpa.free(after.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, after.status);
+    const gone = try http.dispatch(.{ .io = std.testing.io, .method = .GET, .path = "/api/trace", .query = query, .body = "" });
+    defer if (gone.owned) gpa.free(gone.body);
+    try std.testing.expectEqual(std.http.Status.not_found, gone.status);
 }
 
 test "the editor records every step of its protocol" {
