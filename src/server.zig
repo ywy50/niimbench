@@ -489,8 +489,13 @@ fn compose(service: *HttpService, job: LabelRequest) !raster.Gray {
 fn decodeBackground(allocator: std.mem.Allocator, encoded: []const u8, width: usize, height: usize) ![]u8 {
     const raw = try decodePixels(allocator, encoded);
     errdefer allocator.free(raw);
+    // width*height and row_bytes*height are compared against raw.len below,
+    // so neither may wrap: a wrapped product that equals raw.len would pass
+    // the check, and the unpack loop would then run past the end of raw.
+    if (width == 0 or height == 0 or height > std.math.maxInt(usize) / width) return error.BadPixels;
     if (raw.len == width * height) return raw;
     const row_bytes = raster.packedRowBytes(width);
+    if (height > std.math.maxInt(usize) / row_bytes) return error.BadPixels;
     if (raw.len != row_bytes * height) return error.BadPixels;
     const pixels = try allocator.alloc(u8, width * height);
     errdefer allocator.free(pixels);
