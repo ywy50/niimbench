@@ -1,6 +1,6 @@
 # HTTP
 
-The `http` plugin injects `trace`, `printer`, `transports`, `devices`, and `sources`. Only `trace` is optional: a context without it serves every route and records nothing. Its `apply` creates `HttpService`, publishes it as `"http"`, and registers the `/api/` routes below. It also owns one `ctx.effect` for source records installed at runtime, so disposing that fiber drops them.
+The `http` plugin injects `printer`, `transports`, `devices`, and `sources`. `trace` is optional: a context without it serves every route and records nothing, and withdrawing it later degrades the two trace routes to a `404` instead of dropping the fiber. Its `apply` creates `HttpService`, publishes it as `"http"`, and registers the `/api/` routes below. It also owns one `ctx.effect` for source records installed at runtime, so disposing that fiber drops them.
 
 The `editor` plugin injects `http` and registers `GET /`. Disposing that fiber removes the route. The page bytes live in `src/editor.html` and are embedded.
 

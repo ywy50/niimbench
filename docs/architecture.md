@@ -11,7 +11,7 @@ browser or xdg-open
         |     |
         |     `--------- trace plugin (the log every layer writes to)
         |
-        |  injects trace, printer, transports, devices, sources
+         |  injects printer, transports, devices, sources; the trace branch is optional
         v
    printer service      transport registry      device registry
                         usb opener              usb finder

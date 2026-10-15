@@ -89,7 +89,7 @@ pub const catalog = [_]cordis.Plugin{
     .{ .name = "bluetooth", .inject = &.{ "transports", "devices" }, .apply = applyBluetooth },
     .{ .name = "sources", .apply = server.applySources },
     json_source,
-    .{ .name = "http", .inject = &.{ "trace", "printer", "transports", "devices", "sources" }, .apply = server.applyHttp },
+    .{ .name = "http", .inject = &.{ "printer", "transports", "devices", "sources" }, .apply = server.applyHttp },
     .{ .name = "editor", .inject = &.{"http"}, .apply = server.applyEditor },
 };
 
