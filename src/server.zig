@@ -1244,13 +1244,17 @@ fn handle(service: *HttpService, io: std.Io, stream: std.Io.net.Stream) void {
     const announced = if (request.head.content_length) |length| length != 0 else false;
     if (request.head.method.requestHasBody() and announced) {
         var scratch: [4096]u8 = undefined;
-        const reader = request.readerExpectNone(&scratch);
+        // curl asks `Expect: 100-continue` before any body over 1 MB. The
+        // reader asserts that no expectation is left, so one left unanswered
+        // took the whole process down. A client that expects anything else, or
+        // is already gone, is hung up on.
+        const reader = request.readerExpectContinue(&scratch) catch return;
         body = reader.allocRemaining(service.allocator, .limited(4 << 20)) catch |err| {
             // A body that does not fit is answered, not dropped: a silent
             // disconnect reads like a crash on the client side, and says
             // nothing about the size the server will take.
             var err_buf: [80]u8 = undefined;
-            const text = std.fmt.bufPrint(&err_buf, "{\"error\":\"body: {s}\"}", .{@errorName(err)}) catch return;
+            const text = std.fmt.bufPrint(&err_buf, "{{\"error\":\"body: {s}\"}}", .{@errorName(err)}) catch return;
             request.respond(text, .{
                 .status = if (err == error.StreamTooLong) .payload_too_large else .internal_server_error,
                 .keep_alive = false,
@@ -2462,6 +2466,36 @@ test "the trace records what the routes did, and reads back oldest first" {
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "cleared") != null);
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "view: vertical") == null);
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "failed") == null);
+}
+
+test "a request that expects 100-continue is answered, not aborted" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    _ = try mountHttp(&ctx);
+    const http = ctx.require(HttpService, "http");
+    const loopback = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+    var listener = try loopback.listen(io, .{});
+    defer listener.deinit(io);
+
+    // The request is small enough to wait in the socket whole, so one thread
+    // can send it, serve it and read the answer, in that order.
+    const client = try listener.socket.address.connect(io, .{ .mode = .stream });
+    defer client.close(io);
+    var send_buf: [256]u8 = undefined;
+    var sending = client.writer(io, &send_buf);
+    try sending.interface.writeAll("POST /api/render HTTP/1.1\r\nHost: test\r\nContent-Length: 2\r\nExpect: 100-continue\r\n\r\n{}");
+    try sending.interface.flush();
+    handle(http, io, try listener.accept(io));
+
+    var recv_buf: [1024]u8 = undefined;
+    var receiving = client.reader(io, &recv_buf);
+    const answer = try receiving.interface.allocRemaining(gpa, .limited(64 << 10));
+    defer gpa.free(answer);
+    const go_ahead = "HTTP/1.1 100 Continue\r\n\r\n";
+    try std.testing.expect(std.mem.startsWith(u8, answer, go_ahead));
+    try std.testing.expect(std.mem.startsWith(u8, answer[go_ahead.len..], "HTTP/1.1 "));
 }
 
 test "the trace plugin may join or leave after the http fiber applied" {
