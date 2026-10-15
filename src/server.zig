@@ -226,8 +226,6 @@ pub const HttpService = struct {
     sources: *Sources,
     runtime: *RuntimeSources,
     catalogue: labels.Catalogue,
-    /// Absent unless the `trace` plugin is mounted.
-    trace: ?*trace_mod.Trace = null,
 
     pub fn dispatch(self: *HttpService, req: RequestView) !Response {
         const from_query = queryValue(req.query, "token");
@@ -1374,7 +1372,6 @@ pub fn create(
     sources: *Sources,
     runtime: *RuntimeSources,
     catalogue: labels.Catalogue,
-    trace: ?*trace_mod.Trace,
 ) !*HttpService {
     const service = try ctx.allocator.create(HttpService);
     service.* = .{
@@ -1390,7 +1387,6 @@ pub fn create(
         .sources = sources,
         .runtime = runtime,
         .catalogue = catalogue,
-        .trace = trace,
     };
     try fillToken(service);
     return service;
@@ -1408,9 +1404,6 @@ pub fn applyHttp(ctx: *cordis.Context) !void {
     const transports = ctx.require(device.Registry, "transports");
     const devices = ctx.require(discovery.Registry, "devices");
     const sources = ctx.require(Sources, "sources");
-    // Optional: a context that mounts only `http` still serves every route, it
-    // just has nowhere to record what happened.
-    const trace: ?*trace_mod.Trace = if (ctx.get("trace")) |raw| @ptrCast(@alignCast(raw)) else null;
     const runtime = try ctx.allocator.create(RuntimeSources);
     errdefer ctx.allocator.destroy(runtime);
     runtime.* = .{ .allocator = ctx.allocator, .sources = sources };
@@ -1419,7 +1412,7 @@ pub fn applyHttp(ctx: *cordis.Context) !void {
     // a network round trip. It is parsed once and lives as long as the service.
     var catalogue = try labels.load(ctx.allocator);
     errdefer catalogue.deinit();
-    const service = try create(ctx, printer_service, transports, devices, sources, runtime, catalogue, trace);
+    const service = try create(ctx, printer_service, transports, devices, sources, runtime, catalogue);
     try ctx.set("http", service, destroyHttp);
     try addRoute(service, .GET, "/api/health", health);
     try addRoute(service, .GET, "/api/ports", listPorts);
