@@ -25,6 +25,12 @@ pub const Transport = struct {
     }
 };
 
+/// Packet types the printer answers with, from the table in
+/// docs/manuals/upstream/interfacing/proto.md: `0xdb` is the print error
+/// frame, and type 0 is not assigned to any command in that table.
+const print_error_type: u8 = 0xDB;
+const unassigned_type: u8 = 0;
+
 pub const Client = struct {
     allocator: std.mem.Allocator,
     transport: Transport,
@@ -60,8 +66,9 @@ pub const Client = struct {
         height: usize,
         density: u8,
     ) !void {
-        if (pixels.len != width * height) return error.BadSize;
+        // The bound first: below it width*height cannot wrap.
         if (width > 65535 or height > 65535) return error.BadSize;
+        if (pixels.len != width * height) return error.BadSize;
         if (density < 1 or density > 5) return error.BadDensity;
         _ = try self.command(.set_density, &.{density}, 16);
         _ = try self.command(.set_label_type, &.{1}, 16);
@@ -153,11 +160,11 @@ pub const Client = struct {
                 self.buffer.clearRetainingCapacity();
                 self.start = 0;
             }
-            if (parsed.packet_type == 219) return error.PrinterRefused;
-            if (parsed.packet_type == 0) return error.PrinterUnsupported;
+            if (parsed.packet_type == print_error_type) return error.PrinterRefused;
+            if (parsed.packet_type == unassigned_type) return error.PrinterUnsupported;
             if (parsed.packet_type == expect) {
-                // fromBytes copied into data_buf. Copy again so the next pop
-                // cannot overwrite the returned slice. Callers use it immediately.
+                // parsed.data points into data_buf, so the caller must finish
+                // with it before the next pop.
                 return parsed;
             }
         }
