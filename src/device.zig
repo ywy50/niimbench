@@ -354,7 +354,9 @@ pub fn findBluetooth(io: std.Io, allocator: std.mem.Allocator, discover: bool, o
     };
     try conn.managedObjects(visitor);
     if (!discover or scan.adapter_len == 0) return;
-    conn.startDiscovery(scan.adapterPath()) catch return;
+    // The passive answer is already in `out`; an inquiry that cannot start is
+    // reported to the scan, which names it, rather than dropped here.
+    try conn.startDiscovery(scan.adapterPath());
     io.sleep(.fromMilliseconds(inquiry_ms), .awake) catch {};
     conn.stopDiscovery(scan.adapterPath()) catch {};
     try conn.managedObjects(visitor);
