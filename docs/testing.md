@@ -42,7 +42,7 @@ What the tests lock in:
 - `POST /api/sources` installs a record that renders and lists, a non-object body is rejected, and disposing the `http` fiber drops the record.
 - A runtime record can be replaced and then deleted, deleting it twice is a 404, and the delete route refuses a record a plugin owns.
 - A method the `/api/sources/<name>` prefix does not serve is a 404.
-- `/api/label/track` reports `record`, `literal`, `missing-key`, `unknown-source`, and `dynamic` from the same resolution the renderer uses.
+- `/api/label/track` reports `record`, `literal`, `missing-key`, `unknown-source`, `structured`, and `dynamic` from the same resolution the renderer uses.
 - A failed render reports the label size. `/api/label/metrics` lists every embedded font in order, and the editor's arithmetic on each font's run-encoded table gives the width `label.lineWidth` draws, at several sizes.
 - `POST /api/render` and `POST /api/label/track` answer 400 `UnknownFont` for a font the build does not carry, and render a font it does.
 - A field's `direction` is accepted and ignored: two bodies that differ only in `direction` draw the same page, while a different `rotation` does not.
