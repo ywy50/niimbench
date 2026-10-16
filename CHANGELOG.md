@@ -11,6 +11,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Fixed
+
+- The `http` plugin's `inject` declaration lists only what its `apply` requires. `trace` was declared required although every route treats it as optional, so a context without the trace plugin could not boot the editor, and withdrawing the plugin at runtime dropped the whole `http` fiber.
+
 ## [0.2.0] - 2026-10-14
 
 ### Added

@@ -31,7 +31,7 @@
 
 - id: http
   plugin: http
-  inject: [trace, printer, transports, devices, sources]
+  inject: [printer, transports, devices, sources]
 
 - id: editor
   plugin: editor
