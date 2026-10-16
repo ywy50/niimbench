@@ -10,10 +10,11 @@ const labels = @import("labels_catalogue.zig");
 const trace_mod = @import("trace.zig");
 
 /// Every `trace` call goes through here, because a context may have no trace
-/// plugin (a test that mounts only what it needs). A missing log is not a
-/// reason to fail a render.
+/// plugin (a test that mounts only what it needs). The lookup is live rather
+/// than cached: the plugin may appear after, or be withdrawn during, this
+/// service's life, and a missing log is not a reason to fail a render.
 fn tracer(service: *HttpService) ?*trace_mod.Trace {
-    return service.trace;
+    return if (service.ctx.get("trace")) |raw| @ptrCast(@alignCast(raw)) else null;
 }
 
 const printer = @import("printer.zig");
@@ -226,8 +227,6 @@ pub const HttpService = struct {
     sources: *Sources,
     runtime: *RuntimeSources,
     catalogue: labels.Catalogue,
-    /// Absent unless the `trace` plugin is mounted.
-    trace: ?*trace_mod.Trace = null,
 
     pub fn dispatch(self: *HttpService, req: RequestView) !Response {
         const from_query = queryValue(req.query, "token");
@@ -406,7 +405,9 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
         gray.height,
         job.density,
     ) catch |err| {
-        if (tracer(service)) |t| t.failure("print", "failed: {s}", .{@errorName(err)});
+        // The answer says only the error name; the line says what was asked of
+        // which printer, the way the compose failure beside it does.
+        if (tracer(service)) |t| t.failure("print", "{s} {s} model={s} failed: {s}", .{ job.conn, job.addr, job.model, @errorName(err) });
         return errorResponse(service.allocator, .bad_request, @errorName(err), gray.width, gray.height);
     };
     if (tracer(service)) |t| t.info("print", "sent {d}x{d}", .{ gray.width, gray.height });
@@ -449,6 +450,10 @@ fn compose(service: *HttpService, job: LabelRequest) !raster.Gray {
     // `pxHeight` — so a caller asks for the page it wants and gets that page.
     // Subtracting it here as well would take it off twice.
     const height = job.height;
+    // The protocol's own limit, a 16-bit word each way, checked before any
+    // path multiplies the two: past it the product can wrap, and in a safe
+    // build an overflow is a panic that takes the server down.
+    if (job.width > 65535 or job.height > 65535) return error.BadSize;
     const source_json = if (job.source.len == 0)
         ""
     else
@@ -656,7 +661,19 @@ fn devicesBody(service: *HttpService) !Response {
         try out.appendSlice(service.allocator, if (found.spp) "true" else "false");
         try out.append(service.allocator, '}');
     }
-    try out.appendSlice(service.allocator, "]}");
+    try out.append(service.allocator, ']');
+    // A scan in which a finder failed answers with what it found anyway, plus
+    // the name of the failure, so the list is not read as complete.
+    if (service.devices.failed_error) |err| {
+        try out.appendSlice(service.allocator, ",\"scan_error\":\"");
+        if (service.devices.failed_conn) |conn| {
+            try out.appendSlice(service.allocator, conn);
+            try out.append(service.allocator, ':');
+        }
+        try out.appendSlice(service.allocator, err);
+        try out.append(service.allocator, '"');
+    }
+    try out.append(service.allocator, '}');
     return .{ .body = try out.toOwnedSlice(service.allocator), .owned = true };
 }
 
@@ -675,6 +692,12 @@ pub fn scanDevices(service: *HttpService, req: RequestView) !Response {
     defer if (body) |parsed| parsed.deinit();
     const discover = if (body) |parsed| parsed.value.discover else false;
     service.devices.scan(req.io, service.allocator, discover);
+    // The finding a failed transport made anyway is still answered; the
+    // failure itself is named here, so a partial scan does not read as a clean
+    // one.
+    if (service.devices.failed_error) |err| {
+        if (tracer(service)) |t| t.failure("scan", "{s} scan failed: {s}", .{ service.devices.failed_conn orelse "?", err });
+    }
     return devicesBody(service);
 }
 
@@ -712,6 +735,7 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
     var client = printer.Client.init(service.allocator, transport);
     defer client.deinit();
     const barcode_owned = client.readBarcode() catch |err| {
+        if (tracer(service)) |t| t.failure("roll", "{s} {s} barcode: {s}", .{ parsed.value.conn, parsed.value.addr, @errorName(err) });
         return errorResponse(service.allocator, .bad_request, @errorName(err), 0, 0);
     };
     const barcode = barcode_owned orelse {
@@ -722,7 +746,8 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
 
     const mm = switch (rollSource(&service.catalogue, barcode, parsed.value.allow_cloud)) {
         .catalogue => |known| known,
-        .cloud => lookupLabelMm(req.io, service.allocator, barcode) catch {
+        .cloud => lookupLabelMm(req.io, service.allocator, barcode) catch |err| {
+            if (tracer(service)) |t| t.failure("roll", "{s} cloud lookup: {s}", .{ barcode, @errorName(err) });
             return .{ .status = .bad_request, .body = "{\"error\":\"roll lookup failed\"}" };
         },
         .unknown => return .{ .status = .bad_request, .body = "{\"error\":\"unknown roll\"}" },
@@ -1222,8 +1247,21 @@ fn handle(service: *HttpService, io: std.Io, stream: std.Io.net.Stream) void {
     const announced = if (request.head.content_length) |length| length != 0 else false;
     if (request.head.method.requestHasBody() and announced) {
         var scratch: [4096]u8 = undefined;
-        const reader = request.readerExpectNone(&scratch);
-        body = reader.allocRemaining(service.allocator, .limited(4 << 20)) catch {
+        // curl asks `Expect: 100-continue` before any body over 1 MB. The
+        // reader asserts that no expectation is left, so one left unanswered
+        // took the whole process down. A client that expects anything else, or
+        // is already gone, is hung up on.
+        const reader = request.readerExpectContinue(&scratch) catch return;
+        body = reader.allocRemaining(service.allocator, .limited(4 << 20)) catch |err| {
+            // A body that does not fit is answered, not dropped: a silent
+            // disconnect reads like a crash on the client side, and says
+            // nothing about the size the server will take.
+            var err_buf: [80]u8 = undefined;
+            const text = std.fmt.bufPrint(&err_buf, "{{\"error\":\"body: {s}\"}}", .{@errorName(err)}) catch return;
+            request.respond(text, .{
+                .status = if (err == error.StreamTooLong) .payload_too_large else .internal_server_error,
+                .keep_alive = false,
+            }) catch {};
             return;
         };
     }
@@ -1342,7 +1380,6 @@ pub fn create(
     sources: *Sources,
     runtime: *RuntimeSources,
     catalogue: labels.Catalogue,
-    trace: ?*trace_mod.Trace,
 ) !*HttpService {
     const service = try ctx.allocator.create(HttpService);
     service.* = .{
@@ -1358,7 +1395,6 @@ pub fn create(
         .sources = sources,
         .runtime = runtime,
         .catalogue = catalogue,
-        .trace = trace,
     };
     try fillToken(service);
     return service;
@@ -1376,9 +1412,6 @@ pub fn applyHttp(ctx: *cordis.Context) !void {
     const transports = ctx.require(device.Registry, "transports");
     const devices = ctx.require(discovery.Registry, "devices");
     const sources = ctx.require(Sources, "sources");
-    // Optional: a context that mounts only `http` still serves every route, it
-    // just has nowhere to record what happened.
-    const trace: ?*trace_mod.Trace = if (ctx.get("trace")) |raw| @ptrCast(@alignCast(raw)) else null;
     const runtime = try ctx.allocator.create(RuntimeSources);
     errdefer ctx.allocator.destroy(runtime);
     runtime.* = .{ .allocator = ctx.allocator, .sources = sources };
@@ -1387,7 +1420,7 @@ pub fn applyHttp(ctx: *cordis.Context) !void {
     // a network round trip. It is parsed once and lives as long as the service.
     var catalogue = try labels.load(ctx.allocator);
     errdefer catalogue.deinit();
-    const service = try create(ctx, printer_service, transports, devices, sources, runtime, catalogue, trace);
+    const service = try create(ctx, printer_service, transports, devices, sources, runtime, catalogue);
     try ctx.set("http", service, destroyHttp);
     try addRoute(service, .GET, "/api/health", health);
     try addRoute(service, .GET, "/api/ports", listPorts);
@@ -2031,6 +2064,12 @@ test "a failed render still reports the label size" {
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"width\":120") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"height\":40") != null);
 
+    // A size whose product wraps is refused before anything multiplies it.
+    const huge = try postToken(http, gpa, "/api/render", "{\"width\":4294967296,\"height\":4294967296,\"pixels_b64\":\"AA==\"}");
+    defer if (huge.owned) gpa.free(huge.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, huge.status);
+    try std.testing.expect(std.mem.indexOf(u8, huge.body, "BadSize") != null);
+
     const missing = try postToken(http, gpa, "/api/render", "{\"width\":80,\"height\":24,\"source\":\"nope\",\"fields\":[{\"text\":\"x\"}]}");
     defer if (missing.owned) gpa.free(missing.body);
     try std.testing.expectEqual(std.http.Status.not_found, missing.status);
@@ -2223,6 +2262,9 @@ const FoundDevice = struct {
 const DeviceList = struct {
     scanned: bool,
     devices: []const FoundDevice,
+    /// Present when a finder of the scan failed; the answer keeps the finding
+    /// it made anyway.
+    scan_error: ?[]const u8 = null,
 };
 
 fn listDevicesResponse(http: *HttpService, query: []const u8) !Response {
@@ -2432,6 +2474,74 @@ test "the trace records what the routes did, and reads back oldest first" {
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "cleared") != null);
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "view: vertical") == null);
     try std.testing.expect(std.mem.indexOf(u8, cleared.body, "failed") == null);
+}
+
+test "a request that expects 100-continue is answered, not aborted" {
+    const gpa = std.testing.allocator;
+    const io = std.testing.io;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    _ = try mountHttp(&ctx);
+    const http = ctx.require(HttpService, "http");
+    const loopback = try std.Io.net.IpAddress.parse("127.0.0.1", 0);
+    var listener = try loopback.listen(io, .{});
+    defer listener.deinit(io);
+
+    // The request is small enough to wait in the socket whole, so one thread
+    // can send it, serve it and read the answer, in that order.
+    const client = try listener.socket.address.connect(io, .{ .mode = .stream });
+    defer client.close(io);
+    var send_buf: [256]u8 = undefined;
+    var sending = client.writer(io, &send_buf);
+    try sending.interface.writeAll("POST /api/render HTTP/1.1\r\nHost: test\r\nContent-Length: 2\r\nExpect: 100-continue\r\n\r\n{}");
+    try sending.interface.flush();
+    handle(http, io, try listener.accept(io));
+
+    var recv_buf: [1024]u8 = undefined;
+    var receiving = client.reader(io, &recv_buf);
+    const answer = try receiving.interface.allocRemaining(gpa, .limited(64 << 10));
+    defer gpa.free(answer);
+    const go_ahead = "HTTP/1.1 100 Continue\r\n\r\n";
+    try std.testing.expect(std.mem.startsWith(u8, answer, go_ahead));
+    try std.testing.expect(std.mem.startsWith(u8, answer[go_ahead.len..], "HTTP/1.1 "));
+}
+
+test "the trace plugin may join or leave after the http fiber applied" {
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    _ = try mountHttp(&ctx);
+    const http = ctx.require(HttpService, "http");
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    const job = "{\"width\":96,\"height\":304,\"fields\":[{\"text\":\"X\",\"x\":4,\"y\":4}],\"model\":\"d110\",\"conn\":\"usb\",\"addr\":\"/no/such/tty\"}";
+
+    // The consumer applied with the plugin absent: the route still answers,
+    // and there is nowhere yet to record.
+    const before = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/print", .query = query, .body = job });
+    defer if (before.owned) gpa.free(before.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, before.status);
+
+    // The plugin arrives after the consumer applied. Every logged route from
+    // now on must reach its lines, whatever order the two mounted in.
+    const trace_fiber = try ctx.mount("trace", .{ .name = "trace", .apply = trace_mod.applyTrace });
+    const logged = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/print", .query = query, .body = job });
+    defer if (logged.owned) gpa.free(logged.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, logged.status);
+    const read = try http.dispatch(.{ .io = std.testing.io, .method = .GET, .path = "/api/trace", .query = query, .body = "" });
+    defer if (read.owned) gpa.free(read.body);
+    try std.testing.expectEqual(std.http.Status.ok, read.status);
+    try std.testing.expect(std.mem.indexOf(u8, read.body, "print") != null);
+
+    // The plugin leaves again: the consumer keeps serving with nowhere to
+    // record, instead of following a freed pointer.
+    trace_fiber.dispose();
+    const after = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/print", .query = query, .body = job });
+    defer if (after.owned) gpa.free(after.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, after.status);
+    const gone = try http.dispatch(.{ .io = std.testing.io, .method = .GET, .path = "/api/trace", .query = query, .body = "" });
+    defer if (gone.owned) gpa.free(gone.body);
+    try std.testing.expectEqual(std.http.Status.not_found, gone.status);
 }
 
 test "the editor records every step of its protocol" {

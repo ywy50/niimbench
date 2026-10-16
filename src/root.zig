@@ -253,8 +253,11 @@ fn parsePgm(allocator: std.mem.Allocator, bytes: []const u8) !Pgm {
     if (maxval != 255) return error.BadPgm;
     if (i >= bytes.len or (bytes[i] != '\n' and bytes[i] != ' ')) return error.BadPgm;
     i += 1;
+    const remaining = bytes.len - i;
+    // width*height must stay below remaining; the product itself may wrap and
+    // pass a length check, which would then hand out a page the size never held.
+    if (width != 0 and height > remaining / width) return error.BadPgm;
     const need = width * height;
-    if (bytes.len - i < need) return error.BadPgm;
     const pixels = try allocator.dupe(u8, bytes[i .. i + need]);
     return .{ .pixels = pixels, .width = width, .height = height };
 }

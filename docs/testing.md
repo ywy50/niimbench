@@ -12,6 +12,7 @@ What the tests lock in:
 - The patch parser keeps `inject` order.
 - Bluetooth addresses are stored in the BlueZ `str2ba` byte order.
 - The editor route is gone after its fiber is disposed.
+- A request that expects `100-continue`, sent over a loopback socket the way curl sends a body over 1 MB, is answered `100 Continue` and then served, instead of aborting the process.
 - `/api/health` without a token is unauthorized. `GET /?token=` is a redirect that sets the `niimbench` cookie, and that cookie authorizes a later request that has no query token.
 - A scripted transport records the print command sequence: density, label type, start, page, dimension, image row, end page, end print. The dimension packet's four payload bytes are checked, so putting the length where the width belongs fails even though the sequence of packet types is unchanged.
 - A composed page stops short of the roll by the model's page margin, which is 16 dots on the D-series and 0 elsewhere, and a body that carries raw `pixels_b64` keeps the size it sent.
@@ -41,7 +42,7 @@ What the tests lock in:
 - `POST /api/sources` installs a record that renders and lists, a non-object body is rejected, and disposing the `http` fiber drops the record.
 - A runtime record can be replaced and then deleted, deleting it twice is a 404, and the delete route refuses a record a plugin owns.
 - A method the `/api/sources/<name>` prefix does not serve is a 404.
-- `/api/label/track` reports `record`, `literal`, `missing-key`, `unknown-source`, and `dynamic` from the same resolution the renderer uses.
+- `/api/label/track` reports `record`, `literal`, `missing-key`, `unknown-source`, `structured`, and `dynamic` from the same resolution the renderer uses.
 - A failed render reports the label size. `/api/label/metrics` lists every embedded font in order, and the editor's arithmetic on each font's run-encoded table gives the width `label.lineWidth` draws, at several sizes.
 - `POST /api/render` and `POST /api/label/track` answer 400 `UnknownFont` for a font the build does not carry, and render a font it does.
 - A field's `direction` is accepted and ignored: two bodies that differ only in `direction` draw the same page, while a different `rotation` does not.
@@ -77,4 +78,4 @@ What the tests lock in:
 - `make lint` runs ESLint on the page script: no name is used that nothing declares, and nothing is declared that nothing uses. A row handler that read a variable no longer declared, and a call assigned to as if it were a variable, both parsed and both threw the first time someone used the control; this is the check that finds them without a browser. A syntax error fails it too.
 - `make lint` also fails when another project is named anywhere but the README's credit line, and when a relative link in any markdown file points at a file or a heading that does not exist.
 
-The HTTP listener and the real serial port are not part of `zig build test`. The one test that talks to the system bus skips itself when the machine has no BlueZ. On a Mac, the CoreBluetooth tests load the framework, send the delegate a notification as CoreBluetooth would, and run a half-second scan, which on a Mac without a radio answers with the reason. Two things there are only checked by hand against a running server: printing to hardware (`zig build run -- print ...`), and a request whose method may carry a body but sends none, such as `curl -X PUT "http://127.0.0.1:<port>/api/sources/example?token=<token>"`, which must answer immediately with a 404 rather than hold the connection open.
+The HTTP listener, apart from that one loopback request, and the real serial port are not part of `zig build test`. The one test that talks to the system bus skips itself when the machine has no BlueZ. On a Mac, the CoreBluetooth tests load the framework, send the delegate a notification as CoreBluetooth would, and run a half-second scan, which on a Mac without a radio answers with the reason. Two things there are only checked by hand against a running server: printing to hardware (`zig build run -- print ...`), and a request whose method may carry a body but sends none, such as `curl -X PUT "http://127.0.0.1:<port>/api/sources/example?token=<token>"`, which must answer immediately with a 404 rather than hold the connection open.

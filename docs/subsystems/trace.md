@@ -21,7 +21,7 @@ A read looks like this:
    3521ms info    roll      01222281 -> 12x40 mm 96x320 dots from the catalogue
    3526ms info    page      view: vertical, roll 96x320, view 304x96, canvas 304x96
    9377ms info    print     96x288 dots, 1 field(s), density 5, bluetooth AA:BB:CC:DD:EE:FF
-   9377ms error   print     failed: MethodFailed
+   9377ms error   print     bluetooth AA:BB:CC:DD:EE:FF model=b21 failed: MethodFailed
 ```
 
 The first column is milliseconds since the log opened, so `3521` and `3526` are the same instant in different processes, and what came first is never in doubt.

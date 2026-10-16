@@ -48,6 +48,7 @@ const source = [
   lift("    function quadCentre(", "\n    }"),
   lift("    function inQuad(", "\n    }"),
   lift("    function handleOf(", "\n    }"),
+  lift("    function dragStepWithin(", "\n    }"),
 ].join("\n");
 
 const roll = { width: 96, height: 304 };
@@ -84,7 +85,9 @@ vm.createContext(context);
 vm.runInContext(source + "\n;fontTables = tablesFrom(metrics);", context);
 const {
   viewSize, toView, shiftFor, placedLeft, boxRect, boxCorners, boxQuad, quadCentre, inQuad, handleOf,
-  blockWidth, blockHeight, blockLines, textWidth, sizeOf, previewText,
+  dragStepWithin,
+  blockWidth,
+  blockHeight, blockLines, textWidth, sizeOf, previewText,
 } = context;
 
 let failures = 0;
@@ -272,19 +275,18 @@ context.orientation = 0;
   check("an unknown font measures as the default", width(unknown) === width(wide), String(width(unknown)));
 }
 
-// 5. A drag moves one dot per dot, in the field's own frame.
-function dragStep(field, offset, point) {
-  return { x: Math.round(point.x - offset.x), y: Math.round(point.y - offset.y) };
-}
-const field = { text: "NB-1", x: 20, y: 60, size: 16, align_mode: "center", rotation: 90 };
-const press = { x: 40, y: 70 };
-const offset = { x: press.x - field.x, y: press.y - field.y };
-for (const point of [{ x: 40, y: 70 }, { x: 41, y: 71 }, { x: 60, y: 90 }, { x: 80, y: 200 }]) {
-  const moved = dragStep(field, offset, point);
-  const expected = { x: field.x + (point.x - press.x), y: field.y + (point.y - press.y) };
-  check(`a drag of ${JSON.stringify(point)} moves one dot per dot`,
-    moved.x === expected.x && moved.y === expected.y,
-    `got ${JSON.stringify(moved)} expected ${JSON.stringify(expected)}`);
+// 5. A drag moves one dot per dot, in the field's own frame. The page checks
+// its own steps, and so does this: the lifted check, with a step that follows
+// the pointer and one that does not.
+{
+  const box = { rect: { x: 100, y: 100 } };
+  check("a first drag step is ok", dragStepWithin(box, { x: 0, y: 0 }) === true);
+  box.rect = { x: 105, y: 105 };
+  check("a drag step that follows the pointer is ok",
+    dragStepWithin(box, { x: 5, y: 5 }) === true);
+  box.rect = { x: 115, y: 112 };
+  check("a drag step that lags the pointer is flagged",
+    dragStepWithin(box, { x: 15, y: 117 }) === false);
 }
 
 if (failures) {

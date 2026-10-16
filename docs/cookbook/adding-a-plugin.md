@@ -9,19 +9,29 @@
 7. Add a test that mounts the plugin, checks the service or route, disposes the fiber, and checks that the contribution is gone.
 
 ```zig
-pub fn applyExample(ctx: *cordis.Context) !void {
-    const sources = ctx.require(server.Sources, "sources");
-    try sources.add("sku", "{\"sku\":\"NB-1\"}");
-    const mark = try ctx.allocator.create(Mark);
-    mark.* = .{ .sources = sources, .name = try ctx.allocator.dupe(u8, "sku") };
-    try ctx.effect(removeMark, mark);
-}
+const record = "{\"title\":\"Niimbench\",\"sku\":\"NB-1\"}";
 
-fn removeMark(state: *anyopaque) void {
+const Mark = struct {
+    sources: *server.Sources,
+    name: []const u8,
+};
+
+fn removeRecord(state: *anyopaque) void {
     const mark: *Mark = @ptrCast(@alignCast(state));
-    mark.sources.remove(mark.name);
+    if (mark.sources.remove(mark.name)) |entry| entry.free(mark.sources.allocator);
     mark.sources.allocator.free(mark.name);
     mark.sources.allocator.destroy(mark);
+}
+
+pub fn applyExampleSource(ctx: *cordis.Context) !void {
+    const sources = ctx.require(server.Sources, "sources");
+    try server.requireJsonObject(ctx.allocator, record);
+    try sources.add("example", record);
+    const mark = try ctx.allocator.create(Mark);
+    errdefer ctx.allocator.destroy(mark);
+    mark.* = .{ .sources = sources, .name = try ctx.allocator.dupe(u8, "example") };
+    errdefer ctx.allocator.free(mark.name);
+    try ctx.effect(removeRecord, mark);
 }
 ```
 

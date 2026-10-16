@@ -1,6 +1,6 @@
 # HTTP
 
-The `http` plugin injects `trace`, `printer`, `transports`, `devices`, and `sources`. Only `trace` is optional: a context without it serves every route and records nothing. Its `apply` creates `HttpService`, publishes it as `"http"`, and registers the `/api/` routes below. It also owns one `ctx.effect` for source records installed at runtime, so disposing that fiber drops them.
+The `http` plugin injects `printer`, `transports`, `devices`, and `sources`. `trace` is optional: a context without it serves every route and records nothing, and withdrawing it later degrades the two trace routes to a `404` instead of dropping the fiber. Its `apply` creates `HttpService`, publishes it as `"http"`, and registers the `/api/` routes below. It also owns one `ctx.effect` for source records installed at runtime, so disposing that fiber drops them.
 
 The `editor` plugin injects `http` and registers `GET /`. Disposing that fiber removes the route. The page bytes live in `src/editor.html` and are embedded.
 
@@ -47,6 +47,8 @@ Pass `--no-open` to skip `xdg-open`. `--parent PID` makes the server die with it
 ```
 
 `POST /api/devices/scan` runs the scan and answers in the same shape. An empty body, or a body that is not JSON, is the passive scan: the serial probe plus the devices BlueZ already knows. `{"discover":true}` also starts a Bluetooth inquiry, which takes about two seconds.
+
+When a finder of the scan failed, the answer keeps the finding it made anyway and carries the failure with it — `"scan_error":"bluetooth:BusUnavailable"` names the transport and the cause — so a partial scan does not read as a clean one. The scan's trace line says the same.
 
 `model` is null when the model id, or a Bluetooth name, is not one of the five heads this bench prints to. `model_id` is 0 for a Bluetooth device, because a name is the only signal there. `spp` says the device advertises the Bluetooth serial profile. The finders and the model table are in [printer.md](printer.md).
 
@@ -114,6 +116,8 @@ The barcode is resolved from the catalogue compiled into the binary, which holds
 ```
 
 `NothingToPrint` is a `render` body with no fields, no background, and no `pixels_b64`. `UnknownSource` is a 404. Everything else is 400. The `sources` routes answer `{"error":"..."}` only.
+
+A body larger than the server accepts answers `413` with the reason named, rather than dropping the connection. A request that sends `Expect: 100-continue`, as curl does with any body over 1 MB, gets `100 Continue` before its body is read.
 
 After a successful print the context emits `print/done`.
 

@@ -176,14 +176,29 @@ pub const Registry = struct {
     found: Found = .{},
     scanned: bool = false,
 
+    /// The first finder that failed the last scan, for the answer's `error`
+    /// line. Both are static names — `@errorName` points into the compiler's
+    /// tables — so there is nothing to free.
+    failed_conn: ?[]const u8 = null,
+    failed_error: ?[]const u8 = null,
+
     /// Replace `found` with what every installed finder reports. One transport
-    /// failing must not hide what the other found, so each finding error is
-    /// dropped here; a caller reports the list it actually got.
+    /// failing must not hide what the other found, so the finding is kept and
+    /// the first finding error is named in `failed_*` for the answer and the
+    /// trace, rather than dropped.
     pub fn scan(self: *Registry, io: std.Io, allocator: std.mem.Allocator, discover: bool) void {
         self.found.clear();
-        if (self.usb) |find| find(io, allocator, discover, &self.found) catch {};
-        if (self.bluetooth) |find| find(io, allocator, discover, &self.found) catch {};
+        self.failed_conn = null;
+        self.failed_error = null;
+        if (self.usb) |find| find(io, allocator, discover, &self.found) catch |err| self.recordFailure("usb", err);
+        if (self.bluetooth) |find| find(io, allocator, discover, &self.found) catch |err| self.recordFailure("bluetooth", err);
         self.scanned = true;
+    }
+
+    fn recordFailure(self: *Registry, conn: []const u8, err: anyerror) void {
+        if (self.failed_error != null) return;
+        self.failed_conn = conn;
+        self.failed_error = @errorName(err);
     }
 };
 

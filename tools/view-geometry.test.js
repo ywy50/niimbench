@@ -38,6 +38,8 @@ const turn_block = page.slice(turn_start, turn_end + "\n    }".length) + "\n;({ 
 const context = {
   ROLL: { width: 96, height: 304 },
   orientation: 90,
+  Math,
+  Number,
   Uint8ClampedArray,
   previewCtx: {
     createImageData: (w, h) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
@@ -166,18 +168,34 @@ check("and fills the whole view", seen.size === view_w * view_h, String(seen.siz
 // A field's angle on the roll and the angle its box is drawn at are not the
 // same in a turned view: the page is turned too, so the box adds the turn. When
 // a drag moves the handle, the field gets the drawn angle with the turn taken
-// back out, which is what keeps the box and the letters at one angle.
-function drawnAngle(field_rotation) {
-  const turn = context.orientation === 90 ? 90 : 0;
-  return field_rotation + turn;
+// back out, which is what keeps the box and the letters at one angle. The page
+// computes both sides, so this checks its own turn and normalization, lifted.
+{
+  const norm_start = page.indexOf("    function normalizeDegrees(");
+  const norm_end = page.indexOf("\n    }", norm_start);
+  const deg_start = page.indexOf("    function pageTurn(");
+  const deg_end = page.indexOf("\n    }", deg_start);
+  if (norm_start < 0 || norm_end < 0 || deg_start < 0 || deg_end < 0) {
+    console.error("normalizeDegrees or pageTurn not found in src/editor.html");
+    process.exit(1);
+  }
+  vm.runInContext(
+    page.slice(norm_start, norm_end + "\n    }".length) +
+    "\n;" + page.slice(deg_start, deg_end + "\n    }".length) +
+    "\n;({ normalizeDegrees, pageTurn })",
+    context);
 }
-function storedAngle(drawn) {
-  const turn = context.orientation === 90 ? 90 : 0;
-  return ((drawn - turn) % 360 + 360) % 360;
-}
-check("a 45 field is drawn at 135 in a turned view", drawnAngle(45) === 135, String(drawnAngle(45)));
-check("and the drag stores 45 again", storedAngle(135) === 45, String(storedAngle(135)));
-check("upright, the two are the same", (context.orientation = 0, drawnAngle(45)) === 45);
+context.orientation = 90;
+check("a 45 field is drawn at 135 in a turned view",
+  context.normalizeDegrees(45 + context.pageTurn()) === 135,
+  String(context.normalizeDegrees(45 + context.pageTurn())));
+check("and the drag stores 45 again",
+  context.normalizeDegrees(135 - context.pageTurn()) === 45,
+  String(context.normalizeDegrees(135 - context.pageTurn())));
+context.orientation = 0;
+check("upright, the two are the same",
+  context.normalizeDegrees(45 + context.pageTurn()) === 45,
+  String(context.normalizeDegrees(45 + context.pageTurn())));
 context.orientation = 90;
 
 // Dragging. The box on screen is a view rectangle, so a drag runs in view

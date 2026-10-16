@@ -19,6 +19,15 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
   printer's address on a Mac is the UUID macOS gives it. USB on a Mac is not
   supported yet.
 
+### Fixed
+
+- The `http` plugin's `inject` declaration lists only what its `apply` requires. `trace` was declared required although every route treats it as optional, so a context without the trace plugin could not boot the editor, and withdrawing the plugin at runtime dropped the whole `http` fiber.
+- A scan whose finder failed answered as if it had run clean. The answer now keeps the finding it made anyway and names the failure — `"scan_error":"bluetooth:BusUnavailable"` — and the scan's trace line says the same. A Bluetooth inquiry that cannot start is reported the same way, with the passive answer kept.
+- A request body larger than the server takes was dropped with no answer. It now receives `413` and an error name.
+- A request carrying `Expect: 100-continue`, which curl sends with any body over 1 MB, crashed the server. It is now answered `100 Continue` and served.
+- A roll read that failed — the barcode read, or the cloud lookup — reached no record at all. It now lands in the trace with the device and the cause, and a print failure names the connection, address and model it was aimed at.
+- A label size past the printer protocol's 16-bit limit could overflow while it was checked, which in a release build stops the server. It is refused as `BadSize` before anything multiplies it.
+
 ## [0.2.0] - 2026-10-14
 
 ### Added
