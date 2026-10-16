@@ -14,12 +14,12 @@
   <a href="https://github.com/ywy50/niimbench/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/ywy50/niimbench/actions/workflows/ci.yml/badge.svg"></a>
   <a href="https://github.com/ywy50/niimbench/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/ywy50/niimbench?color=0b62d4"></a>
   <img alt="Zig 0.17" src="https://img.shields.io/badge/zig-0.17-f7a41d?logo=zig&logoColor=white">
-  <img alt="platform: Linux" src="https://img.shields.io/badge/platform-linux-lightgrey">
+  <img alt="platform: Linux, macOS" src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey">
   <img alt="printers: B1, B18, B21, D11, D110" src="https://img.shields.io/badge/printers-B1%20%7C%20B18%20%7C%20B21%20%7C%20D11%20%7C%20D110-0b62d4">
   <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
-niimbench designs and prints labels on Niimbot label printers, the D110, D11, B21, B1 and B18, from Linux or a Raspberry Pi, over USB or Bluetooth, with no phone app or account. It is one static binary written in Zig, and it is inspired by [niimprint](https://github.com/AndBondStyle/niimprint).
+niimbench designs and prints labels on Niimbot label printers, the D110, D11, B21, B1 and B18, from Linux or a Raspberry Pi over USB or Bluetooth, or from a Mac over Bluetooth, with no phone app or account. It is a single binary written in Zig, and it is inspired by [niimprint](https://github.com/AndBondStyle/niimprint).
 
 ## Quick start
 
@@ -37,7 +37,7 @@ curl -fsSL https://github.com/ywy50/niimbench/releases/latest/download/niimbench
 ./niimbench-aarch64-linux/niimbench
 ```
 
-On Windows, run the x86_64 build inside WSL 2 and open the address it prints in your Windows browser. What works there, and macOS, are under [Windows and macOS](#windows-and-macos).
+On a Mac, build from source as below; there is no macOS release build yet. On Windows, run the x86_64 build inside WSL 2 and open the address it prints in your Windows browser. What works on each is under [Windows and macOS](#windows-and-macos).
 
 From source you need Zig 0.17. Node and a Chromium-family browser are only needed for `make test`.
 
@@ -158,11 +158,17 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 
 ## Windows and macOS
 
-niimbench runs on Linux for now. It reaches printers through Linux's own interfaces: BlueZ for Bluetooth, and the kernel's serial ports for USB.
+niimbench reaches a printer through the operating system's own interfaces. On Linux those are BlueZ for Bluetooth and the kernel's serial ports for USB. On macOS it is Apple's CoreBluetooth, so a Mac prints over Bluetooth; USB on a Mac is not supported yet.
+
+On a Mac, build from source with Zig 0.17 and serve the editor from the checkout:
+
+```bash
+make
+```
+
+The first scan asks whether your terminal app may use Bluetooth. Allow it, or later turn it on for that app under System Settings → Privacy & Security → Bluetooth; until then a print answers `BluetoothNotAllowed`. macOS does not show programs a Bluetooth address, so the printer list shows a UUID your Mac made up for the printer, and that UUID is the address to print to. CI checks the macOS code on GitHub's Macs, which have no Bluetooth radio, so printing from a Mac has not yet been tried against a real printer.
 
 On Windows, the Linux build runs inside WSL 2. Start it there and open the address it prints in your Windows browser, which WSL forwards to it. A printer on USB, such as the B21, is reached once [usbipd-win](https://github.com/dorssel/usbipd-win) attaches it to WSL, where it shows up as `/dev/ttyACM0`. Bluetooth is not available inside WSL, so a Bluetooth-only printer such as the D110 cannot print from there.
-
-There is no macOS build yet.
 
 ## Releases
 

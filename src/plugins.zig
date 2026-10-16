@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const cordis = @import("cordis.zig");
 const device = @import("device.zig");
 const discovery = @import("discovery.zig");
@@ -55,6 +56,9 @@ fn trackFinder(ctx: *cordis.Context, registry: *discovery.Registry, kind: Finder
 }
 
 pub fn applySerial(ctx: *cordis.Context) !void {
+    // The serial port is set up with Linux ioctls. On macOS the plugin adds
+    // nothing yet, and a USB print says `UsbUnavailable`.
+    if (builtin.os.tag != .linux) return;
     const registry = ctx.require(device.Registry, "transports");
     registry.usb = device.openSerial;
     try trackOpener(ctx, registry, .usb);
@@ -179,7 +183,9 @@ test "printing a label reaches the transport with the rendered page" {
     });
     defer if (response.owned) gpa.free(response.body);
     try std.testing.expectEqual(std.http.Status.bad_request, response.status);
-    try std.testing.expect(std.mem.indexOf(u8, response.body, "FileNotFound") != null);
+    // Off Linux there is no serial opener to reach, and the registry says so.
+    const expected = if (builtin.os.tag == .linux) "FileNotFound" else "UsbUnavailable";
+    try std.testing.expect(std.mem.indexOf(u8, response.body, expected) != null);
 }
 
 const Capture = struct {
@@ -318,11 +324,13 @@ test "serial registration is reverted when the fiber drops" {
     const bluetooth = try ctx.mount("bluetooth", .{ .name = "bluetooth", .inject = &.{ "transports", "devices" }, .apply = applyBluetooth });
     const registry = ctx.require(device.Registry, "transports");
     const devices = ctx.require(discovery.Registry, "devices");
-    try std.testing.expect(registry.usb != null);
+    // The serial plugin installs nothing off Linux.
+    const has_serial = builtin.os.tag == .linux;
+    try std.testing.expectEqual(has_serial, registry.usb != null);
     try std.testing.expect(registry.bluetooth != null);
     // A transport owns its opener and its finder, and dropping the fiber takes
     // both back out.
-    try std.testing.expect(devices.usb != null);
+    try std.testing.expectEqual(has_serial, devices.usb != null);
     try std.testing.expect(devices.bluetooth != null);
     serial.dispose();
     try std.testing.expect(registry.usb == null);

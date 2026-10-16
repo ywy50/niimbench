@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const cordis = @import("cordis.zig");
 const device = @import("device.zig");
 const discovery = @import("discovery.zig");
@@ -1348,7 +1349,7 @@ fn openBrowser(io: std.Io, url: []const u8) void {
 
 fn openBrowserTask(io: std.Io, url: []const u8) void {
     var child = std.process.spawn(io, .{
-        .argv = &.{ "xdg-open", url },
+        .argv = &.{ if (builtin.os.tag == .macos) "open" else "xdg-open", url },
         .stdin = .ignore,
         .stdout = .ignore,
         .stderr = .ignore,
@@ -1357,9 +1358,13 @@ fn openBrowserTask(io: std.Io, url: []const u8) void {
 }
 
 fn fillToken(service: *HttpService) !void {
-    const rc = std.os.linux.getrandom(&service.token, service.token.len, 0);
-    const signed: isize = @bitCast(rc);
-    if (signed != service.token.len) return error.NoRandom;
+    if (builtin.os.tag == .linux) {
+        const rc = std.os.linux.getrandom(&service.token, service.token.len, 0);
+        const signed: isize = @bitCast(rc);
+        if (signed != service.token.len) return error.NoRandom;
+    } else {
+        std.c.arc4random_buf(&service.token, service.token.len);
+    }
     const hex = "0123456789abcdef";
     for (service.token, 0..) |byte, i| {
         service.token_hex[i * 2] = hex[byte >> 4];

@@ -56,10 +56,14 @@ The Bluetooth finder asks BlueZ for its managed objects over the system bus. `sr
 
 The scan body `{"discover":true}` starts an inquiry on the first adapter, waits two seconds, and asks again, so a printer that is on but has never been paired is seen. The plain scan is the set BlueZ already knows: printers paired with this machine, or seen by an earlier inquiry.
 
+On macOS the Bluetooth finder asks CoreBluetooth instead, through the Objective-C runtime (`src/corebluetooth.zig`). `{"discover":true}` listens for advertisements for the same two seconds and keeps the same names. The plain scan is the Niimbot printers already connected to the Mac, the nearest thing macOS has to a paired list. macOS shows a program no MAC, so a printer's address there is the UUID the Mac gives it.
+
 ## Transports
 
 USB opens the given path at 115200 8N1 and uses `VMIN=0`, `VTIME=5` so a read returns after half a second of silence. The termios bits are set with `TCGETS` / `TCSETS`, not libc.
 
 Bluetooth opens the print channel of a BLE printer over the system bus: `Device1.Connect`, `GattCharacteristic1.StartNotify`, then `WriteValue` for each frame the client sends. The characteristic is looked up by uuid rather than by path. Reads are polls of the characteristic's `Value` property, which is where BlueZ caches a notification, so a frame that the printer has not answered yet reads as nothing and the client's own retry loop covers it. `src/ble.zig` is the transport and the GATT client lives in `src/dbus.zig`.
 
-A BLE-only model such as the D110_M has no Classic radio: it does not advertise the Serial Port Profile, sets `BR/EDR Not Supported`, and answers an RFCOMM connect with `EHOSTDOWN`. So there is no RFCOMM opener; a Bluetooth address is a BLE address. An empty address is rejected. Nothing picks a port by itself: a caller passes the tty path or a MAC, and the editor gets both from the printer list `/api/devices` builds.
+On macOS the same channel opens through CoreBluetooth: the peripheral is looked up by its UUID, connected, the print characteristic found by uuid and subscribed to, and each frame is a write with a response. Notifications arrive as delegate calls and are buffered, so a read returns as soon as an answer is there instead of polling. The radio's state comes first, and `BluetoothOff`, `BluetoothNotAllowed` (the terminal was refused Bluetooth) or `BluetoothUnsupported` is the print's error. USB is Linux-only: on macOS the `serial` plugin installs nothing, and a USB print answers `UsbUnavailable`.
+
+A BLE-only model such as the D110_M has no Classic radio: it does not advertise the Serial Port Profile, sets `BR/EDR Not Supported`, and answers an RFCOMM connect with `EHOSTDOWN`. So there is no RFCOMM opener; a Bluetooth address is a BLE address. An empty address is rejected. Nothing picks a port by itself: a caller passes the tty path or a MAC (a UUID on macOS), and the editor gets both from the printer list `/api/devices` builds.

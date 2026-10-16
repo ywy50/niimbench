@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 pub const packet = @import("packet.zig");
 pub const cordis = @import("cordis.zig");
@@ -21,6 +22,7 @@ test {
     _ = @import("server.zig");
     _ = @import("label.zig");
     _ = @import("example_source.zig");
+    if (builtin.os.tag == .macos) _ = @import("corebluetooth.zig");
 }
 
 pub fn run(init: std.process.Init) !void {
@@ -92,7 +94,7 @@ fn takeServeLock(io: std.Io) !std.Io.File {
     }
     try file.setLength(io, 0);
     var buffer: [128]u8 = undefined;
-    const line = std.fmt.bufPrint(&buffer, "pid {d}\n", .{std.os.linux.getpid()}) catch "running\n";
+    const line = std.fmt.bufPrint(&buffer, "pid {d}\n", .{if (builtin.os.tag == .linux) std.os.linux.getpid() else std.c.getpid()}) catch "running\n";
     var writer = file.writer(io, &held_write_buffer);
     try writer.interface.writeAll(line);
     try writer.interface.flush();
@@ -109,17 +111,32 @@ var held_write_buffer: [256]u8 = undefined;
 ///
 /// `pid` must be the parent. It is checked after the request because the
 /// parent may already be gone, and then the signal would never come.
-fn dieWithParent(pid: std.os.linux.pid_t) !void {
+///
+/// macOS has no parent-death signal, so there a task watches the parent
+/// instead and exits the server within a tenth of a second of it going.
+fn dieWithParent(io: std.Io, pid: std.posix.pid_t) !void {
+    if (builtin.os.tag != .linux) {
+        if (std.c.getppid() != pid) return error.ParentGone;
+        _ = try io.concurrent(watchParent, .{ io, pid });
+        return;
+    }
     const linux = std.os.linux;
     const rc = linux.prctl(@backingInt(linux.PR.SET_PDEATHSIG), @backingInt(linux.SIG.KILL), 0, 0, 0);
     if (linux.errno(rc) != .SUCCESS) return error.ParentWatchFailed;
     if (linux.getppid() != pid) return error.ParentGone;
 }
 
+// ponytail: a poll, not kqueue's NOTE_EXIT; a tenth of a second is soon enough
+// for a server a check started.
+fn watchParent(io: std.Io, pid: std.posix.pid_t) void {
+    while (std.c.getppid() == pid) io.sleep(.fromMilliseconds(100), .awake) catch return;
+    std.process.exit(137);
+}
+
 fn runServe(init: std.process.Init, args: []const []const u8) !void {
     var open_browser = true;
     var port: u16 = 0;
-    var parent: ?std.os.linux.pid_t = null;
+    var parent: ?std.posix.pid_t = null;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--no-open")) {
@@ -131,13 +148,13 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
         } else if (std.mem.eql(u8, args[i], "--parent")) {
             i += 1;
             if (i >= args.len) return error.MissingParent;
-            parent = try std.fmt.parseInt(std.os.linux.pid_t, args[i], 10);
+            parent = try std.fmt.parseInt(std.posix.pid_t, args[i], 10);
         } else {
             return error.UnknownArgument;
         }
     }
 
-    if (parent) |pid| try dieWithParent(pid);
+    if (parent) |pid| try dieWithParent(init.io, pid);
 
     // Claim the single-server slot before the listener exists, so a second
     // start cannot get as far as binding. Being told the server is already
