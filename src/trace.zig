@@ -184,6 +184,16 @@ test "the trace keeps the newest entries and reads them oldest first" {
     try std.testing.expectEqualStrings("fifth", trace.at(3).messageText());
 }
 
+test "disposing the fiber removes the trace service" {
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    const fiber = try ctx.mount("trace", .{ .name = "trace", .apply = applyTrace });
+    try std.testing.expect(ctx.get("trace") != null);
+    fiber.dispose();
+    try std.testing.expect(ctx.get("trace") == null);
+}
+
 test "a message too long for the line is clipped, not dropped" {
     const gpa = std.testing.allocator;
     const entries = try gpa.alloc(Trace.Entry, 2);
