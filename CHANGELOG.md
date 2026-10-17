@@ -19,6 +19,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 - A request carrying `Expect: 100-continue`, which curl sends with any body over 1 MB, crashed the server. It is now answered `100 Continue` and served.
 - A roll read that failed — the barcode read, or the cloud lookup — reached no record at all. It now lands in the trace with the device and the cause, and a print failure names the connection, address and model it was aimed at.
 - A label size past the printer protocol's 16-bit limit could overflow while it was checked, which in a release build stops the server. It is refused as `BadSize` before anything multiplies it.
+- A print the printer never counted is `PrintSkipped` instead of `printed`. The job ends after `PrintStatus` shows the page; an idle `PrintEnd` used to close the link and report success while the label stayed in the printer.
 
 ## [0.2.0] - 2026-10-14
 

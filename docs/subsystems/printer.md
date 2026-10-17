@@ -4,7 +4,9 @@ The printer subsystem is the codec, the raster, the client, the two openers, and
 
 ## Wire
 
-Requests use the packet codes in the [protocol reference](../manuals/upstream/interfacing/proto.md). Responses are `request + 1`, except density and label type, which use `request + 16`. An image row is type `0x85` and expects no response. Packet type `219` is a refusal. Packet type `0` is unsupported.
+Requests use the packet codes in the [protocol reference](../manuals/upstream/interfacing/proto.md). Responses are `request + 1`, except density, label type, and print status, which use `request + 16`. An image row is type `0x85` and expects no response. Packet type `219` is a refusal. Packet type `0` is unsupported.
+
+`PrintEnd` goes out after `PrintStatus` (`0xA3`) shows this page. The page counter has to move past the value read after `PageEnd`, or the print progress has to leave 100 and come back with the page at least 1. A counter that stays put while progress stays at 100 is `error.PrintSkipped`. Progress that leaves 100 and does not come back finished is `error.PrintDidNotFinish`. `PrintEnd` is still sent either way, because the image is already on the wire. A printer that answers `PrintStatus` with packet type `0` is finished by polling `PrintEnd` instead.
 
 ## Raster
 

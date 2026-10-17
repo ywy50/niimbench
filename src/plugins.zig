@@ -200,6 +200,21 @@ const Capture = struct {
         try self.inbound.appendSlice(self.allocator, bytes);
     }
 
+    fn pushPage(self: *Capture, page: u16, print_pct: u8, feed_pct: u8) !void {
+        var wire: [packet.Packet.max_wire]u8 = undefined;
+        const data = [_]u8{
+            @intCast((page >> 8) & 0xFF),
+            @intCast(page & 0xFF),
+            print_pct,
+            feed_pct,
+        };
+        const bytes = try (packet.Packet{
+            .packet_type = @backingInt(packet.Request.get_print_status) +% 16,
+            .data = &data,
+        }).toBytes(&wire);
+        try self.inbound.appendSlice(self.allocator, bytes);
+    }
+
     fn write(ptr: *anyopaque, data: []const u8) !void {
         const self: *Capture = @ptrCast(@alignCast(ptr));
         try self.written.appendSlice(self.allocator, data);
@@ -237,6 +252,9 @@ fn resetCapture(capture: *Capture) !void {
     try capture.pushOk(.start_page, 1);
     try capture.pushOk(.set_dimension, 1);
     try capture.pushOk(.end_page, 1);
+    // The counter moves, then the job ends. A status stuck at 100% is a skip.
+    try capture.pushPage(0, 0, 0);
+    try capture.pushPage(1, 100, 100);
     try capture.pushOk(.end_print, 1);
 }
 
