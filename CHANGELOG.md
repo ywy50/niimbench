@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-19
+
 ### Changed
 
 - A text row names its controls: **Font**, **Size**, **X**, **Y** and **Angle**, where four bare numbers stood. The text box resizes in width as well as height, up to the row's width, and no longer shows a scrollbar over its one line.
@@ -128,7 +130,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/ywy50/niimbench/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ywy50/niimbench/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ywy50/niimbench/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ywy50/niimbench/releases/tag/v0.1.0
