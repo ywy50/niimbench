@@ -77,10 +77,23 @@ pub const Client = struct {
 
     /// Set the printer's clock, which its date button prints and which starts
     /// at 1970 until something sets it. `PrinterConfig2` (`0x07`, answered
-    /// `0x08`): item 8 (time), action 1 (set), then year (u16), month, day,
-    /// hour, minute and second, as upstream sends it.
+    /// `0x08`) in the form the protocol notes draw: 1 (set), then year (u16),
+    /// month, day, hour, minute and second. A D110_M answers `01 01`, the
+    /// first byte echoed and then 1 for done. Upstream's library puts an item
+    /// byte, 8, in front; a D110_M answers that `08 00`, refused, so it is
+    /// only the fallback for a printer that refuses the short form.
     pub fn setClock(self: *Client, t: Clock) !bool {
-        return self.command(.printer_config2, &.{ 8, 1, @intCast(t.year >> 8), @intCast(t.year & 0xFF), t.month, t.day, t.hour, t.minute, t.second }, 1);
+        const year_hi: u8 = @intCast(t.year >> 8);
+        const year_lo: u8 = @intCast(t.year & 0xFF);
+        if (try self.configDone(&.{ 1, year_hi, year_lo, t.month, t.day, t.hour, t.minute, t.second })) return true;
+        return self.configDone(&.{ 8, 1, year_hi, year_lo, t.month, t.day, t.hour, t.minute, t.second });
+    }
+
+    /// A `PrinterConfig2` answer echoes the first byte sent; the second is the
+    /// result. Reading the first, as a simple answer, took the echo for done.
+    fn configDone(self: *Client, data: []const u8) !bool {
+        const response = try self.transceive(@backingInt(packet.Request.printer_config2), data, 1);
+        return response.data.len >= 2 and response.data[1] != 0;
     }
 
     pub fn printGray(
