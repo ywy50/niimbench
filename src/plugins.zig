@@ -246,6 +246,9 @@ fn resetCapture(capture: *Capture) !void {
     capture.written.clearRetainingCapacity();
     capture.inbound.clearRetainingCapacity();
     capture.pos = 0;
+    // A D-series job asks the protocol first. 1 is protocol 0: the older
+    // sequence. A B-series job never asks, and skips past this answer.
+    try capture.pushOk(.connect, 1);
     try capture.pushOk(.set_density, 16);
     try capture.pushOk(.set_label_type, 16);
     try capture.pushOk(.start_print, 1);
@@ -270,6 +273,8 @@ fn commandsWritten(capture: *Capture, out: []u8) struct { types: []const u8, qua
     var quantity: ?[]const u8 = null;
     var off: usize = 0;
     while (off + 7 <= capture.written.items.len) {
+        // `Connect` alone goes out behind a 0x03 prefix.
+        if (capture.written.items[off] == 0x03) off += 1;
         const len = @as(usize, capture.written.items[off + 3]);
         const kind = capture.written.items[off + 2];
         if (kind != @backingInt(packet.Request.image) and kind != @backingInt(packet.Request.empty_row) and n < out.len) {
@@ -289,6 +294,8 @@ fn expectPackedRows(capture: *Capture, drawn: raster.Gray) !void {
     var off: usize = 0;
     var row: usize = 0;
     while (off + 7 <= capture.written.items.len) {
+        // `Connect` alone goes out behind a 0x03 prefix.
+        if (capture.written.items[off] == 0x03) off += 1;
         const pkt_len = @as(usize, capture.written.items[off + 3]) + 7;
         const kind = capture.written.items[off + 2];
         const payload = capture.written.items[off + 4 .. off + pkt_len];
@@ -410,7 +417,7 @@ test "a D-series print leaves the page margin off the end of the label" {
     // a page twice after idle.
     var seen: [32]u8 = undefined;
     const job = commandsWritten(&capture, &seen);
-    try std.testing.expectEqualSlices(u8, &.{ 0x21, 0x23, 0x01, 0x20, 0x03, 0x13, 0x15, 0xE3, 0xA3, 0xA3, 0xF3 }, job.types);
+    try std.testing.expectEqualSlices(u8, &.{ 0xC1, 0x21, 0x23, 0x01, 0x20, 0x03, 0x13, 0x15, 0xE3, 0xA3, 0xA3, 0xF3 }, job.types);
     try std.testing.expectEqualSlices(u8, &.{ 0, 1 }, job.quantity orelse return error.NoQuantity);
 }
 

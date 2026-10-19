@@ -18,7 +18,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ### Fixed
 
-- A D11 or D110 could print one label twice, both copies whole: a D110_M did it after sitting idle, with nothing but niimbench talking to it. niimbench never cleared the printer's page buffer nor set its copy count, so the printer used whatever it held. Every D-series page now starts with `PrintClear` and sets `PrintQuantity` to 1, as the D110 sequence upstream does, and a second copy that starts anyway is named in the trace.
+- A D11 or D110 could print one label twice, both copies whole: a D110_M did it now and then, with nothing but niimbench talking to it. It speaks protocol 4, and niimbench sent it the older D110 sequence, which never tells the printer how many pages and copies the job has. A D-series job now asks the printer's protocol version first; on protocol 4 it sends upstream's D110M_V4 sequence, one page and one copy, and below it the D110 sequence with `PrintClear` and `PrintQuantity` 1. A second copy that starts anyway is named in the trace.
 
 ## [0.5.0] - 2026-10-19
 
