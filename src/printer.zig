@@ -41,6 +41,10 @@ pub const Client = struct {
     /// Where a job's answers and status readings go. A blank page and a
     /// printed one both end `sent`; only these lines tell them apart.
     trace: ?*trace_mod.Trace = null,
+    /// Clear the page buffer before the page and print it once, as the D11
+    /// and D110 sequence does (`raster.Model.setsCopies`). The caller that
+    /// knows the model sets it.
+    one_copy: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, transport: Transport) Client {
         return .{ .allocator = allocator, .transport = transport };
@@ -79,6 +83,11 @@ pub const Client = struct {
         const density_ok = try self.command(.set_density, &.{density}, 16);
         const type_ok = try self.command(.set_label_type, &.{1}, 16);
         const start_ok = try self.command(.start_print, &.{1}, 1);
+        // A D-series printer keeps a page buffer and a copy count between jobs.
+        // Left alone, a D110_M woken from idle printed the page twice, both
+        // copies whole. The buffer is cleared before the page and the count
+        // set to one after its size, which is the D110 sequence upstream.
+        const clear_ok = if (self.one_copy) try self.command(.allow_print_clear, &.{1}, 16) else true;
         const page_ok = try self.command(.start_page, &.{1}, 1);
         // `SetPageSize` is `RR RR CC CC`: the row count first, the column count
         // second. The row count is the page's length down the tape, so a page
@@ -92,10 +101,18 @@ pub const Client = struct {
             @intCast(width & 0xFF),
         };
         const dim_ok = try self.command(.set_dimension, &dim, 1);
-        self.note("answers density={d} type={d} start={d} page={d} dimension={d}", .{
-            @intFromBool(density_ok), @intFromBool(type_ok), @intFromBool(start_ok),
-            @intFromBool(page_ok),    @intFromBool(dim_ok),
-        });
+        if (self.one_copy) {
+            const quantity_ok = try self.command(.set_quantity, &.{ 0, 1 }, 1);
+            self.note("answers density={d} type={d} start={d} clear={d} page={d} dimension={d} quantity={d}", .{
+                @intFromBool(density_ok), @intFromBool(type_ok), @intFromBool(start_ok), @intFromBool(clear_ok),
+                @intFromBool(page_ok),    @intFromBool(dim_ok),  @intFromBool(quantity_ok),
+            });
+        } else {
+            self.note("answers density={d} type={d} start={d} page={d} dimension={d}", .{
+                @intFromBool(density_ok), @intFromBool(type_ok), @intFromBool(start_ok),
+                @intFromBool(page_ok),    @intFromBool(dim_ok),
+            });
+        }
         const row_len = raster.packedRowBytes(width);
         const payload = try self.allocator.alloc(u8, row_len + 6);
         defer self.allocator.free(payload);
@@ -194,6 +211,11 @@ pub const Client = struct {
             if (status.print_pct < 100) saw_motion = true;
             const advanced = status.page > (baseline orelse 0);
             const settled = saw_motion and status.page >= 1 and status.print_pct >= 100 and status.feed_pct >= 100;
+            // A counter past this page while the head is printing again is a
+            // second copy under way: the job asked for one.
+            if (advanced and status.print_pct < 100) {
+                if (self.trace) |t| t.warn("printer", "page {d} done and another copy started", .{status.page});
+            }
             if (advanced or settled) return;
             if (io) |live| try live.sleep(.fromMilliseconds(200), .awake);
         }
@@ -563,6 +585,46 @@ test "a job records each answer and status reading in the trace" {
     try std.testing.expectEqualStrings("status 00000000", trace.at(2).messageText());
     try std.testing.expectEqualStrings("status 00016464", trace.at(3).messageText());
     try std.testing.expectEqualStrings("end_print accepted on try 1", trace.at(4).messageText());
+}
+
+test "a second copy the job did not ask for is named in the trace" {
+    // The counter reaches 1 while the head prints again at 5%: the printer is
+    // on a second copy. This is what a D110_M did after idle before the job
+    // set its copy count, and the trace said only "printed".
+    const gpa = std.testing.allocator;
+    const entries = try gpa.alloc(trace_mod.Trace.Entry, 16);
+    defer gpa.free(entries);
+    for (entries) |*entry| entry.* = .{};
+    var trace = trace_mod.Trace{ .allocator = gpa, .entries = entries };
+
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    const ok = [_]u8{1};
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.allow_print_clear, 16, &ok);
+    try script.push(.start_page, 1, &ok);
+    try script.push(.set_dimension, 1, &ok);
+    try script.push(.set_quantity, 1, &ok);
+    try script.push(.end_page, 1, &ok);
+    try script.pushPage(0, 100, 100);
+    try script.pushPage(1, 5, 0);
+    try script.push(.end_print, 1, &ok);
+
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    client.trace = &trace;
+    client.one_copy = true;
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    try client.printGray(null, &pixels, 8, 1, 3);
+
+    try std.testing.expectEqualStrings("answers density=1 type=1 start=1 clear=1 page=1 dimension=1 quantity=1", trace.at(0).messageText());
+    var warned = false;
+    for (0..trace.held()) |i| {
+        if (trace.at(i).level == .warn and std.mem.eql(u8, trace.at(i).messageText(), "page 1 done and another copy started")) warned = true;
+    }
+    try std.testing.expect(warned);
 }
 
 test "a page the printer never counts is not a successful print" {
