@@ -393,9 +393,16 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
         return composeError(service.allocator, err, size.width, size.height);
     };
     defer service.allocator.free(gray.pixels);
-    if (tracer(service)) |t| t.info("print", "{d}x{d} dots, {d} field(s), density {d}, {s} {s}", .{
-        gray.width, gray.height, job.fields.len, job.density, job.conn, job.addr,
-    });
+    if (tracer(service)) |t| {
+        t.info("print", "{d}x{d} dots, {d} field(s), density {d}, {s} {s}", .{
+            gray.width, gray.height, job.fields.len, job.density, job.conn, job.addr,
+        });
+        // Where each field was when the job left: a label printed off-centre
+        // is then a number to compare with the preview, not a photo.
+        for (job.fields, 0..) |field, i| {
+            t.info("print", "field {d} at {d},{d} size {d} turned {d}", .{ i, field.x, field.y, field.size, field.rotation });
+        }
+    }
     service.printer.submit(
         req.io,
         service.transports.*,
@@ -2460,6 +2467,7 @@ test "the trace records what the routes did, and reads back oldest first" {
     try std.testing.expectEqual(std.http.Status.ok, read.status);
     try std.testing.expect(std.mem.indexOf(u8, read.body, "opened") != null);
     try std.testing.expect(std.mem.indexOf(u8, read.body, "print") != null);
+    try std.testing.expect(std.mem.indexOf(u8, read.body, "field 0 at 4,4 size 16 turned 0") != null);
     try std.testing.expect(std.mem.indexOf(u8, read.body, "error") != null);
     const opened = std.mem.indexOf(u8, read.body, "opened").?;
     const failed = std.mem.indexOf(u8, read.body, "failed").?;

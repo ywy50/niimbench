@@ -116,6 +116,10 @@ function judge(report) {
   // not match the pointer's, and the page counts both.
   check("the page exercised a drag", Boolean(report.drag) && report.drag.moves > 0,
     JSON.stringify(report.drag));
+  // A move with no button held ends a drag whose release was lost, instead of
+  // carrying the field wherever the pointer goes next.
+  check("a drag whose release was lost ends on the next move", Boolean(report.drag) && report.drag.released === true,
+    JSON.stringify(report.drag));
   if (report.drag && report.drag.moves > 0) {
     check("the box kept step with the pointer while dragging", report.drag.ok === true,
       JSON.stringify(report.drag));

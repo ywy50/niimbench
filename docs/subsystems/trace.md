@@ -32,7 +32,7 @@ The first column is milliseconds since the log opened, so `3521` and `3526` are 
 |---|---|
 | `trace` | The plugin starting, and a clear |
 | `roll` | A barcode and the size it resolved to, or why the read failed |
-| `print` | What was composed, what the printer was, and how it ended |
+| `print` | What was composed, where each field was, what the printer was, and how it ended |
 | `printer` | The link opening, what each print command answered, every `PrintStatus` reading as raw bytes, and the `PrintEnd` try that closed the job |
 | `page` | The view the page is showing, a picked printer, the position and angle of every field box when that changes, and any script error |
 
