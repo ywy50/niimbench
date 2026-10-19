@@ -51,7 +51,8 @@ help:
 		'VARIABLES' \
 		'  PORT=8080            listen port for run and serve (default: ephemeral)' \
 		'  ARGS="..."           extra arguments after the built-in ones' \
-		'  ZIG=zig              zig binary'
+		'  ZIG=zig              zig binary' \
+		'  BROWSER=chromium     Chromium-family browser for the browser checks (default: the first found)'
 
 run:
 	$(ZIG) build run -- $(if $(PORT),--port $(PORT),) $(ARGS)

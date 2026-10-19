@@ -378,8 +378,8 @@
     <!-- What acts on the whole label lives on the header, which stays in view
          however the panels are arranged: its history, its file, and Print. -->
     <div class="tools">
-      <button type="button" id="undo" title="undo (Ctrl+Z)">Undo</button>
-      <button type="button" id="redo" title="redo (Ctrl+Shift+Z)">Redo</button>
+      <button type="button" id="undo" title="undo (Ctrl+Z)" disabled>Undo</button>
+      <button type="button" id="redo" title="redo (Ctrl+Shift+Z)" disabled>Redo</button>
     </div>
     <div class="tools">
       <button type="button" id="save">Save layout</button>
@@ -421,7 +421,7 @@
             <span class="dot" aria-hidden="true"></span>
             <span id="printer-state-text">No address yet</span>
           </p>
-          <button type="button" id="sync-clock" title="copy this computer's date, time and time zone to the printer's clock, which its date button prints">Sync clock</button>
+          <button type="button" id="sync-clock" title="set the printer's clock to this computer's local date and time, which its date button prints">Sync clock</button>
         </div>
         <p id="printer-last" class="last" aria-live="polite" hidden></p>
       </div>
@@ -2812,8 +2812,8 @@
           select.append(option);
           select.value = size.id;
         }
-        // The server's answer is the page the printer takes: its height has the
-        // model's margin already taken off, so a 12x40 roll reads 96x304.
+        // The server answers the whole label, 96x320 for a 12x40 roll; a print
+        // leaves the model's margin off its end, and the preview hatches it.
         if (payload.width && payload.height) usePage(payload.width, payload.height);
         refresh();
         status.textContent = payload.width_mm + "\u00d7" + payload.height_mm + " mm roll"
@@ -3227,6 +3227,9 @@
     function useSize(size) {
       document.querySelector("#width").value = size.width;
       document.querySelector("#height").value = size.height;
+      // A picture nobody has moved follows the label to its new shape, as it
+      // does when a roll is read or the view turns.
+      refitIfUntouched();
     }
 
     function selectSizeForCanvas() {
@@ -3301,6 +3304,7 @@
       control.addEventListener("beforeinput", () => record());
       control.addEventListener("change", () => {
         markCustomIfEdited();
+        refitIfUntouched();
         refresh();
       });
     }
@@ -3371,9 +3375,6 @@
           rotation: normalizeDegrees(field.rotation),
         });
       }
-      if (layout.background_b64) {
-        status.textContent = "layout loaded without its background image";
-      }
       // Save layout writes the chosen size preset, so a load has to put it
       // back. Deriving it from width and height alone would drop the id and
       // leave the select showing the previous label's preset.
@@ -3435,14 +3436,21 @@
       const file = event.target.files[0];
       event.target.value = "";
       if (!file) return;
+      let message;
       try {
-        applyLayout(JSON.parse(await file.text()));
-        status.textContent = "loaded " + file.name;
+        const layout = JSON.parse(await file.text());
+        applyLayout(layout);
+        // A saved layout never carries its background image, so one that
+        // does says it was left out.
+        message = "loaded " + file.name + (layout.background_b64 ? ", without its background image" : "");
       } catch (error) {
         status.textContent = error.message;
         return;
       }
-      refresh();
+      // Said after the render, which writes its own status over anything
+      // said before it.
+      await refresh();
+      status.textContent = message;
     });
 
     document.querySelector("#reset").addEventListener("click", () => {

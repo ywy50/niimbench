@@ -124,7 +124,7 @@ pub const RuntimeSources = struct {
         return true;
     }
 
-    pub fn has(self: RuntimeSources, name: []const u8) bool {
+    pub fn has(self: *RuntimeSources, name: []const u8) bool {
         return self.take(name) != null;
     }
 
@@ -1044,6 +1044,12 @@ pub fn installSource(service: *HttpService, req: RequestView) !Response {
     requireJsonObject(service.allocator, parsed.value.json) catch {
         return .{ .status = .bad_request, .body = "{\"error\":\"source must be a json object\"}" };
     };
+    // A name a plugin holds is refused, as DELETE refuses it. Installing it
+    // added a second record that reads never saw, and a DELETE of the name
+    // then took out the plugin's own record instead.
+    if (service.sources.find(parsed.value.name) != null and !service.runtime.has(parsed.value.name)) {
+        return .{ .status = .bad_request, .body = "{\"error\":\"source belongs to a plugin\"}" };
+    }
     const displaced = try service.runtime.install(parsed.value.name, parsed.value.json);
     defer if (displaced) |entry| entry.free(service.allocator);
     return .{ .body = if (displaced != null) "{\"ok\":true,\"replaced\":true}" else "{\"ok\":true}" };
@@ -1797,6 +1803,16 @@ test "a runtime source can be replaced and deleted, a plugin source cannot" {
     try std.testing.expectEqual(std.http.Status.bad_request, refused.status);
     try expectBodyContains(refused.body, "plugin");
     try std.testing.expect(sources.find("example") != null);
+
+    // Nor may an install take a plugin's name: it added a second record, and
+    // the next DELETE of the name then removed the plugin's.
+    const taken = try postToken(http, gpa, "/api/sources", "{\"name\":\"example\",\"json\":\"{\\\"sku\\\":\\\"X\\\"}\"}");
+    defer if (taken.owned) gpa.free(taken.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, taken.status);
+    try expectBodyContains(taken.body, "plugin");
+    const after_post = try send(http, gpa, .GET, "/api/runtime-sources", "");
+    defer if (after_post.owned) gpa.free(after_post.body);
+    try std.testing.expectEqualStrings("{\"sources\":[]}", after_post.body);
 
     const missing = try send(http, gpa, .DELETE, "/api/sources/nothere", "");
     defer if (missing.owned) gpa.free(missing.body);
