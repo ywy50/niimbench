@@ -229,7 +229,7 @@ fn runPrint(init: std.process.Init, args: []const []const u8) !void {
     defer ctx.deinit();
     try load.loadDefault(&ctx, init.io);
     const http = ctx.require(server.HttpService, "http");
-    try http.printer.submit(init.io, http.transports.*, init.gpa, model, conn, addr, turned.pixels, turned.width, turned.height, density, null);
+    try http.printer.submit(init.io, http.transports.*, init.gpa, model, conn, addr, turned.pixels, turned.width, turned.height, density, 1, null);
 }
 
 const Pgm = struct { pixels: []u8, width: usize, height: usize };

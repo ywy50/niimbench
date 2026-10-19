@@ -98,6 +98,17 @@ pub const Model = enum {
         };
     }
 
+    /// The D-series page sequence clears the page buffer before each page and
+    /// sets its copy count after the page size (`PrintClear`, `PrintQuantity`).
+    /// Without them a D110_M kept a count and a buffer of its own: after idle
+    /// it printed one page twice. The B-series sequences send neither.
+    pub fn setsCopies(self: Model) bool {
+        return switch (self) {
+            .d11, .d110 => true,
+            else => false,
+        };
+    }
+
     pub fn parse(name: []const u8) !Model {
         inline for (@typeInfo(Model).@"enum".field_names) |field_name| {
             if (std.mem.eql(u8, name, field_name)) return @field(Model, field_name);

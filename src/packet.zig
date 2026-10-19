@@ -50,6 +50,7 @@ pub fn checksum(packet_type: u8, data: []const u8) u8 {
 pub const Request = enum(u8) {
     start_print = 0x01,
     start_page = 0x03,
+    printer_config2 = 0x07,
     set_dimension = 0x13,
     set_quantity = 0x15,
     get_rfid = 0x1A,
@@ -60,6 +61,8 @@ pub const Request = enum(u8) {
     empty_row = 0x84,
     image = 0x85,
     get_print_status = 0xA3,
+    printer_status_data = 0xA5,
+    connect = 0xC1,
     heartbeat = 0xDC,
     end_page = 0xE3,
     end_print = 0xF3,
