@@ -22,14 +22,16 @@ pub fn packRow(pixels: []const u8, out: []u8) void {
     }
 }
 
-pub fn rowHeader(y: u16) [6]u8 {
+/// `PrintBitmapRow`'s header: the row number, three black-dot count bytes
+/// left at zero, and how many times the printer repeats the row.
+pub fn rowHeader(y: u16, repeat: u8) [6]u8 {
     return .{
         @intCast(y >> 8),
         @intCast(y & 0xFF),
         0,
         0,
         0,
-        1,
+        repeat,
     };
 }
 

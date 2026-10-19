@@ -57,6 +57,7 @@ pub const Request = enum(u8) {
     set_density = 0x21,
     set_label_type = 0x23,
     get_info = 0x40,
+    empty_row = 0x84,
     image = 0x85,
     get_print_status = 0xA3,
     heartbeat = 0xDC,

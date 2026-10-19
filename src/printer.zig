@@ -97,17 +97,37 @@ pub const Client = struct {
             @intFromBool(page_ok),    @intFromBool(dim_ok),
         });
         const row_len = raster.packedRowBytes(width);
-        const payload_len = row_len + 6;
-        const payload = try self.allocator.alloc(u8, payload_len);
+        const payload = try self.allocator.alloc(u8, row_len + 6);
         defer self.allocator.free(payload);
-        for (0..height) |y| {
-            const header = raster.rowHeader(@intCast(y));
-            @memcpy(payload[0..6], &header);
-            raster.packRow(pixels[y * width ..][0..width], payload[6..][0..row_len]);
-            try self.send(.image, payload);
+        const ahead = try self.allocator.alloc(u8, row_len);
+        defer self.allocator.free(ahead);
+        // A run of identical rows goes as one packet with a repeat count, and
+        // a blank run as one `PrintEmptyRow`. Each packet waits for the
+        // printer's acknowledgement over Bluetooth, about 25 ms, and a text
+        // label is mostly white: one packet per row took 7 s for 304 rows.
+        // The count is one byte, so a run stops at 255.
+        var packets: usize = 0;
+        var y: usize = 0;
+        while (y < height) {
+            const row = payload[6..][0..row_len];
+            raster.packRow(pixels[y * width ..][0..width], row);
+            var run: usize = 1;
+            while (y + run < height and run < 255) : (run += 1) {
+                raster.packRow(pixels[(y + run) * width ..][0..width], ahead);
+                if (!std.mem.eql(u8, row, ahead)) break;
+            }
+            if (std.mem.allEqual(u8, row, 0)) {
+                try self.send(.empty_row, &.{ @intCast(y >> 8), @intCast(y & 0xFF), @intCast(run) });
+            } else {
+                const header = raster.rowHeader(@intCast(y), @intCast(run));
+                @memcpy(payload[0..6], &header);
+                try self.send(.image, payload);
+            }
+            packets += 1;
+            y += run;
         }
         const end_page_ok = try self.command(.end_page, &.{1}, 1);
-        self.note("{d} rows sent, end_page={d}", .{ height, @intFromBool(end_page_ok) });
+        self.note("{d} rows in {d} packets sent, end_page={d}", .{ height, packets, @intFromBool(end_page_ok) });
         // An idle printer answers PrintEnd with 0x01 before the motor starts.
         // Closing on that feeds nothing, and the job would still look printed.
         // PrintStatus is the signal that this page ran. PrintEnd follows it.
@@ -405,6 +425,71 @@ test "the page size puts the row count first" {
     try std.testing.expect(found);
 }
 
+/// The row packets a job wrote, as `[type, data...]`, in order.
+fn rowPackets(gpa: std.mem.Allocator, wire: []const u8) !std.ArrayList([]const u8) {
+    var found: std.ArrayList([]const u8) = .empty;
+    errdefer found.deinit(gpa);
+    var off: usize = 0;
+    while (off + 7 <= wire.len) {
+        const len = @as(usize, wire[off + 3]);
+        const kind = wire[off + 2];
+        if (kind == @backingInt(packet.Request.empty_row) or kind == @backingInt(packet.Request.image)) {
+            try found.append(gpa, wire[off + 2 .. off + 4 + len]);
+        }
+        off += len + 7;
+    }
+    return found;
+}
+
+fn printScripted(gpa: std.mem.Allocator, script: *Script, pixels: []const u8, width: usize, height: usize) !void {
+    const ok = [_]u8{1};
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.start_page, 1, &ok);
+    try script.push(.set_dimension, 1, &ok);
+    try script.push(.end_page, 1, &ok);
+    try script.pushFinishedPage();
+    var client = Client.init(gpa, scriptTransport(script));
+    defer client.deinit();
+    try client.printGray(null, pixels, width, height, 3);
+}
+
+test "blank and repeated rows go as one packet per run" {
+    // Over Bluetooth every packet waits for the printer's acknowledgement,
+    // and a label is mostly white. Rows 0-2 white, 3-5 the same dots, 6 other
+    // dots, 7-9 white: four packets, not ten.
+    const gpa = std.testing.allocator;
+    var page: [8 * 10]u8 = @splat(255);
+    for (3..6) |y| page[y * 8] = 0;
+    page[6 * 8 + 7] = 0;
+    {
+        var script = Script{ .allocator = gpa };
+        defer script.deinit();
+        try printScripted(gpa, &script, &page, 8, 10);
+        var packets = try rowPackets(gpa, script.written.items);
+        defer packets.deinit(gpa);
+        try std.testing.expectEqual(@as(usize, 4), packets.items.len);
+        try std.testing.expectEqualSlices(u8, &.{ 0x84, 3, 0, 0, 3 }, packets.items[0]);
+        try std.testing.expectEqualSlices(u8, &.{ 0x85, 7, 0, 3, 0, 0, 0, 3, 0x80 }, packets.items[1]);
+        try std.testing.expectEqualSlices(u8, &.{ 0x85, 7, 0, 6, 0, 0, 0, 1, 0x01 }, packets.items[2]);
+        try std.testing.expectEqualSlices(u8, &.{ 0x84, 3, 0, 7, 3 }, packets.items[3]);
+    }
+    // The count is one byte: 300 white rows are a run of 255, then one of 45
+    // that starts at row 255.
+    {
+        const white: [8 * 300]u8 = @splat(255);
+        var script = Script{ .allocator = gpa };
+        defer script.deinit();
+        try printScripted(gpa, &script, &white, 8, 300);
+        var packets = try rowPackets(gpa, script.written.items);
+        defer packets.deinit(gpa);
+        try std.testing.expectEqual(@as(usize, 2), packets.items.len);
+        try std.testing.expectEqualSlices(u8, &.{ 0x84, 3, 0, 0, 255 }, packets.items[0]);
+        try std.testing.expectEqualSlices(u8, &.{ 0x84, 3, 0, 255, 45 }, packets.items[1]);
+    }
+}
+
 test "print sends the command sequence a Niimbot print expects" {
     const gpa = std.testing.allocator;
     var script = Script{ .allocator = gpa };
@@ -474,7 +559,7 @@ test "a job records each answer and status reading in the trace" {
     try client.printGray(null, &pixels, 8, 1, 3);
 
     try std.testing.expectEqualStrings("answers density=1 type=1 start=1 page=0 dimension=1", trace.at(0).messageText());
-    try std.testing.expectEqualStrings("1 rows sent, end_page=1", trace.at(1).messageText());
+    try std.testing.expectEqualStrings("1 rows in 1 packets sent, end_page=1", trace.at(1).messageText());
     try std.testing.expectEqualStrings("status 00000000", trace.at(2).messageText());
     try std.testing.expectEqualStrings("status 00016464", trace.at(3).messageText());
     try std.testing.expectEqualStrings("end_print accepted on try 1", trace.at(4).messageText());

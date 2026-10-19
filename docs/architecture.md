@@ -25,7 +25,7 @@ browser or xdg-open
 
 ## Printer core
 
-`packet.zig` frames `55 55 | type | len | data | xor | AA AA`. `printer.zig` sends the print sequence a Niimbot printer expects: density, label type, start, page, dimension, one `0x85` row per scan line, end page, then `PrintEnd` once `PrintStatus` shows the page ([subsystems/printer.md](subsystems/printer.md#wire)). `raster.zig` turns grayscale into those rows. Bit 1 is a burned dot.
+`packet.zig` frames `55 55 | type | len | data | xor | AA AA`. `printer.zig` sends the print sequence a Niimbot printer expects: density, label type, start, page, dimension, the image rows, end page, then `PrintEnd` once `PrintStatus` shows the page ([subsystems/printer.md](subsystems/printer.md#wire)). `raster.zig` turns grayscale into those rows. Bit 1 is a burned dot.
 
 Dimension words are height then width: `SetPageSize` reads its first word as the page's length down the tape ([subsystems/printer.md](subsystems/printer.md#raster)).
 
