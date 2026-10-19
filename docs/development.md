@@ -40,6 +40,7 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 | [../tools/trace.sh](../tools/trace.sh) | Clears the trace, runs a command, prints what it recorded |
 | [../tools/with-server.sh](../tools/with-server.sh) | Runs one command against a throwaway server, then stops it: how checks and agents get a server |
 | [../tools/drive.js](../tools/drive.js) | Drives the page in a headless browser with real input and screenshots (`make drive`) |
+| [../tools/screens.drive.js](../tools/screens.drive.js) | Resizes the page from a phone to a wide desktop, and with the text panel dragged narrow, and fails when anything is cut off or overlaps (`make screens-test`) |
 | [../tools/stray-test.sh](../tools/stray-test.sh) | Checks no server outlives its launcher, even one killed with SIGKILL (`make stray-test`) |
 | [../tools/fetch-labels.py](../tools/fetch-labels.py) | Refreshes the label catalogue from the vendor cloud (`make labels`); standard library only, run through `uv` |
 
