@@ -7,6 +7,11 @@ const printer = @import("printer.zig");
 /// client's reply loop behaves the same on both bearers.
 const read_wait_ms: i32 = 500;
 
+/// How often a read looks for the printer's answer within that half second.
+/// It answers in a few milliseconds; a read that slept the whole half second
+/// before its one look made each command cost 500 ms, 2.6 s for a print's five.
+const read_poll_ms: i32 = 20;
+
 /// The print channel of a BLE Niimbot printer, reached through BlueZ rather
 /// than through an RFCOMM socket. A BLE-only model such as the D110 has no
 /// Classic radio at all: it refuses RFCOMM with `EHOSTDOWN`, and the same
@@ -50,10 +55,16 @@ pub const Handler = struct {
         // Nothing buffered: ask for the characteristic value, which is where
         // the stack caches what the printer notified. The property update is
         // not always announced on the bus, so polling it is what makes the
-        // reply reliable. Zero means "nothing arrived", which callers retry.
-        std.Io.sleep(self.conn.io, .fromMilliseconds(read_wait_ms), .awake) catch {};
-        try self.pull();
-        return (try self.drain(buf)) orelse 0;
+        // reply reliable. A value equal to the last one is the previous answer,
+        // which `pull` skips, so polling early cannot hand it over twice. Zero
+        // means "nothing arrived", which callers retry.
+        var waited: i32 = 0;
+        while (waited < read_wait_ms) : (waited += read_poll_ms) {
+            std.Io.sleep(self.conn.io, .fromMilliseconds(read_poll_ms), .awake) catch {};
+            try self.pull();
+            if (try self.drain(buf)) |n| return n;
+        }
+        return 0;
     }
 
     /// Hand over what is already buffered, if anything.

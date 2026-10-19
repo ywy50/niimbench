@@ -11,6 +11,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Changed
+
+- A Bluetooth print waits less for the printer's answers. A read looked once, after sleeping half a second, so each command cost 500 ms although the printer answers in a few; it now looks every 20 ms for the same half second. A print's five setup commands took 2.6 s.
+
 ## [0.5.0] - 2026-10-19
 
 ### Changed
