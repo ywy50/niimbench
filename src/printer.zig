@@ -41,6 +41,10 @@ pub const Client = struct {
     /// Where a job's answers and status readings go. A blank page and a
     /// printed one both end `sent`; only these lines tell them apart.
     trace: ?*trace_mod.Trace = null,
+    /// The printer is a D11 or D110 (`raster.Model.setsCopies`): the job asks
+    /// its protocol version and sends the D-series sequence that version
+    /// takes. The caller that knows the model sets it.
+    d_series: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, transport: Transport) Client {
         return .{ .allocator = allocator, .transport = transport };
@@ -74,28 +78,13 @@ pub const Client = struct {
         if (width > 65535 or height > 65535) return error.BadSize;
         if (pixels.len != width * height) return error.BadSize;
         if (density < 1 or density > 5) return error.BadDensity;
-        // An answer of 0 is recorded, not refused: which answers a blank
-        // first page carries is what the trace has to show.
-        const density_ok = try self.command(.set_density, &.{density}, 16);
-        const type_ok = try self.command(.set_label_type, &.{1}, 16);
-        const start_ok = try self.command(.start_print, &.{1}, 1);
-        const page_ok = try self.command(.start_page, &.{1}, 1);
-        // `SetPageSize` is `RR RR CC CC`: the row count first, the column count
-        // second. The row count is the page's length down the tape, so a page
-        // that puts the width here tells the printer its page is 96 rows long
-        // and the rest of the image is dropped: on a 12x40 roll the print stops
-        // about 12 mm in.
-        var dim = [_]u8{
-            @intCast((height >> 8) & 0xFF),
-            @intCast(height & 0xFF),
-            @intCast((width >> 8) & 0xFF),
-            @intCast(width & 0xFF),
-        };
-        const dim_ok = try self.command(.set_dimension, &dim, 1);
-        self.note("answers density={d} type={d} start={d} page={d} dimension={d}", .{
-            @intFromBool(density_ok), @intFromBool(type_ok), @intFromBool(start_ok),
-            @intFromBool(page_ok),    @intFromBool(dim_ok),
-        });
+        // A D-series printer on protocol 4, the D110_M among them, takes the
+        // sequence upstream calls D110M_V4, which tells it the job's page
+        // count and the page's copy count. Sent the older D110 sequence, which
+        // tells it neither, a D110_M printed a label twice, both copies whole,
+        // even with PrintQuantity set to 1.
+        const v4 = self.d_series and self.protocolVersion() >= 4;
+        if (v4) try self.openPageV4(width, height, density) else try self.openPage(width, height, density);
         const row_len = raster.packedRowBytes(width);
         const payload = try self.allocator.alloc(u8, row_len + 6);
         defer self.allocator.free(payload);
@@ -148,6 +137,118 @@ pub const Client = struct {
         // cordis-boundary: the page is already on the wire. end_print is the
         // compensation that tells the printer the job is finished.
         try self.endPrint(io);
+        // The V4 sequence ends with a heartbeat nothing waits for: some of
+        // those printers drop the first packet after PrintEnd.
+        if (v4) self.send(.heartbeat, &.{1}) catch |err| self.note("heartbeat after end_print: {s}", .{@errorName(err)});
+    }
+
+    /// The setup of a page in the older sequence: B-series, and D-series below
+    /// protocol 4, which also clear the page buffer and set one copy as the
+    /// D11 and D110 sequences upstream do. An answer of 0 is recorded, not
+    /// refused: which answers a blank first page carries is what the trace has
+    /// to show.
+    fn openPage(self: *Client, width: usize, height: usize, density: u8) !void {
+        const density_ok = try self.command(.set_density, &.{density}, 16);
+        const type_ok = try self.command(.set_label_type, &.{1}, 16);
+        const start_ok = try self.command(.start_print, &.{1}, 1);
+        const clear_ok = if (self.d_series) try self.command(.allow_print_clear, &.{1}, 16) else true;
+        const page_ok = try self.command(.start_page, &.{1}, 1);
+        // `SetPageSize` is `RR RR CC CC`: the row count first, the column count
+        // second. The row count is the page's length down the tape, so a page
+        // that puts the width here tells the printer its page is 96 rows long
+        // and the rest of the image is dropped: on a 12x40 roll the print stops
+        // about 12 mm in.
+        var dim = [_]u8{
+            @intCast((height >> 8) & 0xFF),
+            @intCast(height & 0xFF),
+            @intCast((width >> 8) & 0xFF),
+            @intCast(width & 0xFF),
+        };
+        const dim_ok = try self.command(.set_dimension, &dim, 1);
+        if (self.d_series) {
+            const quantity_ok = try self.command(.set_quantity, &.{ 0, 1 }, 1);
+            self.note("answers density={d} type={d} start={d} clear={d} page={d} dimension={d} quantity={d}", .{
+                @intFromBool(density_ok), @intFromBool(type_ok), @intFromBool(start_ok),    @intFromBool(clear_ok),
+                @intFromBool(page_ok),    @intFromBool(dim_ok),  @intFromBool(quantity_ok),
+            });
+        } else {
+            self.note("answers density={d} type={d} start={d} page={d} dimension={d}", .{
+                @intFromBool(density_ok), @intFromBool(type_ok), @intFromBool(start_ok),
+                @intFromBool(page_ok),    @intFromBool(dim_ok),
+            });
+        }
+    }
+
+    /// The setup of a page in upstream's D110M_V4 sequence, for a D-series
+    /// printer on protocol 4: label type before density, a 9-byte PrintStart
+    /// that gives the job one page, no PageStart, and a 13-byte SetPageSize
+    /// that gives the page one copy.
+    fn openPageV4(self: *Client, width: usize, height: usize, density: u8) !void {
+        const type_ok = try self.command(.set_label_type, &.{1}, 16);
+        const density_ok = try self.command(.set_density, &.{density}, 16);
+        // Pages (u16), four zeros, page colour, speed, flag.
+        const start_ok = try self.command(.start_print, &.{ 0, 1, 0, 0, 0, 0, 0, 0, 0 }, 1);
+        // Upstream sends this without waiting: some of these printers drop
+        // the first packet after PrintStart. An answer that does come is
+        // skipped while the next command waits for its own.
+        try self.send(.get_print_status, &.{1});
+        // Rows and columns as in the older sequence, then copies (u16), cut
+        // height (u16), cut type, a zero, send-all and part height (u16).
+        const dim = [_]u8{
+            @intCast((height >> 8) & 0xFF),
+            @intCast(height & 0xFF),
+            @intCast((width >> 8) & 0xFF),
+            @intCast(width & 0xFF),
+            0,
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+        };
+        const dim_ok = try self.command(.set_dimension, &dim, 1);
+        self.note("protocol 4 answers type={d} density={d} start={d} dimension={d}", .{
+            @intFromBool(type_ok), @intFromBool(density_ok), @intFromBool(start_ok), @intFromBool(dim_ok),
+        });
+    }
+
+    /// The printer's protocol version, learned the way the official clients
+    /// do: `Connect` answers 2 for version 1 and 3 for version 3 and up, and
+    /// then `PrinterStatusData` carries the version in its bytes 11 and 12.
+    /// 0 for a printer that answers neither, which keeps the older sequence.
+    fn protocolVersion(self: *Client) u8 {
+        const version: u8 = blk: {
+            const connected = self.connect() catch |err| {
+                self.note("connect: {s}", .{@errorName(err)});
+                break :blk 0;
+            };
+            if (connected == 2) break :blk 1;
+            if (connected != 3) break :blk 0;
+            const response = self.transceive(@backingInt(packet.Request.printer_status_data), &.{1}, 16) catch |err| {
+                self.note("printer status data: {s}", .{@errorName(err)});
+                break :blk 0;
+            };
+            if (response.data.len < 13) break :blk 0;
+            const n = @as(u16, response.data[11]) * 100 + response.data[12];
+            break :blk if (n >= 302) 5 else if (n >= 300) 4 else if (n >= 204) 3 else 0;
+        };
+        self.note("protocol {d}", .{version});
+        return version;
+    }
+
+    /// `Connect` is the one request with a prefix byte, `0x03`, before the
+    /// frame. Its answer is `0xC2`, one byte.
+    fn connect(self: *Client) !u8 {
+        var wire: [packet.Packet.max_wire + 1]u8 = undefined;
+        wire[0] = 0x03;
+        const bytes = try (packet.Packet{ .packet_type = @backingInt(packet.Request.connect), .data = &.{1} }).toBytes(wire[1..]);
+        try self.transport.write(wire[0 .. bytes.len + 1]);
+        const response = try self.awaitPacket(@backingInt(packet.Request.connect) + 1);
+        if (response.data.len == 0) return error.ShortResponse;
+        return response.data[0];
     }
 
     /// Polls after `PageEnd`. About five seconds at 200ms, past one feed of a
@@ -194,6 +295,11 @@ pub const Client = struct {
             if (status.print_pct < 100) saw_motion = true;
             const advanced = status.page > (baseline orelse 0);
             const settled = saw_motion and status.page >= 1 and status.print_pct >= 100 and status.feed_pct >= 100;
+            // A counter past this page while the head is printing again is a
+            // second copy under way: the job asked for one.
+            if (advanced and status.print_pct < 100) {
+                if (self.trace) |t| t.warn("printer", "page {d} done and another copy started", .{status.page});
+            }
             if (advanced or settled) return;
             if (io) |live| try live.sleep(.fromMilliseconds(200), .awake);
         }
@@ -262,7 +368,11 @@ pub const Client = struct {
         var wire: [packet.Packet.max_wire]u8 = undefined;
         const bytes = try (packet.Packet{ .packet_type = req, .data = data }).toBytes(&wire);
         try self.transport.write(bytes);
-        const expect: u8 = req +% resp_offset;
+        return self.awaitPacket(req +% resp_offset);
+    }
+
+    /// The next answer of type `expect`, skipping any other frame before it.
+    fn awaitPacket(self: *Client, expect: u8) !packet.Packet {
         var attempt: u8 = 0;
         while (attempt < 6) : (attempt += 1) {
             if (try self.pop(expect)) |found| return found;
@@ -425,19 +535,33 @@ test "the page size puts the row count first" {
     try std.testing.expect(found);
 }
 
-/// The row packets a job wrote, as `[type, data...]`, in order.
-fn rowPackets(gpa: std.mem.Allocator, wire: []const u8) !std.ArrayList([]const u8) {
+/// Every frame a job wrote, as `[type, length, data...]`, in order. The
+/// `0x03` that prefixes `Connect` alone is stepped over.
+fn framesWritten(gpa: std.mem.Allocator, wire: []const u8) !std.ArrayList([]const u8) {
     var found: std.ArrayList([]const u8) = .empty;
     errdefer found.deinit(gpa);
     var off: usize = 0;
     while (off + 7 <= wire.len) {
+        if (wire[off] == 0x03) off += 1;
         const len = @as(usize, wire[off + 3]);
-        const kind = wire[off + 2];
-        if (kind == @backingInt(packet.Request.empty_row) or kind == @backingInt(packet.Request.image)) {
-            try found.append(gpa, wire[off + 2 .. off + 4 + len]);
-        }
+        try found.append(gpa, wire[off + 2 .. off + 4 + len]);
         off += len + 7;
     }
+    return found;
+}
+
+/// The row packets a job wrote, as `[type, length, data...]`, in order.
+fn rowPackets(gpa: std.mem.Allocator, wire: []const u8) !std.ArrayList([]const u8) {
+    var found = try framesWritten(gpa, wire);
+    errdefer found.deinit(gpa);
+    var kept: usize = 0;
+    for (found.items) |frame| {
+        if (frame[0] == @backingInt(packet.Request.empty_row) or frame[0] == @backingInt(packet.Request.image)) {
+            found.items[kept] = frame;
+            kept += 1;
+        }
+    }
+    found.shrinkRetainingCapacity(kept);
     return found;
 }
 
@@ -563,6 +687,99 @@ test "a job records each answer and status reading in the trace" {
     try std.testing.expectEqualStrings("status 00000000", trace.at(2).messageText());
     try std.testing.expectEqualStrings("status 00016464", trace.at(3).messageText());
     try std.testing.expectEqualStrings("end_print accepted on try 1", trace.at(4).messageText());
+}
+
+test "a D-series printer on protocol 4 gets the V4 sequence: one page, one copy" {
+    // A D110_M answers Connect with 3 and PrinterStatusData with 3,01 in
+    // bytes 11-12: protocol 4. Sent the older D110 sequence, it printed a
+    // label twice. Upstream's D110M_V4 sequence tells it one page and one copy.
+    const gpa = std.testing.allocator;
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    const ok = [_]u8{1};
+    try script.push(.connect, 1, &.{3});
+    try script.push(.printer_status_data, 16, &.{ 0x30, 0x30, 0x23, 0x28, 0x00, 0xc8, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x03, 0x01, 0x12, 0xee, 0x00 });
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.set_density, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.pushPage(0, 100, 100); // the answer to the status nothing waits for
+    try script.push(.set_dimension, 1, &ok);
+    try script.push(.end_page, 1, &ok);
+    try script.pushFinishedPage();
+
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    client.d_series = true;
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    try client.printGray(null, &pixels, 8, 1, 3);
+
+    var frames = try framesWritten(gpa, script.written.items);
+    defer frames.deinit(gpa);
+    // The Connect frame goes out behind its 0x03 prefix.
+    try std.testing.expectEqual(@as(u8, 0x03), script.written.items[0]);
+    const expected = [_][]const u8{
+        &.{ 0xC1, 1, 1 },
+        &.{ 0xA5, 1, 1 },
+        &.{ 0x23, 1, 1 },
+        &.{ 0x21, 1, 3 },
+        // One page in the job.
+        &.{ 0x01, 9, 0, 1, 0, 0, 0, 0, 0, 0, 0 },
+        &.{ 0xA3, 1, 1 },
+        // One row of eight dots, one copy, no cut.
+        &.{ 0x13, 13, 0, 1, 0, 8, 0, 1, 0, 0, 0, 0, 0, 0, 0 },
+    };
+    for (expected, 0..) |want, i| try std.testing.expectEqualSlices(u8, want, frames.items[i]);
+    // Then the row, PageEnd, the status polls, PrintEnd, and the heartbeat.
+    const last = frames.items[frames.items.len - 1];
+    try std.testing.expectEqualSlices(u8, &.{ 0xDC, 1, 1 }, last);
+    for (frames.items) |frame| {
+        try std.testing.expect(frame[0] != @backingInt(packet.Request.start_page));
+        try std.testing.expect(frame[0] != @backingInt(packet.Request.allow_print_clear));
+        try std.testing.expect(frame[0] != @backingInt(packet.Request.set_quantity));
+    }
+}
+
+test "a second copy the job did not ask for is named in the trace" {
+    // The counter reaches 1 while the head prints again at 5%: the printer is
+    // on a second copy. This is what a D110_M did after idle before the job
+    // set its copy count, and the trace said only "printed".
+    const gpa = std.testing.allocator;
+    const entries = try gpa.alloc(trace_mod.Trace.Entry, 16);
+    defer gpa.free(entries);
+    for (entries) |*entry| entry.* = .{};
+    var trace = trace_mod.Trace{ .allocator = gpa, .entries = entries };
+
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    const ok = [_]u8{1};
+    // Protocol 0: the older D-series sequence, with clear and quantity.
+    try script.push(.connect, 1, &ok);
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.allow_print_clear, 16, &ok);
+    try script.push(.start_page, 1, &ok);
+    try script.push(.set_dimension, 1, &ok);
+    try script.push(.set_quantity, 1, &ok);
+    try script.push(.end_page, 1, &ok);
+    try script.pushPage(0, 100, 100);
+    try script.pushPage(1, 5, 0);
+    try script.push(.end_print, 1, &ok);
+
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    client.trace = &trace;
+    client.d_series = true;
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    try client.printGray(null, &pixels, 8, 1, 3);
+
+    try std.testing.expectEqualStrings("protocol 0", trace.at(0).messageText());
+    try std.testing.expectEqualStrings("answers density=1 type=1 start=1 clear=1 page=1 dimension=1 quantity=1", trace.at(1).messageText());
+    var warned = false;
+    for (0..trace.held()) |i| {
+        if (trace.at(i).level == .warn and std.mem.eql(u8, trace.at(i).messageText(), "page 1 done and another copy started")) warned = true;
+    }
+    try std.testing.expect(warned);
 }
 
 test "a page the printer never counts is not a successful print" {

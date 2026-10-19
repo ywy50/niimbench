@@ -183,6 +183,7 @@ pub const PrinterService = struct {
         if (trace) |t| t.info("printer", "{s} {s} open", .{ conn, addr });
         var client = printer.Client.init(allocator, transport);
         client.trace = trace;
+        client.d_series = model.setsCopies();
         defer client.deinit();
         try client.printGray(io, pixels, width, height, level);
     }

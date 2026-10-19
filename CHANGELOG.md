@@ -16,6 +16,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 - A Bluetooth print no longer waits on fixed sleeps for the printer's answers. Each command used to sleep half a second before it looked, 2.6 s for a print's five setup commands, and a status the printer repeated unchanged was taken for no answer and waited out a 3 s timeout. niimbench now subscribes to the notifications BlueZ announces on the bus, one per answer, identical ones included, and takes each as it arrives.
 - A print sends a run of blank rows as one packet, and a run of identical rows as one packet with a repeat count, up to 255 rows each. Every packet waits for the printer's acknowledgement, about 25 ms over Bluetooth, so a mostly white 12×40 label spent 7 s on 304 packets; it now sends a few dozen. This is in the shared print path, so every model and connection gets it.
 
+### Fixed
+
+- A D11 or D110 could print one label twice, both copies whole: a D110_M did it now and then, with nothing but niimbench talking to it. It speaks protocol 4, and niimbench sent it the older D110 sequence, which never tells the printer how many pages and copies the job has. A D-series job now asks the printer's protocol version first; on protocol 4 it sends upstream's D110M_V4 sequence, one page and one copy, and below it the D110 sequence with `PrintClear` and `PrintQuantity` 1. A second copy that starts anyway is named in the trace.
+
 ## [0.5.0] - 2026-10-19
 
 ### Changed
