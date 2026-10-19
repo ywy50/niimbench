@@ -19,7 +19,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
   printer's address on a Mac is the UUID macOS gives it. USB on a Mac is not
   supported yet.
 - **Copies**, beside **Print**: print the label up to 99 times in one job. A D11 or D110 prints the copies itself; a B-series printer gets the job once per copy.
-- **Set clock**, at the right end of the printer status line: sets the printer's clock to this computer's local time, so the date button on a D110 prints today instead of 1970.
+- **Sync clock**, at the right end of the printer status line: copies this computer's date, time and time zone to the printer's clock, so the date button on a D110 prints today instead of 1970.
 
 ### Changed
 
