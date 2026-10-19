@@ -55,6 +55,12 @@ The plugin is optional. A context that mounts only `http` serves every route and
 
 ## Reading it next to a report
 
+At startup the server writes its URL, token included, to `.niimbench.token` in its working directory. The file is readable only by its owner and is replaced on every start. `make trace` reads it and prints the running server's log, so neither you nor an agent has to copy the token from the terminal:
+
+```sh
+make trace
+```
+
 `tools/trace.sh` wraps the two calls a bug report needs: it clears the log, runs whatever command you give it, and prints the lines that appeared, so the output is only about that command.
 
 ```sh

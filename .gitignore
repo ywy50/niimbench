@@ -1,6 +1,7 @@
 .zig-cache/
 zig-out/
 .niimbench.lock
+.niimbench.token
 # The vendor's D110 manual and its text: kept locally, not published.
 docs/manuals/niimbot-d110-user-manual-ru.pdf
 docs/manuals/niimbot-d110-user-manual-ru.md

@@ -42,6 +42,12 @@ Serve the editor on a fixed port:
 make serve PORT=8080
 ```
 
+Read the log of the server running in this checkout, when someone reports what a print or the page did ([docs/subsystems/trace.md](docs/subsystems/trace.md)):
+
+```sh
+make trace
+```
+
 Look at the page in a headless browser, with your own steps or none (see `tools/drive.js`):
 
 ```sh

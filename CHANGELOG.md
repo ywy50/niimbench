@@ -11,6 +11,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- `make trace` prints the running server's log. The server writes its URL, token included, to `.niimbench.token` at startup, readable only by its owner, so the log no longer needs the token copied from the terminal.
+
 ### Changed
 
 - The font menu lists Fira Sans and Fira Sans Bold first. A field that names no font, and a new row in the editor, is drawn in Fira Sans Bold.
