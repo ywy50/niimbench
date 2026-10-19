@@ -33,6 +33,7 @@ The first column is milliseconds since the log opened, so `3521` and `3526` are 
 | `trace` | The plugin starting, and a clear |
 | `roll` | A barcode and the size it resolved to, or why the read failed |
 | `print` | What was composed, what the printer was, and how it ended |
+| `printer` | The link opening, what each print command answered, every `PrintStatus` reading as raw bytes, and the `PrintEnd` try that closed the job |
 | `page` | The view the page is showing, a picked printer, the position and angle of every field box when that changes, and any script error |
 
 The page reports its own errors — `window.onerror` and `unhandledrejection` both post a line — so a broken editor shows up in the log instead of only in a console that is gone by the time anyone asks. It also posts its view state whenever that changes, which is the number worth having when the preview and the printer disagree.
