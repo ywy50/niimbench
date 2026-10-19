@@ -2337,6 +2337,9 @@
     }
 
     canvas.addEventListener("pointerdown", (event) => {
+      // Only the primary button drags. A right-click's menu takes the release,
+      // and a drag started by it never ended.
+      if (event.button !== 0) return;
       const point = screenPoint(labelPoint(event));
       const resizing = hitCorner(point);
       // What the press lands on is selected: a field's box, corner or anchor,
@@ -2406,6 +2409,15 @@
     });
 
     canvas.addEventListener("pointermove", (event) => {
+      // A move with no button held is a release the canvas never heard: let go
+      // outside the window, or taken by a menu. The drag ends here. Following
+      // it carried the field to wherever the pointer crossed the canvas on its
+      // way to Print, while the preview, which renders on the drop, still
+      // showed the text where it was.
+      if (drag && event.buttons === 0) {
+        endDrag(event);
+        return;
+      }
       if (!drag) {
         // Over a corner, the pointer says the corner resizes.
         const near = hitCorner(screenPoint(labelPoint(event)));
@@ -3537,6 +3549,11 @@
         box.row.controls.x.value = String(start.field_x);
         box.row.controls.y.value = String(start.field_y);
       }
+      // The release is lost: the next move arrives with no button held, far
+      // from the box. It ends the drag and leaves the field where it is.
+      canvas.dispatchEvent(new PointerEvent("pointermove", { ...at(last.x + 40, last.y + 40), buttons: 0 }));
+      verdict.released = drag === null && box.field.x === start.field_x && box.field.y === start.field_y;
+      if (!verdict.released) verdict.ok = false;
       send("pointerup", last.x, last.y);
       showBox(box);
       drawBoxes();

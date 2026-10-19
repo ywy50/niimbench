@@ -20,6 +20,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 - Between 52rem and 60rem of window width, every text row was forced 40rem wide and its last buttons were cut off at the panel's edge.
 - On a phone the whole page scrolled sideways: the board's 23 column gaps alone were wider than the screen. A phone gets one column.
+- A drag whose release the canvas never heard — let go outside the window, or a right-click whose menu took it — stayed live, and every later pass of the pointer over the preview moved the field. The preview renders on the drop, so it kept showing the text where it was, and the label printed wherever the pointer had crossed the canvas on its way to **Print**. A move with no button held now ends the drag, and only the primary button starts one.
+- The trace said how many fields a print had but not where they were. Each field now has a `print` line with its position, size and turn.
 
 ## [0.3.0] - 2026-10-19
 
