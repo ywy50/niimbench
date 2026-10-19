@@ -12,13 +12,14 @@ SIZE ?= 1600x1000
 DRIVE_OUT ?= zig-out/drive
 
 .DEFAULT_GOAL := run
-.PHONY: help test build run serve print labels lint protocol-test view-test box-test panel-test canvas-test trace-test stray-test drive
+.PHONY: help test build run serve trace print labels lint protocol-test view-test box-test panel-test canvas-test trace-test stray-test drive screens-test
 
 help:
 	@printf '%s\n' \
 		'TARGETS' \
 		'  make                 serve the editor and open it' \
 		'  make serve           serve on 127.0.0.1 without opening a browser' \
+		'  make trace           print the log of the server running in this checkout' \
 		'  make test            every check below, then zig build test' \
 		'  make build           zig build' \
 		'  make print           print a binary P5 PGM (see PRINT)' \
@@ -31,6 +32,7 @@ help:
 		'  make canvas-test     check the drawn canvas in headless Chrome' \
 		'  make trace-test      run the page once and check the trace it wrote' \
 		'  make stray-test      check no server outlives whoever started it' \
+		'  make screens-test    check the page fits phone to desktop sizes, in headless Chrome' \
 		'  make drive           drive the page in a headless browser (see DRIVE)' \
 		'' \
 		'PRINT' \
@@ -57,10 +59,14 @@ run:
 serve:
 	$(ZIG) build run -- --no-open $(if $(PORT),--port $(PORT),) $(ARGS)
 
+trace:
+	@test -r .niimbench.token || { echo "no .niimbench.token here: start the server with make or make serve"; exit 1; }
+	@curl -fsS "$$(sed 's|/?token=|/api/trace?token=|' .niimbench.token)"
+
 build:
 	$(ZIG) build $(ARGS)
 
-test: lint protocol-test view-test box-test panel-test stray-test trace-test canvas-test drive
+test: lint protocol-test view-test box-test panel-test stray-test trace-test canvas-test drive screens-test
 	$(ZIG) build test $(ARGS)
 
 # The page script runs only in a browser, so nothing else would notice a name
@@ -147,3 +153,8 @@ labels:
 protocol-test:
 	@command -v node >/dev/null 2>&1 || { echo "node is needed for make protocol-test"; exit 1; }
 	node tools/trace-protocol.test.js
+
+screens-test: build
+	@command -v node >/dev/null 2>&1 || { echo "node is needed for make screens-test"; exit 1; }
+	@if [ -z "$(BROWSER)" ]; then echo "screens-test: no Chromium-family browser found, skipping (set BROWSER= to run it)"; \
+	else BROWSER="$(BROWSER)" DRIVE_OUT="$(DRIVE_OUT)" tools/with-server.sh node tools/drive.js tools/screens.drive.js; fi

@@ -19,6 +19,45 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
   printer's address on a Mac is the UUID macOS gives it. USB on a Mac is not
   supported yet.
 
+### Changed
+
+- A Bluetooth print no longer waits on fixed sleeps for the printer's answers. Each command used to sleep half a second before it looked, 2.6 s for a print's five setup commands, and a status the printer repeated unchanged was taken for no answer and waited out a 3 s timeout. niimbench now subscribes to the notifications BlueZ announces on the bus, one per answer, identical ones included, and takes each as it arrives.
+
+## [0.5.0] - 2026-10-19
+
+### Changed
+
+- On a D11 or D110 the editor lays out on the whole label, 96×320 for a 12×40 roll, and hatches the last 2 mm that the printer leaves blank for its gap sensor. Width and Height show the whole label. A print sends all but those rows, as before.
+
+### Fixed
+
+- Centred text on a D11 or D110 printed 1 mm off centre, toward the end of the label that leaves the printer first. The editor laid out on the 304 printed rows of a 320-dot label, so its centre was 8 dots short of the paper's. Center, Fit and new text now centre on the whole label, on every roll size.
+- Picking a roll from the **Label** menu and reading it from the printer gave different heights on the D-series, 320 and 304 for a 12×40. Both now give the whole label, and a print from either sends the same 304 rows.
+
+## [0.4.0] - 2026-10-19
+
+### Changed
+
+- A text row names its controls: **Font**, **Size**, **X**, **Y** and **Angle**, where four bare numbers stood. The text box resizes in width as well as height, up to the row's width, and no longer shows a scrollbar over its one line.
+- A text row lays out by its panel's width: in a narrow panel or on a phone the text, the font and the four numbers each take a full line, and the buttons wrap under them.
+
+### Fixed
+
+- Between 52rem and 60rem of window width, every text row was forced 40rem wide and its last buttons were cut off at the panel's edge.
+- On a phone the whole page scrolled sideways: the board's 23 column gaps alone were wider than the screen. A phone gets one column.
+- A drag whose release the canvas never heard — let go outside the window, or a right-click whose menu took it — stayed live, and every later pass of the pointer over the preview moved the field. The preview renders on the drop, so it kept showing the text where it was, and the label printed wherever the pointer had crossed the canvas on its way to **Print**. A move with no button held now ends the drag, and only the primary button starts one.
+- The trace said how many fields a print had but not where they were. Each field now has a `print` line with its position, size and turn.
+
+## [0.3.0] - 2026-10-19
+
+### Added
+
+- `make trace` prints the running server's log. The server writes its URL, token included, to `.niimbench.token` at startup, readable only by its owner, so the log no longer needs the token copied from the terminal.
+
+### Changed
+
+- The font menu lists Fira Sans and Fira Sans Bold first. A field that names no font, and a new row in the editor, is drawn in Fira Sans Bold.
+
 ### Fixed
 
 - The `http` plugin's `inject` declaration lists only what its `apply` requires. `trace` was declared required although every route treats it as optional, so a context without the trace plugin could not boot the editor, and withdrawing the plugin at runtime dropped the whole `http` fiber.
@@ -27,6 +66,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 - A request carrying `Expect: 100-continue`, which curl sends with any body over 1 MB, crashed the server. It is now answered `100 Continue` and served.
 - A roll read that failed — the barcode read, or the cloud lookup — reached no record at all. It now lands in the trace with the device and the cause, and a print failure names the connection, address and model it was aimed at.
 - A label size past the printer protocol's 16-bit limit could overflow while it was checked, which in a release build stops the server. It is refused as `BadSize` before anything multiplies it.
+- A print the printer never counted is `PrintSkipped` instead of `printed`. The job ends after `PrintStatus` shows the page; an idle `PrintEnd` used to close the link and report success while the label stayed in the printer.
+- A print job left nothing in the trace between `print` and `sent`, so a blank page and a printed one read the same. The `printer` lines now record what each command answered, every `PrintStatus` reading, and how `PrintEnd` closed the job.
 
 ## [0.2.0] - 2026-10-14
 
@@ -112,6 +153,9 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ywy50/niimbench/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/ywy50/niimbench/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/ywy50/niimbench/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ywy50/niimbench/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ywy50/niimbench/releases/tag/v0.1.0

@@ -127,10 +127,10 @@ Text is drawn by niimbench's own TrueType rasteriser from fonts embedded in the 
 
 | Family | Faces |
 |---|---|
+| Fira Sans | Book, Bold |
 | DejaVu | Sans, Sans Bold, Sans Mono, Serif |
 | Liberation | Sans, Sans Bold, Serif, Mono |
 | Open Sans | Regular, Bold |
-| Fira Sans | Book, Bold |
 | Noto | Sans, Serif |
 | Hack | Regular, monospaced |
 

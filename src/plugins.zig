@@ -206,6 +206,21 @@ const Capture = struct {
         try self.inbound.appendSlice(self.allocator, bytes);
     }
 
+    fn pushPage(self: *Capture, page: u16, print_pct: u8, feed_pct: u8) !void {
+        var wire: [packet.Packet.max_wire]u8 = undefined;
+        const data = [_]u8{
+            @intCast((page >> 8) & 0xFF),
+            @intCast(page & 0xFF),
+            print_pct,
+            feed_pct,
+        };
+        const bytes = try (packet.Packet{
+            .packet_type = @backingInt(packet.Request.get_print_status) +% 16,
+            .data = &data,
+        }).toBytes(&wire);
+        try self.inbound.appendSlice(self.allocator, bytes);
+    }
+
     fn write(ptr: *anyopaque, data: []const u8) !void {
         const self: *Capture = @ptrCast(@alignCast(ptr));
         try self.written.appendSlice(self.allocator, data);
@@ -243,6 +258,9 @@ fn resetCapture(capture: *Capture) !void {
     try capture.pushOk(.start_page, 1);
     try capture.pushOk(.set_dimension, 1);
     try capture.pushOk(.end_page, 1);
+    // The counter moves, then the job ends. A status stuck at 100% is a skip.
+    try capture.pushPage(0, 0, 0);
+    try capture.pushPage(1, 100, 100);
     try capture.pushOk(.end_print, 1);
 }
 
@@ -312,6 +330,47 @@ test "print sends the source text that render drew" {
         try std.testing.expectEqual(std.http.Status.ok, response.status);
         try expectPackedRows(&capture, drawn);
     }
+}
+
+test "a D-series print leaves the page margin off the end of the label" {
+    // The editor lays out on the whole 96x320 label, so its centre is the
+    // paper's centre. The gap sensor needs the last 16 rows blank, so the
+    // printer gets the first 304 rows of that page and nothing after them.
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    _ = try ctx.mount("printer", .{ .name = "printer", .apply = server.applyPrinter });
+    _ = try ctx.mount("transports", .{ .name = "transports", .apply = server.applyTransports });
+    _ = try ctx.mount("devices", .{ .name = "devices", .apply = server.applyDevices });
+    _ = try ctx.mount("sources", .{ .name = "sources", .apply = server.applySources });
+    _ = try ctx.mount("http", .{
+        .name = "http",
+        .inject = &.{ "printer", "transports", "devices", "sources" },
+        .apply = server.applyHttp,
+    });
+    const http = ctx.require(server.HttpService, "http");
+    const drawn = try label.render(gpa, 96, 320, &.{.{ .text = "X", .x = 40, .y = 150, .size = 16 }}, "");
+    defer gpa.free(drawn.pixels);
+
+    var capture = Capture{ .allocator = gpa };
+    defer capture.deinit();
+    capture_for_open = &capture;
+    defer capture_for_open = null;
+    http.transports.usb = openCapture;
+    try resetCapture(&capture);
+
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    const response = try http.dispatch(.{
+        .io = std.testing.io,
+        .method = .POST,
+        .path = "/api/print",
+        .query = query,
+        .body = "{\"width\":96,\"height\":320,\"fields\":[{\"text\":\"X\",\"x\":40,\"y\":150,\"size\":16}],\"conn\":\"usb\",\"addr\":\"capture\",\"model\":\"d110\",\"density\":3}",
+    });
+    defer if (response.owned) gpa.free(response.body);
+    try std.testing.expectEqual(std.http.Status.ok, response.status);
+    try expectPackedRows(&capture, .{ .pixels = drawn.pixels[0 .. 96 * 304], .width = 96, .height = 304 });
 }
 
 test "serial registration is reverted when the fiber drops" {

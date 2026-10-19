@@ -4,7 +4,9 @@ The printer subsystem is the codec, the raster, the client, the two openers, and
 
 ## Wire
 
-Requests use the packet codes in the [protocol reference](../manuals/upstream/interfacing/proto.md). Responses are `request + 1`, except density and label type, which use `request + 16`. An image row is type `0x85` and expects no response. Packet type `219` is a refusal. Packet type `0` is unsupported.
+Requests use the packet codes in the [protocol reference](../manuals/upstream/interfacing/proto.md). Responses are `request + 1`, except density, label type, and print status, which use `request + 16`. An image row is type `0x85` and expects no response. Packet type `219` is a refusal. Packet type `0` is unsupported.
+
+`PrintEnd` goes out after `PrintStatus` (`0xA3`) shows this page. The page counter has to move past the value read after `PageEnd`, or the print progress has to leave 100 and come back with the page at least 1. A counter that stays put while progress stays at 100 is `error.PrintSkipped`. Progress that leaves 100 and does not come back finished is `error.PrintDidNotFinish`. `PrintEnd` is still sent either way, because the image is already on the wire. A printer that answers `PrintStatus` with packet type `0` is finished by polling `PrintEnd` instead.
 
 ## Raster
 
@@ -12,7 +14,7 @@ Input is grayscale, row-major, `0` black, `255` white. A pixel below 128 becomes
 
 `SetPageSize` (`0x13`) carries `RR RR CC CC`: the row count — the page's length down the tape — first, then the column count across the head. Putting the width in the row slot tells the printer the page is as many rows long as the head is wide: on a 12×40 roll it prints about 12 mm and drops the rest of the image, which looks like a page that stops short rather than like a size error.
 
-A page also stops short of the roll's full height by the model's page margin, because the gap sensor sits past the last row of the head and needs white space to find the next gap in. Without that margin the printer keeps feeding until it ejects the following label blank. The margin is taken off in one place — where a roll's size is resolved for a caller — so `compose` prints exactly the page it is asked for. Keeping the roll's full height and the margin apart matters: a 12×40 roll is 320 dots long, the page on it is 304, and a caller that lays out against 320 builds a frame taller than the picture and its boxes fall outside it.
+A print stops short of the label's full length by the model's page margin, because the gap sensor sits past the last row of the head and needs white space to find the next gap in. Without that margin the printer keeps feeding until it ejects the following label blank. The editor lays out on the whole label, so its centre is the paper's centre, and `printJob` leaves the margin's rows off the end of the composed page when it prints; the preview hatches them. A 12×40 label is laid out as 96×320 and printed as its first 304 rows. Laying out on the 304 printed rows instead put everything centred 8 dots, 1 mm, toward the end of the label that leaves the printer first. A body that carries raw `pixels_b64` is the page itself and is printed as sent.
 
 ## Models
 
@@ -62,7 +64,7 @@ On macOS the Bluetooth finder asks CoreBluetooth instead, through the Objective-
 
 USB opens the given path at 115200 8N1 and uses `VMIN=0`, `VTIME=5` so a read returns after half a second of silence. The termios bits are set with `TCGETS` / `TCSETS`, not libc.
 
-Bluetooth opens the print channel of a BLE printer over the system bus: `Device1.Connect`, `GattCharacteristic1.StartNotify`, then `WriteValue` for each frame the client sends. The characteristic is looked up by uuid rather than by path. Reads are polls of the characteristic's `Value` property, which is where BlueZ caches a notification, so a frame that the printer has not answered yet reads as nothing and the client's own retry loop covers it. `src/ble.zig` is the transport and the GATT client lives in `src/dbus.zig`.
+Bluetooth opens the print channel of a BLE printer over the system bus: `Device1.Connect`, an `AddMatch` rule for the characteristic's `PropertiesChanged` signals, `GattCharacteristic1.StartNotify`, then `WriteValue` for each frame the client sends. The characteristic is looked up by uuid rather than by path. BlueZ announces every notification as one `PropertiesChanged` signal, even when the value has not changed, so a read waits on the bus socket and takes each answer the moment it arrives. A signal that lands while a call waits for its own reply is kept for the reader, not dropped. Without the rule no signal was delivered, and reading BlueZ's cached `Value` instead could not tell a second, identical answer from the first: every repeated status waited out the client's 3 s timeout. When no signal comes within half a second, the read falls back to the cached `Value` once, skipping a value equal to the last one handed over. `src/ble.zig` is the transport and the GATT client lives in `src/dbus.zig`.
 
 On macOS the same channel opens through CoreBluetooth: the peripheral is looked up by its UUID, connected, the print characteristic found by uuid and subscribed to, and each frame is a write with a response. Notifications arrive as delegate calls and are buffered, so a read returns as soon as an answer is there instead of polling. The radio's state comes first, and `BluetoothOff`, `BluetoothNotAllowed` (the terminal was refused Bluetooth) or `BluetoothUnsupported` is the print's error. USB is Linux-only: on macOS the `serial` plugin installs nothing, and a USB print answers `UsbUnavailable`.
 

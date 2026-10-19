@@ -95,13 +95,13 @@ test "a catalogue roll sizes a canvas for the head" {
     defer catalogue.deinit();
 
     const roll = catalogue.find("01222281") orelse return error.NoRoll;
-    // 12x40 mm at 203 dpi is 96x320 dots, and the D-series keeps 2 mm back
-    // from the gap, so the page is drawn 96x304. This is what the roll route
-    // hands the editor when a printer answers with this barcode.
+    // 12x40 mm at 203 dpi is 96x320 dots. This is the label the roll route
+    // hands the editor when a printer answers with this barcode; the 2 mm the
+    // D-series keeps back from the gap comes off when the page is printed.
     const width: usize = roll.width_mm * raster.dots_per_mm;
-    const height: usize = roll.height_mm * raster.dots_per_mm - raster.Model.d110.pageMargin();
+    const height: usize = roll.height_mm * raster.dots_per_mm;
     try std.testing.expectEqual(@as(usize, 96), width);
-    try std.testing.expectEqual(@as(usize, 304), height);
+    try std.testing.expectEqual(@as(usize, 320), height);
 
     const gray = try label.render(gpa, width, height, &.{.{
         .text = "A",
@@ -111,5 +111,5 @@ test "a catalogue roll sizes a canvas for the head" {
     }}, "");
     defer gpa.free(gray.pixels);
     try std.testing.expectEqual(@as(usize, 96), gray.width);
-    try std.testing.expectEqual(@as(usize, 304), gray.height);
+    try std.testing.expectEqual(@as(usize, 320), gray.height);
 }

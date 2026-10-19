@@ -19,9 +19,9 @@ A read looks like this:
 ```
       0ms info    trace     opened
    3521ms info    roll      01222281 -> 12x40 mm 96x320 dots from the catalogue
-   3526ms info    page      view: vertical, roll 96x320, view 304x96, canvas 304x96
-   9377ms info    print     96x288 dots, 1 field(s), density 5, bluetooth AA:BB:CC:DD:EE:FF
-   9377ms error   print     bluetooth AA:BB:CC:DD:EE:FF model=b21 failed: MethodFailed
+   3526ms info    page      view: vertical, roll 96x320, view 320x96, canvas 320x96
+   9377ms info    print     96x320 dots, 304 rows printed, 1 field(s), density 3, bluetooth AA:BB:CC:DD:EE:FF
+   9377ms error   print     bluetooth AA:BB:CC:DD:EE:FF model=d110 failed: MethodFailed
 ```
 
 The first column is milliseconds since the log opened, so `3521` and `3526` are the same instant in different processes, and what came first is never in doubt.
@@ -32,7 +32,8 @@ The first column is milliseconds since the log opened, so `3521` and `3526` are 
 |---|---|
 | `trace` | The plugin starting, and a clear |
 | `roll` | A barcode and the size it resolved to, or why the read failed |
-| `print` | What was composed, what the printer was, and how it ended |
+| `print` | What was composed, where each field was, what the printer was, and how it ended |
+| `printer` | The link opening, what each print command answered, every `PrintStatus` reading as raw bytes, and the `PrintEnd` try that closed the job |
 | `page` | The view the page is showing, a picked printer, the position and angle of every field box when that changes, and any script error |
 
 The page reports its own errors — `window.onerror` and `unhandledrejection` both post a line — so a broken editor shows up in the log instead of only in a console that is gone by the time anyone asks. It also posts its view state whenever that changes, which is the number worth having when the preview and the printer disagree.
@@ -53,6 +54,12 @@ The plugin owns nothing but a fixed ring of `Trace.capacity` entries and a buffe
 The plugin is optional. A context that mounts only `http` serves every route and records nothing: `create` takes the service as an optional pointer, and each caller checks it.
 
 ## Reading it next to a report
+
+At startup the server writes its URL, token included, to `.niimbench.token` in its working directory. The file is readable only by its owner and is replaced on every start. `make trace` reads it and prints the running server's log, so neither you nor an agent has to copy the token from the terminal:
+
+```sh
+make trace
+```
 
 `tools/trace.sh` wraps the two calls a bug report needs: it clears the log, runs whatever command you give it, and prints the lines that appeared, so the output is only about that command.
 
