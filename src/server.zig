@@ -165,6 +165,7 @@ pub const PrinterService = struct {
         width: usize,
         height: usize,
         density: u8,
+        trace: ?*trace_mod.Trace,
     ) !void {
         _ = self;
         // The page is printed as composed. A page is never turned here: the
@@ -178,7 +179,10 @@ pub const PrinterService = struct {
         // testing `Io` stands in.
         const live = io orelse if (@import("builtin").is_test) std.testing.io else unreachable;
         const transport = try registry.open(conn, allocator, live, addr);
+        // The time from the `print` line to this one is the connect.
+        if (trace) |t| t.info("printer", "{s} {s} open", .{ conn, addr });
         var client = printer.Client.init(allocator, transport);
+        client.trace = trace;
         defer client.deinit();
         try client.printGray(io, pixels, width, height, level);
     }
@@ -403,6 +407,7 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
         gray.width,
         gray.height,
         job.density,
+        tracer(service),
     ) catch |err| {
         // The answer says only the error name; the line says what was asked of
         // which printer, the way the compose failure beside it does.

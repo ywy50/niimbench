@@ -1,6 +1,7 @@
 const std = @import("std");
 const packet = @import("packet.zig");
 const raster = @import("raster.zig");
+const trace_mod = @import("trace.zig");
 
 pub const Transport = struct {
     ptr: *anyopaque,
@@ -37,6 +38,9 @@ pub const Client = struct {
     buffer: std.ArrayList(u8) = .empty,
     start: usize = 0,
     data_buf: [packet.Packet.max_data]u8 = undefined,
+    /// Where a job's answers and status readings go. A blank page and a
+    /// printed one both end `sent`; only these lines tell them apart.
+    trace: ?*trace_mod.Trace = null,
 
     pub fn init(allocator: std.mem.Allocator, transport: Transport) Client {
         return .{ .allocator = allocator, .transport = transport };
@@ -70,10 +74,12 @@ pub const Client = struct {
         if (width > 65535 or height > 65535) return error.BadSize;
         if (pixels.len != width * height) return error.BadSize;
         if (density < 1 or density > 5) return error.BadDensity;
-        _ = try self.command(.set_density, &.{density}, 16);
-        _ = try self.command(.set_label_type, &.{1}, 16);
-        _ = try self.command(.start_print, &.{1}, 1);
-        _ = try self.command(.start_page, &.{1}, 1);
+        // An answer of 0 is recorded, not refused: which answers a blank
+        // first page carries is what the trace has to show.
+        const density_ok = try self.command(.set_density, &.{density}, 16);
+        const type_ok = try self.command(.set_label_type, &.{1}, 16);
+        const start_ok = try self.command(.start_print, &.{1}, 1);
+        const page_ok = try self.command(.start_page, &.{1}, 1);
         // `SetPageSize` is `RR RR CC CC`: the row count first, the column count
         // second. The row count is the page's length down the tape, so a page
         // that puts the width here tells the printer its page is 96 rows long
@@ -85,7 +91,11 @@ pub const Client = struct {
             @intCast((width >> 8) & 0xFF),
             @intCast(width & 0xFF),
         };
-        _ = try self.command(.set_dimension, &dim, 1);
+        const dim_ok = try self.command(.set_dimension, &dim, 1);
+        self.note("answers density={d} type={d} start={d} page={d} dimension={d}", .{
+            @intFromBool(density_ok), @intFromBool(type_ok), @intFromBool(start_ok),
+            @intFromBool(page_ok),    @intFromBool(dim_ok),
+        });
         const row_len = raster.packedRowBytes(width);
         const payload_len = row_len + 6;
         const payload = try self.allocator.alloc(u8, payload_len);
@@ -96,14 +106,18 @@ pub const Client = struct {
             raster.packRow(pixels[y * width ..][0..width], payload[6..][0..row_len]);
             try self.send(.image, payload);
         }
-        _ = try self.command(.end_page, &.{1}, 1);
+        const end_page_ok = try self.command(.end_page, &.{1}, 1);
+        self.note("{d} rows sent, end_page={d}", .{ height, @intFromBool(end_page_ok) });
         // An idle printer answers PrintEnd with 0x01 before the motor starts.
         // Closing on that feeds nothing, and the job would still look printed.
         // PrintStatus is the signal that this page ran. PrintEnd follows it.
         self.waitForPage(io) catch |err| switch (err) {
             // A head with no PrintStatus finishes by polling PrintEnd. Those
             // heads answer 0x00 while the page is still out.
-            error.PrinterUnsupported => return self.confirmByEndPrint(io),
+            error.PrinterUnsupported => {
+                self.note("no PrintStatus, polling end_print", .{});
+                return self.confirmByEndPrint(io);
+            },
             else => {
                 // cordis-boundary: the page is already on the wire. end_print
                 // closes the job, including a page the counter never counted.
@@ -129,6 +143,7 @@ pub const Client = struct {
     /// `PrintStatus` (`0xA3`) is answered as `0xB3`, sixteen past the request.
     fn printStatus(self: *Client) !PageStatus {
         const response = try self.transceive(@backingInt(packet.Request.get_print_status), &.{1}, 16);
+        self.note("status {x}", .{response.data});
         if (response.data.len < 4) return error.ShortResponse;
         // Ten data bytes carry an error code at byte 6: cover, paper, battery.
         if (response.data.len >= 10 and response.data[6] != 0) return error.PrinterRefused;
@@ -149,6 +164,7 @@ pub const Client = struct {
         while (tries < print_status_polls) : (tries += 1) {
             const status = self.printStatus() catch |err| switch (err) {
                 error.NoResponse => {
+                    self.note("status: no answer", .{});
                     if (io) |live| try live.sleep(.fromMilliseconds(200), .awake);
                     continue;
                 },
@@ -165,13 +181,20 @@ pub const Client = struct {
         return error.PrintSkipped;
     }
 
+    fn note(self: *Client, comptime format: []const u8, args: anytype) void {
+        if (self.trace) |t| t.info("printer", format, args);
+    }
+
     fn endPrint(self: *Client, io: ?std.Io) !void {
         // cordis-boundary: the page is already on the wire. end_print is the
         // compensation that tells the printer the job is finished.
         var tries: u8 = 0;
         while (tries < 10) : (tries += 1) {
             const done = try self.command(.end_print, &.{1}, 1);
-            if (done) return;
+            if (done) {
+                self.note("end_print accepted on try {d}", .{tries + 1});
+                return;
+            }
             if (io) |live| try live.sleep(.fromMilliseconds(100), .awake);
         }
         return error.PrintDidNotFinish;
@@ -183,7 +206,10 @@ pub const Client = struct {
         var tries: u8 = 0;
         while (tries < 50) : (tries += 1) {
             const done = try self.command(.end_print, &.{1}, 1);
-            if (done) return;
+            if (done) {
+                self.note("end_print accepted on try {d}", .{tries + 1});
+                return;
+            }
             if (io) |live| try live.sleep(.fromMilliseconds(100), .awake);
         }
         return error.PrintDidNotFinish;
@@ -418,6 +444,40 @@ test "print sends the command sequence a Niimbot print expects" {
         @backingInt(packet.Request.get_print_status),
         @backingInt(packet.Request.end_print),
     }, types[0..count]);
+}
+
+test "a job records each answer and status reading in the trace" {
+    // A blank page and a printed one both end `sent`. The refused page start
+    // and the raw status bytes are what tell them apart afterwards.
+    const gpa = std.testing.allocator;
+    const entries = try gpa.alloc(trace_mod.Trace.Entry, 16);
+    defer gpa.free(entries);
+    for (entries) |*entry| entry.* = .{};
+    var trace = trace_mod.Trace{ .allocator = gpa, .entries = entries };
+
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    const ok = [_]u8{1};
+    const refused = [_]u8{0};
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.start_page, 1, &refused);
+    try script.push(.set_dimension, 1, &ok);
+    try script.push(.end_page, 1, &ok);
+    try script.pushFinishedPage();
+
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    client.trace = &trace;
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    try client.printGray(null, &pixels, 8, 1, 3);
+
+    try std.testing.expectEqualStrings("answers density=1 type=1 start=1 page=0 dimension=1", trace.at(0).messageText());
+    try std.testing.expectEqualStrings("1 rows sent, end_page=1", trace.at(1).messageText());
+    try std.testing.expectEqualStrings("status 00000000", trace.at(2).messageText());
+    try std.testing.expectEqualStrings("status 00016464", trace.at(3).messageText());
+    try std.testing.expectEqualStrings("end_print accepted on try 1", trace.at(4).messageText());
 }
 
 test "a page the printer never counts is not a successful print" {
