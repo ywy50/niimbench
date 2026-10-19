@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-20
+
 ### Added
 
 - **Bluetooth on macOS.** On a Mac, niimbench finds and prints to a Niimbot
@@ -160,7 +162,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/ywy50/niimbench/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ywy50/niimbench/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ywy50/niimbench/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ywy50/niimbench/compare/v0.2.0...v0.3.0
