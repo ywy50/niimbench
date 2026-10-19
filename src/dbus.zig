@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const Io = std.Io;
 
 /// The BlueZ side of Bluetooth discovery, spoken natively over the system bus.
@@ -1104,6 +1105,9 @@ test "a PropertiesChanged signal yields the value the printer notified" {
 test "a notification that arrives while a call waits for its reply is kept" {
     // The printer's answer can land on the bus between a call and its reply.
     // It was dropped there, and the reader waited out its timeout for it.
+    // BlueZ is Linux only, and the fake bus below is made of Linux system
+    // calls, which another kernel answers with SIGSYS.
+    if (builtin.os.tag != .linux) return error.SkipZigTest;
     const gpa = std.testing.allocator;
     var fds: [2]std.posix.fd_t = undefined;
     if (std.os.linux.socketpair(std.os.linux.AF.UNIX, std.os.linux.SOCK.STREAM, 0, &fds) != 0) return error.SkipZigTest;
