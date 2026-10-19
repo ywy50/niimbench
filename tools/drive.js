@@ -24,6 +24,7 @@
 //   page.drag(from, to)         press at `from`, move to `to` in steps, release
 //   page.shot(name)             a PNG of the window, saved in DRIVE_OUT; returns its path
 //   page.reload()               reload and wait for the page to finish booting
+//   page.size(width, height)    resize the window after load, as dragging its edge does
 //   page.log(...values)         print a line
 //
 // The page has booted when a step runs. A step that throws fails the run, and so
@@ -170,6 +171,11 @@ async function main() {
       await send("Page.reload");
       await sleep(200);
       await booted();
+    },
+    async size(w, h) {
+      await send("Emulation.setDeviceMetricsOverride", { width: w, height: h, deviceScaleFactor: 1, mobile: false });
+      // Two frames: the resize event, then the layout it causes.
+      await evaluate("new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))");
     },
     log: (...values) => console.log(...values.map((value) => (typeof value === "string" ? value : JSON.stringify(value)))),
   };

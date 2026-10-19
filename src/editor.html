@@ -126,7 +126,8 @@
        tall as what it holds, in the order the page lists them. The script asks
        the same query before it fits the preview or starts a drag. */
     @media (max-width: 52rem) {
-      .workspace { grid-auto-rows: auto; }
+      /* One column: the board's 23 gaps alone are 368px, wider than a phone. */
+      .workspace { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; }
       .panel { grid-column: 1 / -1; grid-row: auto; }
       .panel-head { cursor: default; }
       .panel-grip, #reset-panels { display: none; }
@@ -240,34 +241,53 @@
     .field {
       display: flex;
       flex-wrap: wrap;
-      align-items: center;
-      gap: 0.4rem;
+      align-items: flex-end;
+      gap: 0.4rem 0.5rem;
     }
-    .field textarea { flex: 1 1 6rem; }
-    .field select { flex: 0 0 auto; }
-    .field .font { flex: 0 1 8.5rem; }
-    .field input[type="number"] { flex: 0 0 4.6rem; }
-    .field .degrees { flex: 0 0 5rem; }
-    .field .actions { margin-left: auto; }
+    /* The text box keeps the size its corner is dragged to, in both
+       directions, up to the row's width. */
+    .field textarea { flex: 0 1 auto; width: 14rem; max-width: 100%; }
+    /* Each control carries its name above it, as a `label` does everywhere
+       on the page: four bare numbers in a row said nothing about which was
+       the size and which the angle. */
+    .field .named { gap: 0.15rem; min-width: 0; }
+    .field .font { width: 8.5rem; max-width: 100%; }
+    /* Size, X, Y and Angle are one group of four columns. The inputs narrow
+       rather than wrap, so no row leaves one of them on a line of its own. */
+    .field .numbers { display: grid; grid-template-columns: repeat(4, minmax(3rem, 4rem)); gap: 0.5rem; min-width: 0; }
+    .field input[type="number"] { width: 100%; }
+    /* The buttons stay together at the end of the row, and wrap among
+       themselves when even a line of their own is too narrow for them. */
+    .field .actions { margin-left: auto; flex-wrap: wrap; }
     .field .note { flex: 1 1 100%; }
-    .fields .head {
-      padding: 0 0.35rem 0.4rem;
-      font-size: 0.66rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;
-      color: var(--muted); border-bottom: 1px solid var(--line);
-    }
-    #field-list { display: grid; }
-    .field { padding: 0.4rem 0.35rem; border-bottom: 1px solid var(--line); }
+    #field-list { display: grid; container-type: inline-size; }
+    /* A text box dragged past the row would otherwise widen the column and
+       push the panel sideways; at 0 the box stops at the row's edge. */
+    .field { min-width: 0; padding: 0.4rem 0.35rem; border-bottom: 1px solid var(--line); }
     .field:last-child { border-bottom: 0; }
     .field:hover { background: var(--surface-2); }
     .field button { white-space: nowrap; }
     .field textarea, .field input, .field select { min-width: 0; font: inherit; font-size: 0.84rem; }
-    .field textarea { min-height: 2rem; padding: 0.28rem 0.4rem; resize: vertical; }
+    /* No sideways scrollbar: in a one-line box it covers the text. The caret
+       still scrolls a long line, and the corner widens the box. */
+    .field textarea { min-width: 4rem; min-height: 2rem; padding: 0.28rem 0.4rem; resize: both; overflow-x: hidden; }
     .field .actions { display: flex; gap: 0.25rem; justify-content: flex-end; }
     .field .actions button { padding: 0.22rem 0.45rem; font-size: 0.72rem; }
     .field .note { grid-column: 1 / -1; font-size: 0.74rem; color: var(--accent); overflow-wrap: anywhere; }
     .field .note:empty { display: none; }
     .field .note.warn { color: var(--danger); }
     .field.selected { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+    /* A narrow list stacks the row: text, font and the four numbers each
+       take the full width, and the buttons wrap under them. It is the list's
+       width that decides, not the window's: a panel dragged narrow on a wide
+       screen is as narrow as a phone. */
+    @container (max-width: 30rem) {
+      .field textarea, .field > .named, .field .font, .field .numbers { width: 100%; }
+      .field .numbers { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+    @container (max-width: 14rem) {
+      .field .numbers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
     .field.clipped textarea { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
 
     canvas {
@@ -321,10 +341,6 @@
     details[open] > summary { margin-bottom: 0.6rem; }
     details .row { margin-bottom: 0.6rem; }
 
-    @media (max-width: 60rem) {
-      .fields { overflow-x: auto; }
-      .fields .head, .field { min-width: 40rem; }
-    }
 </style>
 </head>
 <body>
@@ -1000,6 +1016,15 @@
       return input;
     }
 
+    /// A row control with its name written above it. Wrapping it in a label
+    /// also lets a click on the name focus the control.
+    function named(name, control) {
+      const label = document.createElement("label");
+      label.className = "named";
+      label.append(name, control);
+      return label;
+    }
+
     function createFieldRow(values) {
       const field = {
         text: values.text || "",
@@ -1067,18 +1092,25 @@
       const x = document.createElement("input");
       x.type = "number";
       x.value = String(field.x);
+      x.title = "dots from the label's left to the text's anchor: its left edge, centre or right edge, as aligned";
       const y = document.createElement("input");
       y.type = "number";
       y.min = "0";
       y.value = String(field.y);
+      y.title = "dots from the label's top to the top of the first line";
 
       const rotation = document.createElement("input");
       rotation.type = "number";
       rotation.className = "degrees";
       rotation.step = "1";
       rotation.value = String(normalizeDegrees(field.rotation));
+      rotation.title = "turn in degrees; drag the round handle on the preview to turn it";
 
-      row.append(text, font, size, x, y, rotation, actions, note);
+      const numbers = document.createElement("span");
+      numbers.className = "numbers";
+      numbers.append(named("Size", size), named("X", x), named("Y", y), named("Angle", rotation));
+
+      row.append(text, named("Font", font), numbers, actions, note);
       list.append(row);
 
       const sync = () => {
