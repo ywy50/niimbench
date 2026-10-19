@@ -14,7 +14,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 ### Added
 
 - **Copies**, beside **Print**: print the label up to 99 times in one job. A D11 or D110 prints the copies itself; a B-series printer gets the job once per copy.
-- **Set printer clock**, under the printer status: sets the printer's clock to this computer's local time, so the date button on a D110 prints today instead of 1970.
+- **Set clock**, at the right end of the printer status line: sets the printer's clock to this computer's local time, so the date button on a D110 prints today instead of 1970.
 
 ### Changed
 

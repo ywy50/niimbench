@@ -75,7 +75,10 @@
     /* Copies sits on the header line beside Print, its name before the box. */
     .copies { display: inline-flex; align-items: center; gap: 0.35rem; }
     .copies input { width: 3.6rem; }
-    #set-clock { justify-self: start; }
+    /* The printer's line, with its one printer action at the right end. */
+    .printer-status .status-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .printer-status .status-row .state { min-width: 0; }
+    #set-clock { flex: none; padding: 0.22rem 0.5rem; font-size: 0.72rem; }
     .printer-status .printers-title { color: var(--ink); }
     #status {
       min-height: 0; min-width: 0; margin: 0; max-width: 24rem; padding: 0.18rem 0.7rem;
@@ -390,14 +393,16 @@
     <h2 class="panel-head">Label and printer</h2>
     <div class="panel-body">
       <div class="printer-status span">
-        <p id="printer-state" class="state idle" aria-live="polite"
-           title="This is what niimbench knows: the connection you picked, the printer it found, and whether a job is running. It is not the printer's own light — that is in docs/manuals/d110.md.">
-          <span class="printers-title">Printer</span>
-          <span class="dot" aria-hidden="true"></span>
-          <span id="printer-state-text">No address yet</span>
-        </p>
+        <div class="status-row">
+          <p id="printer-state" class="state idle" aria-live="polite"
+             title="This is what niimbench knows: the connection you picked, the printer it found, and whether a job is running. It is not the printer's own light — that is in docs/manuals/d110.md.">
+            <span class="printers-title">Printer</span>
+            <span class="dot" aria-hidden="true"></span>
+            <span id="printer-state-text">No address yet</span>
+          </p>
+          <button type="button" id="set-clock" title="set the printer's clock, which its date button prints, to this computer's time and time zone">Set clock</button>
+        </div>
         <p id="printer-last" class="last" aria-live="polite" hidden></p>
-        <button type="button" id="set-clock" title="set the printer's clock, which its date button prints, to this computer's time">Set printer clock</button>
       </div>
       <div class="printers span">
         <div class="printers-head">
