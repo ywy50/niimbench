@@ -72,6 +72,13 @@
     /* The printer and its last job open the Label and printer panel. On the
        header they were easy to overlook. */
     .printer-status .state { margin: 0; }
+    /* Copies sits on the header line beside Print, its name before the box. */
+    .copies { display: inline-flex; align-items: center; gap: 0.35rem; }
+    .copies input { width: 3.6rem; }
+    /* The printer's line, with its one printer action at the right end. */
+    .printer-status .status-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+    .printer-status .status-row .state { min-width: 0; }
+    #set-clock { flex: none; padding: 0.22rem 0.5rem; font-size: 0.72rem; }
     .printer-status .printers-title { color: var(--ink); }
     #status {
       min-height: 0; min-width: 0; margin: 0; max-width: 24rem; padding: 0.18rem 0.7rem;
@@ -361,6 +368,7 @@
     <p id="status" aria-live="polite">idle</p>
     <button type="button" id="reset-panels" title="put every panel back where the page first had it">Reset panels</button>
     <!-- `form` lets Print submit the form it is not inside. -->
+    <label class="copies" title="how many of this label to print, 1 to 99">Copies <input type="number" id="copies" min="1" max="99" step="1" value="1"></label>
     <button type="submit" form="label" id="print" class="primary" title="print the label (Ctrl+Enter in a text field)">Print</button>
     </div>
   </header>
@@ -385,12 +393,15 @@
     <h2 class="panel-head">Label and printer</h2>
     <div class="panel-body">
       <div class="printer-status span">
-        <p id="printer-state" class="state idle" aria-live="polite"
-           title="This is what niimbench knows: the connection you picked, the printer it found, and whether a job is running. It is not the printer's own light — that is in docs/manuals/d110.md.">
-          <span class="printers-title">Printer</span>
-          <span class="dot" aria-hidden="true"></span>
-          <span id="printer-state-text">No address yet</span>
-        </p>
+        <div class="status-row">
+          <p id="printer-state" class="state idle" aria-live="polite"
+             title="This is what niimbench knows: the connection you picked, the printer it found, and whether a job is running. It is not the printer's own light — that is in docs/manuals/d110.md.">
+            <span class="printers-title">Printer</span>
+            <span class="dot" aria-hidden="true"></span>
+            <span id="printer-state-text">No address yet</span>
+          </p>
+          <button type="button" id="set-clock" title="set the printer's clock, which its date button prints, to this computer's time and time zone">Set clock</button>
+        </div>
         <p id="printer-last" class="last" aria-live="polite" hidden></p>
       </div>
       <div class="printers span">
@@ -3073,17 +3084,51 @@
       status.textContent = "printing";
       updatePrinterStatus("busy", "Sending the label");
       try {
-        const body = labelBody();
+        // Copies goes with the print only: the preview is one label either way.
+        const input = document.querySelector("#copies");
+        const copies = Math.min(99, Math.max(1, Math.round(Number(input.value)) || 1));
+        input.value = String(copies);
+        const body = { ...labelBody(), copies };
         const response = await post("/api/print", body);
         const payload = await readJson(response);
-        status.textContent = payload.error || "printed";
-        showLastJob(payload.error || "printed", Boolean(payload.error));
+        const done = copies === 1 ? "printed" : "printed " + copies + " copies";
+        status.textContent = payload.error || done;
+        showLastJob(payload.error || done, Boolean(payload.error));
       } catch (error) {
         status.textContent = "print failed: " + error.message;
         showLastJob("print failed, " + error.message, true);
       } finally {
         refreshPrinterStatus();
         button.disabled = false;
+      }
+    });
+
+    // The printer's date button prints its own clock, which counts from 1970
+    // until something sets it. The page sends its own local time: the browser
+    // knows this machine's time zone, and the printer keeps none.
+    document.querySelector("#set-clock").addEventListener("click", async () => {
+      const addr = document.querySelector("#addr").value;
+      if (!addr) {
+        status.textContent = "pick a printer first";
+        return;
+      }
+      const now = new Date();
+      status.textContent = "setting the printer clock";
+      try {
+        const response = await post("/api/printer/clock", {
+          conn: document.querySelector("#conn").value,
+          addr,
+          year: now.getFullYear(),
+          month: now.getMonth() + 1,
+          day: now.getDate(),
+          hour: now.getHours(),
+          minute: now.getMinutes(),
+          second: now.getSeconds(),
+        });
+        const payload = await readJson(response);
+        status.textContent = payload.error ? "clock not set: " + payload.error : "printer clock set to " + now.toLocaleString();
+      } catch (error) {
+        status.textContent = "clock not set: " + error.message;
       }
     });
 

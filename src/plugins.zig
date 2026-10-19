@@ -194,9 +194,12 @@ const Capture = struct {
     }
 
     fn pushOk(self: *Capture, req: packet.Request, offset: u8) !void {
+        try self.push(req, offset, &.{1});
+    }
+
+    fn push(self: *Capture, req: packet.Request, offset: u8, data: []const u8) !void {
         var wire: [packet.Packet.max_wire]u8 = undefined;
-        const data = [_]u8{1};
-        const bytes = try (packet.Packet{ .packet_type = @backingInt(req) +% offset, .data = &data }).toBytes(&wire);
+        const bytes = try (packet.Packet{ .packet_type = @backingInt(req) +% offset, .data = data }).toBytes(&wire);
         try self.inbound.appendSlice(self.allocator, bytes);
     }
 
@@ -223,8 +226,12 @@ const Capture = struct {
     fn read(ptr: *anyopaque, buf: []u8) !usize {
         const self: *Capture = @ptrCast(@alignCast(ptr));
         if (self.pos >= self.inbound.items.len) return 0;
-        const n = @min(buf.len, self.inbound.items.len - self.pos);
-        @memcpy(buf[0..n], self.inbound.items[self.pos..][0..n]);
+        // One answer a read, as a printer gives them: handing over the whole
+        // script let one job's client swallow the answers queued for the next.
+        const rest = self.inbound.items[self.pos..];
+        const frame = if (rest.len >= 4) @as(usize, rest[3]) + 7 else rest.len;
+        const n = @min(buf.len, frame, rest.len);
+        @memcpy(buf[0..n], rest[0..n]);
         self.pos += n;
         return n;
     }
@@ -246,6 +253,12 @@ fn resetCapture(capture: *Capture) !void {
     capture.written.clearRetainingCapacity();
     capture.inbound.clearRetainingCapacity();
     capture.pos = 0;
+    try pushJob(capture);
+}
+
+/// The answers a scripted printer gives to one job, queued after any already
+/// there, so a test can script a second job.
+fn pushJob(capture: *Capture) !void {
     // A D-series job asks the protocol first. 1 is protocol 0: the older
     // sequence. A B-series job never asks, and skips past this answer.
     try capture.pushOk(.connect, 1);
@@ -445,4 +458,126 @@ test "serial registration is reverted when the fiber drops" {
     bluetooth.dispose();
     try std.testing.expect(registry.bluetooth == null);
     try std.testing.expect(devices.bluetooth == null);
+}
+
+fn mountCaptured(ctx: *cordis.Context) !*server.HttpService {
+    _ = try ctx.mount("printer", .{ .name = "printer", .apply = server.applyPrinter });
+    _ = try ctx.mount("transports", .{ .name = "transports", .apply = server.applyTransports });
+    _ = try ctx.mount("devices", .{ .name = "devices", .apply = server.applyDevices });
+    _ = try ctx.mount("sources", .{ .name = "sources", .apply = server.applySources });
+    _ = try ctx.mount("http", .{
+        .name = "http",
+        .inject = &.{ "printer", "transports", "devices", "sources" },
+        .apply = server.applyHttp,
+    });
+    const http = ctx.require(server.HttpService, "http");
+    http.transports.usb = openCapture;
+    return http;
+}
+
+test "Set printer clock sends the page's local time in the form a D110_M takes" {
+    // PrinterConfig2 as the protocol notes draw it: 1 (set), year 2026 as
+    // 07 EA, then October 20, 00:12:05. A D110_M answers 01 01: the first
+    // byte echoed, then 1 for done. Upstream's form puts item 8 first; a
+    // D110_M answers that 08 00, refused, so it is the fallback.
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    const http = try mountCaptured(&ctx);
+    var capture = Capture{ .allocator = gpa };
+    defer capture.deinit();
+    capture_for_open = &capture;
+    defer capture_for_open = null;
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    const body = "{\"conn\":\"usb\",\"addr\":\"capture\",\"year\":2026,\"month\":10,\"day\":20,\"hour\":0,\"minute\":12,\"second\":5}";
+    const short = [_]u8{ 0x55, 0x55, 0x07, 8, 1, 0x07, 0xEA, 10, 20, 0, 12, 5 };
+    const long = [_]u8{ 0x55, 0x55, 0x07, 9, 8, 1, 0x07, 0xEA, 10, 20, 0, 12, 5 };
+
+    // The short form is done: one frame, and the page hears ok.
+    try capture.push(.printer_config2, 1, &.{ 1, 1 });
+    {
+        const response = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/printer/clock", .query = query, .body = body });
+        defer if (response.owned) gpa.free(response.body);
+        try std.testing.expectEqual(std.http.Status.ok, response.status);
+        try std.testing.expectEqualSlices(u8, &short, capture.written.items[0..short.len]);
+        try std.testing.expectEqual(short.len + 3, capture.written.items.len);
+    }
+    // The short form refused, the long one done.
+    capture.written.clearRetainingCapacity();
+    try capture.push(.printer_config2, 1, &.{ 1, 0 });
+    try capture.push(.printer_config2, 1, &.{ 8, 1 });
+    {
+        const response = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/printer/clock", .query = query, .body = body });
+        defer if (response.owned) gpa.free(response.body);
+        try std.testing.expectEqual(std.http.Status.ok, response.status);
+        try std.testing.expectEqualSlices(u8, &long, capture.written.items[short.len + 3 ..][0..long.len]);
+    }
+    // Both refused: the page hears ClockRefused, not "set". The echo in the
+    // first byte used to read as done.
+    capture.written.clearRetainingCapacity();
+    try capture.push(.printer_config2, 1, &.{ 1, 0 });
+    try capture.push(.printer_config2, 1, &.{ 8, 0 });
+    {
+        const response = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/printer/clock", .query = query, .body = body });
+        defer if (response.owned) gpa.free(response.body);
+        try std.testing.expectEqual(std.http.Status.bad_request, response.status);
+        try std.testing.expect(std.mem.indexOf(u8, response.body, "ClockRefused") != null);
+    }
+    // A month 13 never reaches the printer.
+    capture.written.clearRetainingCapacity();
+    {
+        const response = try http.dispatch(.{
+            .io = std.testing.io,
+            .method = .POST,
+            .path = "/api/printer/clock",
+            .query = query,
+            .body = "{\"conn\":\"usb\",\"addr\":\"capture\",\"year\":2026,\"month\":13,\"day\":20,\"hour\":0,\"minute\":12,\"second\":5}",
+        });
+        defer if (response.owned) gpa.free(response.body);
+        try std.testing.expectEqual(std.http.Status.bad_request, response.status);
+        try std.testing.expectEqual(@as(usize, 0), capture.written.items.len);
+    }
+}
+
+test "copies on a B-series printer are the job sent once per copy" {
+    // The B-series sequence has no copy count, so two copies are two jobs.
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    const http = try mountCaptured(&ctx);
+    var capture = Capture{ .allocator = gpa };
+    defer capture.deinit();
+    capture_for_open = &capture;
+    defer capture_for_open = null;
+    try resetCapture(&capture);
+    try pushJob(&capture);
+
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    const response = try http.dispatch(.{
+        .io = std.testing.io,
+        .method = .POST,
+        .path = "/api/print",
+        .query = query,
+        .body = "{\"width\":48,\"height\":8,\"fields\":[{\"text\":\"X\",\"x\":0,\"y\":0,\"size\":8}],\"conn\":\"usb\",\"addr\":\"capture\",\"model\":\"b21\",\"density\":3,\"copies\":2}",
+    });
+    defer if (response.owned) gpa.free(response.body);
+    try std.testing.expectEqual(std.http.Status.ok, response.status);
+    var seen: [64]u8 = undefined;
+    const job = commandsWritten(&capture, &seen);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, job.types, &.{@backingInt(packet.Request.start_print)}));
+    try std.testing.expect(job.quantity == null);
+
+    // A hundred copies is refused before anything reaches the printer.
+    const many = try http.dispatch(.{
+        .io = std.testing.io,
+        .method = .POST,
+        .path = "/api/print",
+        .query = query,
+        .body = "{\"width\":48,\"height\":8,\"fields\":[{\"text\":\"X\",\"x\":0,\"y\":0,\"size\":8}],\"conn\":\"usb\",\"addr\":\"capture\",\"model\":\"b21\",\"density\":3,\"copies\":100}",
+    });
+    defer if (many.owned) gpa.free(many.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, many.status);
+    try std.testing.expect(std.mem.indexOf(u8, many.body, "BadCopies") != null);
 }
