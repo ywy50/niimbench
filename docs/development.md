@@ -54,7 +54,7 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 
 `main` builds a context on the general-purpose allocator, loads the patch, and either serves HTTP or prints one image. `ctx.deinit` disposes fibers from last to first.
 
-Serving runs one at a time. `runServe` takes an exclusive `flock` on `.niimbench.lock` in the working directory before the listener exists, so a second start prints the pid that holds it and exits with `error.AlreadyServing` rather than binding a second port. The kernel releases the lock when the process ends however it ends, so there is no stale lock to clear. Stray servers are worth preventing: each has its own port and its own session token, and a page left open on an old one looks like the page just built.
+Serving runs one at a time. `runServe` takes an exclusive `flock` on `.niimbench.lock` in the working directory before the listener exists, so a second start never binds a second port. A second start that may open a browser, which is the default, opens the running server's page from the address in `.niimbench.token` and exits 0: that is what a second click on a launcher means. A second start with `--no-open` prints the pid that holds the lock and exits 1, as a script expects. The kernel releases the lock when the process ends however it ends, so there is no stale lock to clear. Stray servers are worth preventing: each has its own port and its own session token, and a page left open on an old one looks like the page just built.
 
 The HTTP listener and the bytes sent to the printer are process effects. They are not Cordis effects. Stopping the process closes the listener. A print that has already reached `start_print` finishes with `end_print`.
 

@@ -69,6 +69,16 @@
        too narrow for one line wraps them as a group, so Print never ends up
        alone at the start of a line. */
     .header-end { display: flex; align-items: center; gap: 1rem; min-width: 0; margin-left: auto; }
+    /* The cogwheel menu: a <details> whose items drop below its right edge. */
+    .menu { position: relative; padding: 0; background: none; border: 0; box-shadow: none; }
+    .menu[open] > summary { margin-bottom: 0; }
+    .menu summary { list-style: none; cursor: pointer; padding: 0.25rem 0.5rem; border: 1px solid var(--line-strong); border-radius: 0.4rem; font-size: 1rem; line-height: 1.2; }
+    .menu summary::-webkit-details-marker { display: none; }
+    .menu-items { position: absolute; right: 0; top: calc(100% + 0.3rem); z-index: 10; display: grid; min-width: 12rem; padding: 0.3rem; background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: var(--shadow); }
+    .menu-items button { text-align: left; border: 0; background: none; }
+    .menu-items button:hover { background: var(--surface-2); }
+    /* After Quit: the page says the server is gone instead of failing on every click. */
+    .stopped { max-width: 32rem; margin: 4rem auto; padding: 0 1rem; }
     /* The printer and its last job open the Label and printer panel. On the
        header they were easy to overlook. */
     .printer-status .state { margin: 0; }
@@ -370,6 +380,13 @@
     <!-- `form` lets Print submit the form it is not inside. -->
     <label class="copies" title="how many of this label to print, 1 to 99">Copies <input type="number" id="copies" min="1" max="99" step="1" value="1"></label>
     <button type="submit" form="label" id="print" class="primary" title="print the label (Ctrl+Enter in a text field)">Print</button>
+    <!-- App actions, out of the way of a stray click: Quit also asks first. -->
+    <details class="menu" id="app-menu">
+      <summary title="niimbench menu" aria-label="niimbench menu">⚙</summary>
+      <div class="menu-items">
+        <button type="button" id="quit">Quit niimbench…</button>
+      </div>
+    </details>
     </div>
   </header>
   <form id="label">
@@ -3101,6 +3118,40 @@
         refreshPrinterStatus();
         button.disabled = false;
       }
+    });
+
+    // The server stops when no page has talked to it for its idle time, 30
+    // minutes unless started otherwise. An open page checks in once a minute,
+    // so only a closed one lets it stop. A hidden tab's timer still fires
+    // about once a minute.
+    window.setInterval(() => {
+      api("/api/health").catch(() => {});
+    }, 60000);
+
+    // The cogwheel menu closes on a click anywhere else, or Escape.
+    const appMenu = document.querySelector("#app-menu");
+    document.addEventListener("click", (event) => {
+      if (appMenu.open && !appMenu.contains(event.target)) appMenu.open = false;
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") appMenu.open = false;
+    });
+
+    // Quit stops the server after asking. The page then says so, instead of
+    // every later click failing against a server that is gone.
+    document.querySelector("#quit").addEventListener("click", async () => {
+      appMenu.open = false;
+      if (!window.confirm("Quit niimbench? Printing stops until you start it again.")) return;
+      try {
+        await post("/api/quit", {});
+      } catch (error) {
+        // The server may close before the answer arrives; it is gone either way.
+      }
+      document.body.replaceChildren();
+      const note = document.createElement("main");
+      note.className = "stopped";
+      note.innerHTML = "<h1>niimbench has stopped</h1><p>Start it again to keep working. You can close this tab.</p>";
+      document.body.append(note);
     });
 
     // The printer's date button prints its own clock, which counts from 1970

@@ -10,6 +10,12 @@ Open that URL. The browser stores the token in a cookie and lands on `http://127
 
 The page opens with one text field that says `niimbench`, centred on the label in Fira Sans Bold at the largest size up to 32 dots that fits across the roll. The preview is the grayscale the printer will get. `POST /api/render` and `POST /api/print` share that drawing path.
 
+## Stop and start again
+
+- **Quit** is in the ⚙ menu at the top right. It asks first, then stops the server, and the page says so.
+- **Closing the tab is enough.** An open page checks in once a minute; when none has for 30 minutes, the server stops by itself. Start it with `--idle-minutes N` for another time, or `--idle-minutes 0` to keep it running.
+- **Starting niimbench again while it runs** opens the running one in the browser instead of a second server. With `--no-open` it says what is running and exits instead.
+
 ## Arrange the panels
 
 The page is four panels on a grid: **Preview**, **Label and printer**, **Text** and **Image**. Drag a panel by its title to move it, and drag the striped corner at its bottom right to resize it. Both snap to the grid, which is 24 columns across the window.
