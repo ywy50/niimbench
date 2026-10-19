@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
 ### Changed
 
 - On a D11 or D110 the editor lays out on the whole label, 96×320 for a 12×40 roll, and hatches the last 2 mm that the printer leaves blank for its gap sensor. Width and Height show the whole label. A print sends all but those rows, as before.
@@ -139,7 +141,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/ywy50/niimbench/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ywy50/niimbench/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/ywy50/niimbench/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ywy50/niimbench/compare/v0.1.0...v0.2.0
