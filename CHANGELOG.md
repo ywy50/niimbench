@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-19
+
 ### Added
 
 - `make trace` prints the running server's log. The server writes its URL, token included, to `.niimbench.token` at startup, readable only by its owner, so the log no longer needs the token copied from the terminal.
@@ -114,6 +116,7 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/ywy50/niimbench/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ywy50/niimbench/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ywy50/niimbench/releases/tag/v0.1.0
