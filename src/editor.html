@@ -78,7 +78,7 @@
     /* The printer's line, with its one printer action at the right end. */
     .printer-status .status-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
     .printer-status .status-row .state { min-width: 0; }
-    #set-clock { flex: none; padding: 0.22rem 0.5rem; font-size: 0.72rem; }
+    #sync-clock { flex: none; padding: 0.22rem 0.5rem; font-size: 0.72rem; }
     .printer-status .printers-title { color: var(--ink); }
     #status {
       min-height: 0; min-width: 0; margin: 0; max-width: 24rem; padding: 0.18rem 0.7rem;
@@ -400,7 +400,7 @@
             <span class="dot" aria-hidden="true"></span>
             <span id="printer-state-text">No address yet</span>
           </p>
-          <button type="button" id="set-clock" title="set the printer's clock, which its date button prints, to this computer's time and time zone">Set clock</button>
+          <button type="button" id="sync-clock" title="copy this computer's date, time and time zone to the printer's clock, which its date button prints">Sync clock</button>
         </div>
         <p id="printer-last" class="last" aria-live="polite" hidden></p>
       </div>
@@ -3106,14 +3106,14 @@
     // The printer's date button prints its own clock, which counts from 1970
     // until something sets it. The page sends its own local time: the browser
     // knows this machine's time zone, and the printer keeps none.
-    document.querySelector("#set-clock").addEventListener("click", async () => {
+    document.querySelector("#sync-clock").addEventListener("click", async () => {
       const addr = document.querySelector("#addr").value;
       if (!addr) {
         status.textContent = "pick a printer first";
         return;
       }
       const now = new Date();
-      status.textContent = "setting the printer clock";
+      status.textContent = "syncing the printer clock";
       try {
         const response = await post("/api/printer/clock", {
           conn: document.querySelector("#conn").value,
@@ -3126,9 +3126,9 @@
           second: now.getSeconds(),
         });
         const payload = await readJson(response);
-        status.textContent = payload.error ? "clock not set: " + payload.error : "printer clock set to " + now.toLocaleString();
+        status.textContent = payload.error ? "clock not synced: " + payload.error : "printer clock synced to " + now.toLocaleString();
       } catch (error) {
-        status.textContent = "clock not set: " + error.message;
+        status.textContent = "clock not synced: " + error.message;
       }
     });
 
