@@ -12,13 +12,14 @@ SIZE ?= 1600x1000
 DRIVE_OUT ?= zig-out/drive
 
 .DEFAULT_GOAL := run
-.PHONY: help test build run serve print labels lint protocol-test view-test box-test panel-test canvas-test trace-test stray-test drive
+.PHONY: help test build run serve trace print labels lint protocol-test view-test box-test panel-test canvas-test trace-test stray-test drive
 
 help:
 	@printf '%s\n' \
 		'TARGETS' \
 		'  make                 serve the editor and open it' \
 		'  make serve           serve on 127.0.0.1 without opening a browser' \
+		'  make trace           print the log of the server running in this checkout' \
 		'  make test            every check below, then zig build test' \
 		'  make build           zig build' \
 		'  make print           print a binary P5 PGM (see PRINT)' \
@@ -56,6 +57,10 @@ run:
 
 serve:
 	$(ZIG) build run -- --no-open $(if $(PORT),--port $(PORT),) $(ARGS)
+
+trace:
+	@test -r .niimbench.token || { echo "no .niimbench.token here: start the server with make or make serve"; exit 1; }
+	@curl -fsS "$$(sed 's|/?token=|/api/trace?token=|' .niimbench.token)"
 
 build:
 	$(ZIG) build $(ARGS)

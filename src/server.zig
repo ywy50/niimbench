@@ -1197,6 +1197,25 @@ pub fn requireJsonObject(allocator: std.mem.Allocator, json: []const u8) !void {
     if (parsed.value != .object) return error.BadJson;
 }
 
+/// The startup URL, token included, for a reader that did not see stdout:
+/// `make trace`, or an agent. Owner-only, like the browser's cookie store that
+/// already holds the same token. A web page cannot read a file, so the token
+/// still keeps other sites off the routes.
+pub const token_path = ".niimbench.token";
+
+/// Delete, then create exclusively: a leftover file keeps its old mode under
+/// `O_CREAT`, and a symlink planted at the path is refused instead of followed.
+fn writeTokenFile(io: std.Io, dir: std.Io.Dir, url: []const u8) !void {
+    dir.deleteFile(io, token_path) catch |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    };
+    try dir.writeFile(io, .{ .sub_path = token_path, .data = url, .flags = .{
+        .exclusive = true,
+        .permissions = .fromMode(0o600),
+    } });
+}
+
 pub fn serve(service: *HttpService, io: std.Io, open_browser: bool) !void {
     const address = try std.Io.net.IpAddress.parse(service.host, service.port);
     var listener = try address.listen(io, .{ .reuse_address = true });
@@ -1211,6 +1230,8 @@ pub fn serve(service: *HttpService, io: std.Io, open_browser: bool) !void {
     var stdout_file: std.Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
     try stdout_file.interface.writeAll(url);
     try stdout_file.interface.flush();
+    // The server still runs without the file; only `make trace` needs it.
+    writeTokenFile(io, .cwd(), url) catch |err| std.log.warn("{s}: {s}", .{ token_path, @errorName(err) });
     if (open_browser) openBrowser(io, url[0 .. url.len - 1]);
 
     while (true) {
@@ -2577,4 +2598,20 @@ test "the editor records every step of its protocol" {
     const list_start = std.mem.indexOf(u8, page_html, "const tracedSteps = [") orelse return error.ProtocolMechanismMissing;
     const list_end = std.mem.indexOfPos(u8, page_html, list_start, "];") orelse return error.ProtocolMechanismMissing;
     try std.testing.expect(std.mem.indexOf(u8, page_html[list_start..list_end], "\"") != null);
+}
+
+test "the token file replaces a stale one and only its owner can read it" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    // A file from an older run, readable by everyone, must not keep its mode.
+    try tmp.dir.writeFile(io, .{ .sub_path = token_path, .data = "stale", .flags = .{ .permissions = .fromMode(0o644) } });
+
+    const url = "http://127.0.0.1:8080/?token=abc\n";
+    try writeTokenFile(io, tmp.dir, url);
+
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings(url, try tmp.dir.readFile(io, token_path, &buf));
+    const stat = try tmp.dir.statFile(io, token_path, .{});
+    try std.testing.expectEqual(@as(std.posix.mode_t, 0o600), stat.permissions.toMode() & 0o777);
 }
