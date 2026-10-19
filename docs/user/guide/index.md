@@ -26,7 +26,7 @@ A window 52rem (832 pixels) wide or narrower has no room for a grid. There the p
 
 ## Pick a label size
 
-**Label** lists the die-cut rolls for the selected **Model**. B1 and B21 share one list, D11 and D110 share another, and B18 has its own. Choosing a roll writes the width and height. The page opens on the roll that model ships with: 50×30 mm for B1 and B21.
+**Label** lists the die-cut rolls for the selected **Model**. B1 and B21 share one list, D11 and D110 share another, and B18 has its own. Choosing a roll writes the width and height of the whole label. On a D11 or D110 the last 2 mm of every label are hatched in the preview: the printer leaves them blank, because its gap sensor needs them to find the next label. Center and Fit centre on the whole label, so centred text is centred on the paper, and text that reaches the hatched strip is marked clipped. The page opens on the roll that model ships with: 50×30 mm for B1 and B21.
 
 A new roll — another **Model**, another **Label**, or a typed width or height — keeps the text on it. A field the new roll would cut off keeps its place relative to the roll and gets smaller until the whole field fits, so switching from a B21 to a D11 does not leave the text off the edge. A field that was already clipped on the old roll is left as it is, and **Undo** puts the roll and the fields back together.
 

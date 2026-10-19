@@ -393,9 +393,14 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
         return composeError(service.allocator, err, size.width, size.height);
     };
     defer service.allocator.free(gray.pixels);
+    // A composed body is the whole label, and the printer gets all of it but
+    // the model's page margin off the end: the gap sensor needs those rows
+    // blank to find the next label, and a full-height page feeds that label
+    // out blank. Raw `pixels_b64` is the page itself and goes as sent.
+    const rows = if (job.pixels_b64.len == 0) gray.height -| model.pageMargin() else gray.height;
     if (tracer(service)) |t| {
-        t.info("print", "{d}x{d} dots, {d} field(s), density {d}, {s} {s}", .{
-            gray.width, gray.height, job.fields.len, job.density, job.conn, job.addr,
+        t.info("print", "{d}x{d} dots, {d} rows printed, {d} field(s), density {d}, {s} {s}", .{
+            gray.width, gray.height, rows, job.fields.len, job.density, job.conn, job.addr,
         });
         // Where each field was when the job left: a label printed off-centre
         // is then a number to compare with the preview, not a photo.
@@ -410,9 +415,9 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
         model,
         job.conn,
         job.addr,
-        gray.pixels,
+        gray.pixels[0 .. gray.width * rows],
         gray.width,
-        gray.height,
+        rows,
         job.density,
         tracer(service),
     ) catch |err| {
@@ -421,7 +426,7 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
         if (tracer(service)) |t| t.failure("print", "{s} {s} model={s} failed: {s}", .{ job.conn, job.addr, job.model, @errorName(err) });
         return errorResponse(service.allocator, .bad_request, @errorName(err), gray.width, gray.height);
     };
-    if (tracer(service)) |t| t.info("print", "sent {d}x{d}", .{ gray.width, gray.height });
+    if (tracer(service)) |t| t.info("print", "sent {d}x{d}", .{ gray.width, rows });
     service.ctx.emit("print/done");
     return .{ .body = "{\"ok\":true}" };
 }
@@ -456,10 +461,9 @@ pub fn renderLabel(service: *HttpService, req: RequestView) !Response {
 }
 
 fn compose(service: *HttpService, job: LabelRequest) !raster.Gray {
-    // The page is printed as it is asked for. The margin that keeps the gap
-    // sensor happy is taken off where a roll's size is resolved — see
-    // `pxHeight` — so a caller asks for the page it wants and gets that page.
-    // Subtracting it here as well would take it off twice.
+    // The page is the whole label, as the preview shows it. A print leaves the
+    // model's page margin off its end (`printJob`); compose does not, so the
+    // preview and the print are the same frame.
     const height = job.height;
     // The protocol's own limit, a 16-bit word each way, checked before any
     // path multiplies the two: past it the product can wrap, and in a safe
@@ -619,8 +623,8 @@ pub fn labelSizes(service: *HttpService, _: RequestView) !Response {
         const model = @field(raster.Model, name);
         if (!first_model) try out.append(service.allocator, ',');
         first_model = false;
-        try out.print(service.allocator, "\"{s}\":{{\"max_width\":{d},\"max_density\":{d},\"default\":\"{s}\",\"sizes\":[", .{
-            name, model.maxWidth(), model.maxDensity(), raster.defaultLabelId(model),
+        try out.print(service.allocator, "\"{s}\":{{\"max_width\":{d},\"max_density\":{d},\"default\":\"{s}\",\"page_margin\":{d},\"sizes\":[", .{
+            name, model.maxWidth(), model.maxDensity(), raster.defaultLabelId(model), model.pageMargin(),
         });
         var first_size = true;
         for (raster.label_sizes) |size| {
@@ -790,21 +794,13 @@ fn pxWidth(model: raster.Model, mm: labelLookup) usize {
     return @min(@as(usize, mm.width_mm) * raster.dots_per_mm, model.maxWidth());
 }
 
-/// The height the caller should lay out on: the roll less the model's page
-/// margin. This is the one place the margin is taken off. `compose` prints the
-/// page it is asked for, so the page's own size is what it draws, and a preview
-/// is the same frame as the print.
-///
-/// The page and the roll are different numbers, and mixing them is how a
-/// negative box coordinate happens: a 12x40 roll is 320 dots tall, the page on
-/// it is 304, and a caller that lays out against 320 builds a view taller than
-/// the picture.
+/// The height the caller lays out on: the whole label, 320 dots on a 12x40
+/// roll. The model's page margin is not taken off here but where a print
+/// leaves (`printJob`), so the editor's centre is the paper's centre. Laying out
+/// on the 304 printed rows centred everything 8 dots short of the middle.
 fn pxHeight(model: raster.Model, mm: labelLookup) usize {
-    const roll = if (labelIdFor(model, mm.width_mm, mm.height_mm)) |id|
-        raster.sizePixels(raster.findLabelSize(id).?, model).height
-    else
-        @as(usize, mm.height_mm) * raster.dots_per_mm;
-    return roll -| model.pageMargin();
+    if (labelIdFor(model, mm.width_mm, mm.height_mm)) |id| return raster.sizePixels(raster.findLabelSize(id).?, model).height;
+    return @as(usize, mm.height_mm) * raster.dots_per_mm;
 }
 
 /// Where a barcode is resolved. The catalogue compiled into the binary is the
@@ -1610,9 +1606,9 @@ test "editor page renders fields through the server" {
     // and nothing else: orientation is how the editor draws the page and is
     // never sent.
     try std.testing.expect(std.mem.indexOf(u8, page_html, "rotation: model.rotation || 0") != null);
-    // The page size and the picture of it move together: a form reading 320
-    // while the printer takes 304 lays the fields out against a label that will
-    // never exist, and they come out clipped.
+    // The page size and the picture of it move together: a form reading one
+    // height while the picture is another lays the fields out against a label
+    // that does not exist, and they come out clipped.
     try std.testing.expect(std.mem.indexOf(u8, page_html, "function usePage(") != null);
     // The page sizes its field boxes from the renderer's own metrics, marks
     // the fields the renderer will clip, and can save and load a layout.
@@ -2622,4 +2618,22 @@ test "the token file replaces a stale one and only its owner can read it" {
     try std.testing.expectEqualStrings(url, try tmp.dir.readFile(io, token_path, &buf));
     const stat = try tmp.dir.statFile(io, token_path, .{});
     try std.testing.expectEqual(@as(std.posix.mode_t, 0o600), stat.permissions.toMode() & 0o777);
+}
+
+test "every label size is laid out whole, whether the menu or the roll gave it" {
+    // The size menu and a roll read must hand the editor the same page, the
+    // whole label, so its centre is the paper's on every roll and model. The
+    // roll read used to take the D-series margin off and the menu did not: one
+    // 12x40 was 304 dots and the other 320.
+    inline for (@typeInfo(raster.Model).@"enum".field_names) |name| {
+        const model = @field(raster.Model, name);
+        for (raster.label_sizes) |size| {
+            if (!raster.sizeFits(size, model)) continue;
+            const mm: labelLookup = .{ .width_mm = size.width_mm, .height_mm = size.height_mm, .source = "catalogue" };
+            const whole = raster.sizePixels(size, model);
+            try std.testing.expectEqual(whole.height, pxHeight(model, mm));
+            try std.testing.expectEqual(whole.width, pxWidth(model, mm));
+            try std.testing.expectEqual(@as(usize, size.height_mm) * raster.dots_per_mm, whole.height);
+        }
+    }
 }
