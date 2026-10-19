@@ -264,18 +264,30 @@ fn resetCapture(capture: *Capture) !void {
     try capture.pushOk(.end_print, 1);
 }
 
+/// Expand the row packets the way the printer does, a blank run and a repeat
+/// count included, and compare every row with the drawn page.
 fn expectPackedRows(capture: *Capture, drawn: raster.Gray) !void {
     const row_len = raster.packedRowBytes(drawn.width);
     var off: usize = 0;
     var row: usize = 0;
     while (off + 7 <= capture.written.items.len) {
         const pkt_len = @as(usize, capture.written.items[off + 3]) + 7;
-        if (capture.written.items[off + 2] == @backingInt(packet.Request.image)) {
-            const payload = capture.written.items[off + 4 .. off + pkt_len];
-            var expect_row: [16]u8 = undefined;
-            raster.packRow(drawn.pixels[row * drawn.width ..][0..drawn.width], expect_row[0..row_len]);
-            try std.testing.expectEqualSlices(u8, expect_row[0..row_len], payload[6..][0..row_len]);
-            row += 1;
+        const kind = capture.written.items[off + 2];
+        const payload = capture.written.items[off + 4 .. off + pkt_len];
+        const blank = kind == @backingInt(packet.Request.empty_row);
+        if (blank or kind == @backingInt(packet.Request.image)) {
+            try std.testing.expectEqual(row, @as(usize, payload[0]) << 8 | payload[1]);
+            const repeat: usize = if (blank) payload[2] else payload[5];
+            for (0..repeat) |_| {
+                var expect_row: [16]u8 = undefined;
+                raster.packRow(drawn.pixels[row * drawn.width ..][0..drawn.width], expect_row[0..row_len]);
+                if (blank) {
+                    try std.testing.expect(std.mem.allEqual(u8, expect_row[0..row_len], 0));
+                } else {
+                    try std.testing.expectEqualSlices(u8, expect_row[0..row_len], payload[6..][0..row_len]);
+                }
+                row += 1;
+            }
         }
         off += pkt_len;
     }
