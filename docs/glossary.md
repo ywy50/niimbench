@@ -28,11 +28,11 @@
 
 **Alignment.** What a field's `x` refers to: the left edge, the centre, or the right edge of the line. The line is measured after its `key` resolves.
 
-**Clipped.** A field whose text would cross the right or bottom edge. The renderer draws the part that fits and the editor marks the row.
+**Clipped.** A field whose text would cross any edge of the printable area: the label's sides, or on the D-series the unprinted strip at its end. The renderer draws the part that fits and the editor marks the row.
 
 **Transport.** An open USB serial port or BLE print channel with `read`, `write`, and `close`.
 
-**Finder.** A transport's scan for printers, the counterpart of its opener. `serial` and `bluetooth` each install one into the `devices` registry.
+**Finder.** A transport's scan for printers, the counterpart of its opener. `serial` and `bluetooth` each install one into the `devices` registry; on macOS `serial` installs nothing.
 
 **Found device.** One printer a scan confirmed: its connection and address, the model its head or name implies, and its model id. The editor's **Found Niimbot devices** list is `GET /api/devices`.
 

@@ -37,7 +37,7 @@ pub fn applyExampleSource(ctx: *cordis.Context) !void {
 
 `src/example_source.zig` is that plugin, complete, including its tests. `Sources.add` copies the name and the body; `Sources.remove` frees what the registry holds. The mark keeps its own copy of the name so the row can still be deleted after the plugin that added it is gone. `Sources.addOwned` skips the copies when the caller built the strings itself.
 
-Do not start the listener or open the printer inside `apply`. Those are process-lifetime and hardware effects. `main` calls `server.serve` after every fiber that can apply has applied.
+Do not start the listener or open the printer inside `apply`. Those are process-lifetime and hardware effects. `runServe` in `src/root.zig` calls `server.serve` after every fiber that can apply has applied.
 
 If `apply` returns an error, the kernel drops effects registered so far and leaves the fiber inactive.
 

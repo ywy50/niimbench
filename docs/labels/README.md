@@ -14,7 +14,7 @@ The printer heads this bench drives take these label widths: 12, 14 and 15 mm on
 
 ## Labels by size
 
-`paper` is the label type number the printer is told, and `bench` lists the models here that the vendor lists the label for. A dash in `bench` means no model this bench drives is on the label's machine list, but the size may still be printable if a roll measures that way.
+`paper` is the vendor's paper type for the roll; niimbench does not send it and always tells the printer label type 1, a gap label, and `bench` lists the models here that the vendor lists the label for. A dash in `bench` means no model this bench drives is on the label's machine list, but the size may still be printable if a roll measures that way.
 
 ### 12x40 mm
 

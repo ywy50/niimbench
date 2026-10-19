@@ -20,7 +20,7 @@ Print a binary PGM over USB:
 make print IMAGE=label.pgm ADDR=/dev/ttyACM0
 ```
 
-The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and the variables `PORT`, `IMAGE`, `ADDR`, `MODEL`, `CONN`, `DENSITY`, `ROTATE`, and `ARGS`. `ZIG` selects the compiler.
+The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and the variables `PORT`, `IMAGE`, `ADDR`, `MODEL`, `CONN`, `DENSITY`, `ROTATE`, `STEPS`, `SIZE`, `DRIVE_OUT`, `ARGS`, `ZIG`, which selects the compiler, and `BROWSER`.
 
 `label.pgm` is a binary P5 file: `P5`, width, height, maxval `255`, then one byte per pixel. `0` is black and `255` is white.
 
@@ -52,19 +52,19 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 
 ## Process lifetime
 
-`main` builds a context on the general-purpose allocator, loads the patch, and either serves HTTP or prints one image. `ctx.deinit` disposes fibers from last to first.
+`main` builds a context on the general-purpose allocator, loads the patch, and either serves HTTP or prints one image. `ctx.deinit` disposes fibers from last to first. A server stops when the page's **Quit** posts `/api/quit`, or when no request has arrived for `--idle-minutes`, 30 by default and 0 for never; `serve` wakes once a minute to check, returns, and the process prints which of the two it was.
 
-Serving runs one at a time. `runServe` takes an exclusive `flock` on `.niimbench.lock` in the working directory before the listener exists, so a second start never binds a second port. A second start that may open a browser, which is the default, opens the running server's page from the address in `.niimbench.token` and exits 0: that is what a second click on a launcher means. A second start with `--no-open` prints the pid that holds the lock and exits 1, as a script expects. The kernel releases the lock when the process ends however it ends, so there is no stale lock to clear. Stray servers are worth preventing: each has its own port and its own session token, and a page left open on an old one looks like the page just built.
+Serving runs one at a time. `runServe` takes an exclusive `flock` on `.niimbench.lock` in the working directory before the listener exists, so a second start never binds a second port. A second start that may open a browser, which is the default, opens the running server's page from the address in `.niimbench.token` and exits 0: that is what a second click on a launcher means. A second start with `--no-open`, or one that finds no `.niimbench.token` to read, prints the pid that holds the lock and exits 1, as a script expects. The kernel releases the lock when the process ends however it ends, so there is no stale lock to clear. Stray servers are worth preventing: each has its own port and its own session token, and a page left open on an old one looks like the page just built.
 
 The HTTP listener and the bytes sent to the printer are process effects. They are not Cordis effects. Stopping the process closes the listener. A print that has already reached `start_print` finishes with `end_print`.
 
 ## Throwaway servers
 
-A check or an agent never starts a server with `&`: a server started that way outlives whoever started it. `tools/with-server.sh COMMAND` starts one in a directory of its own, booted from [../tools/harness.patch.yml](../tools/harness.patch.yml) so no printer is reachable, runs the command with `NIIMBENCH_URL`, `NIIMBENCH_PID` and `NIIMBENCH_DIR` in its environment, and stops the server when the command ends. `make trace-test`, `make canvas-test` and `make drive` all run under it.
+A check or an agent never starts a server with `&`: a server started that way outlives whoever started it. `tools/with-server.sh COMMAND` starts one in a directory of its own, booted from [../tools/harness.patch.yml](../tools/harness.patch.yml) so no printer is reachable, runs the command with `NIIMBENCH_URL`, `NIIMBENCH_PID` and `NIIMBENCH_DIR` in its environment, and stops the server when the command ends. `make trace-test`, `make canvas-test`, `make screens-test`, `make drive` and the macOS CI job all run under it.
 
-The server cannot outlive the script. `with-server.sh` passes its own pid as `--parent`, and the server asks the kernel (`PR_SET_PDEATHSIG`) to send it `SIGKILL` when its parent exits, however the parent exits: a launcher killed outright, which never runs its cleanup, still takes its server with it. A `--parent` that is not the server's parent is refused at startup, before the lock is taken. `make stray-test` checks a finished command, a launcher killed with `SIGKILL`, and a wrong `--parent`.
+The server cannot outlive the script. `with-server.sh` passes its own pid as `--parent`, and on Linux the server asks the kernel (`PR_SET_PDEATHSIG`) to send it `SIGKILL` when its parent exits, however the parent exits; on macOS, which has no such call, it checks for its parent every 100 ms and exits when it is gone: a launcher killed outright, which never runs its cleanup, still takes its server with it. A `--parent` that is not the server's parent is refused at startup, before the lock is taken. `make stray-test` checks a finished command, a launcher killed with `SIGKILL`, and a wrong `--parent`.
 
-`make drive` loads the page in a headless browser and drives it with real mouse input. `STEPS=` names a steps file, whose API is at the top of [../tools/drive.js](../tools/drive.js); without one it opens the page, screenshots it into `zig-out/drive/`, and fails if the page threw. The browser runs under `setpriv --pdeathsig KILL`, so it dies with the driver.
+`make drive` loads the page in a headless browser and drives it with real mouse input. `STEPS=` names a steps file, whose API is at the top of [../tools/drive.js](../tools/drive.js); without one it opens the page, screenshots it into `zig-out/drive/`, and fails if the page threw. When `setpriv` is installed, the browser runs under `setpriv --pdeathsig KILL`, so it dies with the driver.
 
 ## CI and releases
 

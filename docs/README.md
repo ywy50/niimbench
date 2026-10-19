@@ -10,7 +10,7 @@ niimbench docs follow the DeepSeek Harness folder layout, scoped to this printer
 | [glossary.md](glossary.md) | reference | Terms used across these pages |
 | [testing.md](testing.md) | reference | What `make test` locks in |
 | [subsystems/](subsystems/README.md) | reference | Printer, HTTP, sources, trace, text |
-| [cookbook/](cookbook/README.md) | procedure | Adding a plugin |
+| [cookbook/](cookbook/README.md) | procedure | Adding a plugin, cutting a release |
 | [user/](user/index.md) | tutorial | Using the editor and the CLI |
 | [templates/](templates/README.md) | template | Loadable label JSON and a blank reference page |
 | [labels/](labels/README.md) | reference | Every label roll the vendor catalogues, by size and barcode |

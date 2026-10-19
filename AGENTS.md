@@ -4,30 +4,9 @@ niimbench is a Zig label bench. Every feature is a plugin. Read [docs/architectu
 
 ## Repository layout
 
-```
-src/            Zig sources, the embedded editor, and the embedded patch
-  cordis.zig    Context, fibers, inject, effects
-  plugins.zig   Plugin catalog
-  server.zig    HTTP routes and label composition
-  editor.html   Editor page
-  label.zig     Text layout: font, size, alignment, turning, clipping
-  font.zig      TrueType reader and rasteriser, and the font registry
-  fonts/        The embedded fonts, their licences, and their README
-  packet.zig    Niimbot frames
-  printer.zig   Print sequence
-  raster.zig    Grayscale packing and rotation
-  device.zig    The USB serial and Bluetooth openers, and the two finders
-  ble.zig       The BLE print channel, written through BlueZ
-  discovery.zig Found printers, the finder registry, the model lookup
-  dbus.zig      BlueZ over the system bus, for the finder and ble.zig
-  corebluetooth.zig  Bluetooth on macOS: the finder and the print channel
-  trace.zig     The in-memory log, published as the `trace` service
-docs/           Documentation (docs/AGENTS.md)
-tools/          The checks `make test` runs, and the label catalogue fetcher
-cordis.patch.yml  Boot list used when you run from this directory
-```
+The layout of the repository, file by file, is the table in [README.md](README.md#layout).
 
-`src/default.patch.yml` is the same boot list, compiled into the binary. Keep the two lists identical, including `inject`.
+`src/default.patch.yml`, compiled into the binary, and `cordis.patch.yml`, used when you run from this directory, are the same boot list. Keep the two identical, including `inject`.
 
 ## Commands
 
@@ -71,7 +50,7 @@ Zig is 0.17. `make test` is the check for a behavior change. Report the command 
 - `inject` in the patch must match `Plugin.inject`. A mismatch is `error.InjectMismatch`. A missing coeffect leaves the fiber inactive until the service appears.
 - Printer bytes on the wire are outside the effect system. Say so next to the send, and finish a job that has reached `start_print` with `end_print`.
 - A path that reaches a printer or reads a roll says what it asked for and how it ended, through the `trace` service. The log and its routes are [docs/subsystems/trace.md](docs/subsystems/trace.md).
-- **Never start a server with `&`; it outlives you.** Run a command against a throwaway server with `tools/with-server.sh`, and look at the page with `make drive`. The kernel kills that server when its launcher ends. [docs/development.md](docs/development.md#throwaway-servers).
+- **Never start a server with `&`; it outlives you.** Run a command against a throwaway server with `tools/with-server.sh`, and look at the page with `make drive`. The server dies when its launcher ends: the kernel kills it on Linux, and it watches for its parent on macOS. [docs/development.md](docs/development.md#throwaway-servers).
 - **Run `make trace-test` before guessing.** It builds, runs the page once, prints the trace both sides wrote and fails if a declared step is missing. This is enforced, not advised: `make protocol-test` checks the protocol without a browser, so a step that runs without recording itself fails `make test` and names the line to add. Nothing depends on remembering.
 - Preview and print share `compose` in `src/server.zig`. The page does not send its own preview pixels for a field label.
 - The listener binds `127.0.0.1` only. Every route requires the session token, as `?token=` or the `niimbench` cookie. `GET /?token=` redirects to `/`.
