@@ -13,7 +13,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ### Added
 
-- **Quit**, in a ⚙ menu at the top right, stops the server after asking.
+- **Quit niimbench…**, in a menu on the **niimbench** name at the top left, stops the server after asking. **Reset panels** moved into the same menu, so the header's right side holds only what printing needs.
 - The server stops by itself when no page has been open for 30 minutes. `--idle-minutes N` changes the time, and 0 keeps it running.
 
 ### Changed

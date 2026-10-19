@@ -20,7 +20,7 @@ The `editor` plugin injects `http` and registers `GET /`. Disposing that fiber r
 | POST | `/api/label/track` | What each field draws, and where it came from |
 | POST | `/api/label/roll` | The roll in the printer, sized for the model |
 | POST | `/api/printer/clock` | Set the printer's clock to the time the page sends |
-| POST | `/api/quit` | Stop the server, from the page's cogwheel menu |
+| POST | `/api/quit` | Stop the server, from the menu on the page's niimbench name |
 | GET | `/api/trace` | What has happened so far, one line per event |
 | POST | `/api/trace` | A line from the page |
 | POST | `/api/render` | Draw fields onto a grayscale label |

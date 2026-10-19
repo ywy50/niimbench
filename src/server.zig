@@ -1340,7 +1340,9 @@ pub fn serve(service: *HttpService, io: std.Io, open_browser: bool, idle_minutes
     try stdout_file.interface.flush();
     // The server still runs without the file; only `make trace` needs it.
     writeTokenFile(io, .cwd(), url) catch |err| std.log.warn("{s}: {s}", .{ token_path, @errorName(err) });
-    if (open_browser) openBrowser(io, url[0 .. url.len - 1]);
+    var opener = if (open_browser) openBrowser(io, url[0 .. url.len - 1]) else null;
+    // The opener finished long before; awaiting it frees it.
+    defer if (opener) |*task| task.await(io);
 
     var last_request = std.Io.Clock.awake.now(io);
     while (true) {
@@ -1495,9 +1497,11 @@ fn queryValue(query: []const u8, name: []const u8) ?[]const u8 {
     return null;
 }
 
-fn openBrowser(io: std.Io, url: []const u8) void {
-    const future = io.concurrent(openBrowserTask, .{ io, url }) catch return;
-    _ = future;
+/// Start the browser beside the server. The caller awaits the returned task
+/// before it returns: left alone, the task's memory outlived the server,
+/// which the allocator reported as a leak once Quit let `serve` return.
+fn openBrowser(io: std.Io, url: []const u8) ?std.Io.Future(void) {
+    return io.concurrent(openBrowserTask, .{ io, url }) catch null;
 }
 
 fn openBrowserTask(io: std.Io, url: []const u8) void {
