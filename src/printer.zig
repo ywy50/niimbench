@@ -45,6 +45,11 @@ pub const Client = struct {
     /// its protocol version and sends the D-series sequence that version
     /// takes. The caller that knows the model sets it.
     d_series: bool = false,
+    /// How many copies the D-series printer prints of the page: the job's
+    /// page count and the page's copy count on protocol 4, `PrintQuantity`
+    /// below it. A B-series sequence has no count, so its caller repeats the
+    /// job instead and leaves this at 1.
+    copies: u16 = 1,
 
     pub fn init(allocator: std.mem.Allocator, transport: Transport) Client {
         return .{ .allocator = allocator, .transport = transport };
@@ -64,6 +69,18 @@ pub const Client = struct {
     pub fn readBarcode(self: *Client) !?[]u8 {
         const response = try self.transceive(@backingInt(packet.Request.get_rfid), &.{1}, 1);
         return barcodeFromRfid(self.allocator, response.data);
+    }
+
+    /// A wall-clock time with no zone: the printer keeps none, so the caller
+    /// sends its own local time.
+    pub const Clock = struct { year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8 };
+
+    /// Set the printer's clock, which its date button prints and which starts
+    /// at 1970 until something sets it. `PrinterConfig2` (`0x07`, answered
+    /// `0x08`): item 8 (time), action 1 (set), then year (u16), month, day,
+    /// hour, minute and second, as upstream sends it.
+    pub fn setClock(self: *Client, t: Clock) !bool {
+        return self.command(.printer_config2, &.{ 8, 1, @intCast(t.year >> 8), @intCast(t.year & 0xFF), t.month, t.day, t.hour, t.minute, t.second }, 1);
     }
 
     pub fn printGray(
@@ -166,7 +183,7 @@ pub const Client = struct {
         };
         const dim_ok = try self.command(.set_dimension, &dim, 1);
         if (self.d_series) {
-            const quantity_ok = try self.command(.set_quantity, &.{ 0, 1 }, 1);
+            const quantity_ok = try self.command(.set_quantity, &.{ @intCast(self.copies >> 8), @intCast(self.copies & 0xFF) }, 1);
             self.note("answers density={d} type={d} start={d} clear={d} page={d} dimension={d} quantity={d}", .{
                 @intFromBool(density_ok), @intFromBool(type_ok), @intFromBool(start_ok),    @intFromBool(clear_ok),
                 @intFromBool(page_ok),    @intFromBool(dim_ok),  @intFromBool(quantity_ok),
@@ -181,13 +198,16 @@ pub const Client = struct {
 
     /// The setup of a page in upstream's D110M_V4 sequence, for a D-series
     /// printer on protocol 4: label type before density, a 9-byte PrintStart
-    /// that gives the job one page, no PageStart, and a 13-byte SetPageSize
-    /// that gives the page one copy.
+    /// that gives the job its page count, no PageStart, and a 13-byte
+    /// SetPageSize that gives the page its copy count. One page printed
+    /// `copies` times is a job of `copies` pages.
     fn openPageV4(self: *Client, width: usize, height: usize, density: u8) !void {
+        const copies_hi: u8 = @intCast(self.copies >> 8);
+        const copies_lo: u8 = @intCast(self.copies & 0xFF);
         const type_ok = try self.command(.set_label_type, &.{1}, 16);
         const density_ok = try self.command(.set_density, &.{density}, 16);
         // Pages (u16), four zeros, page colour, speed, flag.
-        const start_ok = try self.command(.start_print, &.{ 0, 1, 0, 0, 0, 0, 0, 0, 0 }, 1);
+        const start_ok = try self.command(.start_print, &.{ copies_hi, copies_lo, 0, 0, 0, 0, 0, 0, 0 }, 1);
         // Upstream sends this without waiting: some of these printers drop
         // the first packet after PrintStart. An answer that does come is
         // skipped while the next command waits for its own.
@@ -195,18 +215,12 @@ pub const Client = struct {
         // Rows and columns as in the older sequence, then copies (u16), cut
         // height (u16), cut type, a zero, send-all and part height (u16).
         const dim = [_]u8{
-            @intCast((height >> 8) & 0xFF),
-            @intCast(height & 0xFF),
-            @intCast((width >> 8) & 0xFF),
-            @intCast(width & 0xFF),
-            0,
-            1,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
+            @intCast((height >> 8) & 0xFF), @intCast(height & 0xFF),
+            @intCast((width >> 8) & 0xFF),  @intCast(width & 0xFF),
+            copies_hi,                      copies_lo,
+            0,                              0,
+            0,                              0,
+            0,                              0,
             0,
         };
         const dim_ok = try self.command(.set_dimension, &dim, 1);
@@ -276,13 +290,15 @@ pub const Client = struct {
     }
 
     /// The first reading is the printer's leftover counter. Success is that
-    /// counter moving, or the print progress leaving 100 and returning with
-    /// the page at least 1. A reading that never changes is a skipped label.
+    /// counter moving by the job's copies, or the print progress leaving 100
+    /// and returning with the page at the copy count. A reading that never
+    /// changes is a skipped label. The polls allowed grow with the copies.
     fn waitForPage(self: *Client, io: ?std.Io) !void {
+        const target: u16 = if (self.d_series) self.copies else 1;
         var baseline: ?u16 = null;
         var saw_motion = false;
-        var tries: u8 = 0;
-        while (tries < print_status_polls) : (tries += 1) {
+        var tries: u32 = 0;
+        while (tries < @as(u32, print_status_polls) * target) : (tries += 1) {
             const status = self.printStatus() catch |err| switch (err) {
                 error.NoResponse => {
                     self.note("status: no answer", .{});
@@ -293,10 +309,10 @@ pub const Client = struct {
             };
             if (baseline == null) baseline = status.page;
             if (status.print_pct < 100) saw_motion = true;
-            const advanced = status.page > (baseline orelse 0);
-            const settled = saw_motion and status.page >= 1 and status.print_pct >= 100 and status.feed_pct >= 100;
-            // A counter past this page while the head is printing again is a
-            // second copy under way: the job asked for one.
+            const advanced = status.page >= (baseline orelse 0) + target;
+            const settled = saw_motion and status.page >= target and status.print_pct >= 100 and status.feed_pct >= 100;
+            // A counter past the last copy while the head is printing again is
+            // a copy the job did not ask for.
             if (advanced and status.print_pct < 100) {
                 if (self.trace) |t| t.warn("printer", "page {d} done and another copy started", .{status.page});
             }
@@ -736,6 +752,73 @@ test "a D-series printer on protocol 4 gets the V4 sequence: one page, one copy"
         try std.testing.expect(frame[0] != @backingInt(packet.Request.start_page));
         try std.testing.expect(frame[0] != @backingInt(packet.Request.allow_print_clear));
         try std.testing.expect(frame[0] != @backingInt(packet.Request.set_quantity));
+    }
+}
+
+test "copies go to a D-series printer as its own count, and the job waits for all of them" {
+    // Protocol 4: three copies are a job of three pages and a page of three
+    // copies. Below it: PrintQuantity 3. The job ends when the counter is 3.
+    const gpa = std.testing.allocator;
+    const ok = [_]u8{1};
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    {
+        var script = Script{ .allocator = gpa };
+        defer script.deinit();
+        try script.push(.connect, 1, &.{3});
+        try script.push(.printer_status_data, 16, &.{ 0x30, 0x30, 0x23, 0x28, 0x00, 0xc8, 0x00, 0x00, 0x00, 0x0a, 0x00, 0x03, 0x01, 0x12, 0xee, 0x00 });
+        try script.push(.set_label_type, 16, &ok);
+        try script.push(.set_density, 16, &ok);
+        try script.push(.start_print, 1, &ok);
+        try script.push(.set_dimension, 1, &ok);
+        try script.push(.end_page, 1, &ok);
+        try script.pushPage(0, 0, 0);
+        try script.pushPage(1, 100, 100);
+        try script.pushPage(2, 40, 0);
+        try script.pushPage(3, 100, 100);
+        try script.push(.end_print, 1, &ok);
+        var client = Client.init(gpa, scriptTransport(&script));
+        defer client.deinit();
+        client.d_series = true;
+        client.copies = 3;
+        try client.printGray(null, &pixels, 8, 1, 3);
+        var frames = try framesWritten(gpa, script.written.items);
+        defer frames.deinit(gpa);
+        try std.testing.expectEqualSlices(u8, &.{ 0x01, 9, 0, 3, 0, 0, 0, 0, 0, 0, 0 }, frames.items[4]);
+        try std.testing.expectEqualSlices(u8, &.{ 0x13, 13, 0, 1, 0, 8, 0, 3, 0, 0, 0, 0, 0, 0, 0 }, frames.items[6]);
+        // Four status reads: the job waited past pages 1 and 2 for page 3.
+        var polls: usize = 0;
+        for (frames.items[7..]) |frame| {
+            if (frame[0] == @backingInt(packet.Request.get_print_status)) polls += 1;
+        }
+        try std.testing.expectEqual(@as(usize, 4), polls);
+    }
+    {
+        var script = Script{ .allocator = gpa };
+        defer script.deinit();
+        try script.push(.connect, 1, &ok);
+        try script.push(.set_density, 16, &ok);
+        try script.push(.set_label_type, 16, &ok);
+        try script.push(.start_print, 1, &ok);
+        try script.push(.allow_print_clear, 16, &ok);
+        try script.push(.start_page, 1, &ok);
+        try script.push(.set_dimension, 1, &ok);
+        try script.push(.set_quantity, 1, &ok);
+        try script.push(.end_page, 1, &ok);
+        try script.pushPage(0, 0, 0);
+        try script.pushPage(3, 100, 100);
+        try script.push(.end_print, 1, &ok);
+        var client = Client.init(gpa, scriptTransport(&script));
+        defer client.deinit();
+        client.d_series = true;
+        client.copies = 3;
+        try client.printGray(null, &pixels, 8, 1, 3);
+        var frames = try framesWritten(gpa, script.written.items);
+        defer frames.deinit(gpa);
+        var quantity: ?[]const u8 = null;
+        for (frames.items) |frame| {
+            if (frame[0] == @backingInt(packet.Request.set_quantity)) quantity = frame;
+        }
+        try std.testing.expectEqualSlices(u8, &.{ 0x15, 2, 0, 3 }, quantity orelse return error.NoQuantity);
     }
 }
 

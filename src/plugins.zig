@@ -223,8 +223,12 @@ const Capture = struct {
     fn read(ptr: *anyopaque, buf: []u8) !usize {
         const self: *Capture = @ptrCast(@alignCast(ptr));
         if (self.pos >= self.inbound.items.len) return 0;
-        const n = @min(buf.len, self.inbound.items.len - self.pos);
-        @memcpy(buf[0..n], self.inbound.items[self.pos..][0..n]);
+        // One answer a read, as a printer gives them: handing over the whole
+        // script let one job's client swallow the answers queued for the next.
+        const rest = self.inbound.items[self.pos..];
+        const frame = if (rest.len >= 4) @as(usize, rest[3]) + 7 else rest.len;
+        const n = @min(buf.len, frame, rest.len);
+        @memcpy(buf[0..n], rest[0..n]);
         self.pos += n;
         return n;
     }
@@ -246,6 +250,12 @@ fn resetCapture(capture: *Capture) !void {
     capture.written.clearRetainingCapacity();
     capture.inbound.clearRetainingCapacity();
     capture.pos = 0;
+    try pushJob(capture);
+}
+
+/// The answers a scripted printer gives to one job, queued after any already
+/// there, so a test can script a second job.
+fn pushJob(capture: *Capture) !void {
     // A D-series job asks the protocol first. 1 is protocol 0: the older
     // sequence. A B-series job never asks, and skips past this answer.
     try capture.pushOk(.connect, 1);
@@ -445,4 +455,99 @@ test "serial registration is reverted when the fiber drops" {
     bluetooth.dispose();
     try std.testing.expect(registry.bluetooth == null);
     try std.testing.expect(devices.bluetooth == null);
+}
+
+fn mountCaptured(ctx: *cordis.Context) !*server.HttpService {
+    _ = try ctx.mount("printer", .{ .name = "printer", .apply = server.applyPrinter });
+    _ = try ctx.mount("transports", .{ .name = "transports", .apply = server.applyTransports });
+    _ = try ctx.mount("devices", .{ .name = "devices", .apply = server.applyDevices });
+    _ = try ctx.mount("sources", .{ .name = "sources", .apply = server.applySources });
+    _ = try ctx.mount("http", .{
+        .name = "http",
+        .inject = &.{ "printer", "transports", "devices", "sources" },
+        .apply = server.applyHttp,
+    });
+    const http = ctx.require(server.HttpService, "http");
+    http.transports.usb = openCapture;
+    return http;
+}
+
+test "Set printer clock sends the page's local time as upstream does" {
+    // PrinterConfig2: item 8 (time), action 1 (set), year 2026 as 07 EA, then
+    // October 20, 00:12:05. The printer's date button prints this clock.
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    const http = try mountCaptured(&ctx);
+    var capture = Capture{ .allocator = gpa };
+    defer capture.deinit();
+    capture_for_open = &capture;
+    defer capture_for_open = null;
+    try capture.pushOk(.printer_config2, 1);
+
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    const response = try http.dispatch(.{
+        .io = std.testing.io,
+        .method = .POST,
+        .path = "/api/printer/clock",
+        .query = query,
+        .body = "{\"conn\":\"usb\",\"addr\":\"capture\",\"year\":2026,\"month\":10,\"day\":20,\"hour\":0,\"minute\":12,\"second\":5}",
+    });
+    defer if (response.owned) gpa.free(response.body);
+    try std.testing.expectEqual(std.http.Status.ok, response.status);
+    try std.testing.expectEqualSlices(u8, &.{ 0x55, 0x55, 0x07, 9, 8, 1, 0x07, 0xEA, 10, 20, 0, 12, 5 }, capture.written.items[0..13]);
+
+    // A month 13 never reaches the printer.
+    const bad = try http.dispatch(.{
+        .io = std.testing.io,
+        .method = .POST,
+        .path = "/api/printer/clock",
+        .query = query,
+        .body = "{\"conn\":\"usb\",\"addr\":\"capture\",\"year\":2026,\"month\":13,\"day\":20,\"hour\":0,\"minute\":12,\"second\":5}",
+    });
+    defer if (bad.owned) gpa.free(bad.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, bad.status);
+}
+
+test "copies on a B-series printer are the job sent once per copy" {
+    // The B-series sequence has no copy count, so two copies are two jobs.
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    const http = try mountCaptured(&ctx);
+    var capture = Capture{ .allocator = gpa };
+    defer capture.deinit();
+    capture_for_open = &capture;
+    defer capture_for_open = null;
+    try resetCapture(&capture);
+    try pushJob(&capture);
+
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    const response = try http.dispatch(.{
+        .io = std.testing.io,
+        .method = .POST,
+        .path = "/api/print",
+        .query = query,
+        .body = "{\"width\":48,\"height\":8,\"fields\":[{\"text\":\"X\",\"x\":0,\"y\":0,\"size\":8}],\"conn\":\"usb\",\"addr\":\"capture\",\"model\":\"b21\",\"density\":3,\"copies\":2}",
+    });
+    defer if (response.owned) gpa.free(response.body);
+    try std.testing.expectEqual(std.http.Status.ok, response.status);
+    var seen: [64]u8 = undefined;
+    const job = commandsWritten(&capture, &seen);
+    try std.testing.expectEqual(@as(usize, 2), std.mem.count(u8, job.types, &.{@backingInt(packet.Request.start_print)}));
+    try std.testing.expect(job.quantity == null);
+
+    // A hundred copies is refused before anything reaches the printer.
+    const many = try http.dispatch(.{
+        .io = std.testing.io,
+        .method = .POST,
+        .path = "/api/print",
+        .query = query,
+        .body = "{\"width\":48,\"height\":8,\"fields\":[{\"text\":\"X\",\"x\":0,\"y\":0,\"size\":8}],\"conn\":\"usb\",\"addr\":\"capture\",\"model\":\"b21\",\"density\":3,\"copies\":100}",
+    });
+    defer if (many.owned) gpa.free(many.body);
+    try std.testing.expectEqual(std.http.Status.bad_request, many.status);
+    try std.testing.expect(std.mem.indexOf(u8, many.body, "BadCopies") != null);
 }

@@ -11,6 +11,11 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- **Copies**, beside **Print**: print the label up to 99 times in one job. A D11 or D110 prints the copies itself; a B-series printer gets the job once per copy.
+- **Set printer clock**, under the printer status: sets the printer's clock to this computer's local time, so the date button on a D110 prints today instead of 1970.
+
 ### Changed
 
 - A Bluetooth print no longer waits on fixed sleeps for the printer's answers. Each command used to sleep half a second before it looked, 2.6 s for a print's five setup commands, and a status the printer repeated unchanged was taken for no answer and waited out a 3 s timeout. niimbench now subscribes to the notifications BlueZ announces on the bus, one per answer, identical ones included, and takes each as it arrives.

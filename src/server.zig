@@ -165,6 +165,7 @@ pub const PrinterService = struct {
         width: usize,
         height: usize,
         density: u8,
+        copies: u16,
         trace: ?*trace_mod.Trace,
     ) !void {
         _ = self;
@@ -178,14 +179,20 @@ pub const PrinterService = struct {
         // Only an in-process test may leave it out, and there the built-in
         // testing `Io` stands in.
         const live = io orelse if (@import("builtin").is_test) std.testing.io else unreachable;
-        const transport = try registry.open(conn, allocator, live, addr);
-        // The time from the `print` line to this one is the connect.
-        if (trace) |t| t.info("printer", "{s} {s} open", .{ conn, addr });
-        var client = printer.Client.init(allocator, transport);
-        client.trace = trace;
-        client.d_series = model.setsCopies();
-        defer client.deinit();
-        try client.printGray(io, pixels, width, height, level);
+        // A D-series printer prints the copies itself. A B-series sequence
+        // has no copy count, so the job is sent once per copy.
+        const jobs: u16 = if (model.setsCopies()) 1 else copies;
+        for (0..jobs) |_| {
+            const transport = try registry.open(conn, allocator, live, addr);
+            // The time from the `print` line to this one is the connect.
+            if (trace) |t| t.info("printer", "{s} {s} open", .{ conn, addr });
+            var client = printer.Client.init(allocator, transport);
+            client.trace = trace;
+            client.d_series = model.setsCopies();
+            if (client.d_series) client.copies = copies;
+            defer client.deinit();
+            try client.printGray(io, pixels, width, height, level);
+        }
     }
 };
 
@@ -365,6 +372,10 @@ pub fn listPorts(service: *HttpService, req: RequestView) !Response {
     return .{ .body = try buf.toOwnedSlice(service.allocator), .owned = true };
 }
 
+/// The most copies one print asks for. The vendor manual puts the practical
+/// limit of a batch near 300; a label bench needs far fewer.
+const max_copies = 99;
+
 const LabelRequest = struct {
     width: usize,
     height: usize,
@@ -377,6 +388,8 @@ const LabelRequest = struct {
     addr: []const u8 = "",
     rotate: u16 = 0,
     pixels_b64: []const u8 = "",
+    /// How many of the label to print, 1 to `max_copies`.
+    copies: u16 = 1,
 };
 
 pub fn printJob(service: *HttpService, req: RequestView) !Response {
@@ -389,6 +402,9 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
     const model = raster.Model.parse(job.model) catch {
         return errorResponse(service.allocator, .bad_request, "unknown model", job.width, job.height);
     };
+    if (job.copies < 1 or job.copies > max_copies) {
+        return errorResponse(service.allocator, .bad_request, "BadCopies", job.width, job.height);
+    }
     const gray = compose(service, job) catch |err| {
         if (tracer(service)) |t| t.failure("print", "compose {d}x{d} {s} model={s}: {s}", .{ job.width, job.height, job.conn, job.model, @errorName(err) });
         return composeError(service.allocator, err, size.width, size.height);
@@ -400,8 +416,8 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
     // out blank. Raw `pixels_b64` is the page itself and goes as sent.
     const rows = if (job.pixels_b64.len == 0) gray.height -| model.pageMargin() else gray.height;
     if (tracer(service)) |t| {
-        t.info("print", "{d}x{d} dots, {d} rows printed, {d} field(s), density {d}, {s} {s}", .{
-            gray.width, gray.height, rows, job.fields.len, job.density, job.conn, job.addr,
+        t.info("print", "{d}x{d} dots, {d} rows printed, {d} field(s), {d} cop{s}, density {d}, {s} {s}", .{
+            gray.width, gray.height, rows, job.fields.len, job.copies, if (job.copies == 1) "y" else "ies", job.density, job.conn, job.addr,
         });
         // Where each field was when the job left: a label printed off-centre
         // is then a number to compare with the preview, not a photo.
@@ -420,6 +436,7 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
         gray.width,
         rows,
         job.density,
+        job.copies,
         tracer(service),
     ) catch |err| {
         // The answer says only the error name; the line says what was asked of
@@ -730,6 +747,56 @@ const RollBody = struct {
     /// a barcode outside that copy, and reaching it is the caller's choice.
     allow_cloud: bool = false,
 };
+
+const ClockBody = struct {
+    conn: []const u8,
+    addr: []const u8,
+    year: u16,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+};
+
+/// Set the printer's clock, which its date button prints. The page sends its
+/// own local time: the browser knows the zone of the machine it runs on, and
+/// the printer keeps none, so the label shows the time where the page is.
+pub fn setPrinterClock(service: *HttpService, req: RequestView) !Response {
+    const parsed = std.json.parseFromSlice(ClockBody, service.allocator, req.body, .{}) catch {
+        return .{ .status = .bad_request, .body = "{\"error\":\"bad json\"}" };
+    };
+    defer parsed.deinit();
+    const body = parsed.value;
+    if (body.addr.len == 0) return .{ .status = .bad_request, .body = "{\"error\":\"no address\"}" };
+    if (body.year < 2000 or body.year > 2099 or body.month < 1 or body.month > 12 or body.day < 1 or body.day > 31 or
+        body.hour > 23 or body.minute > 59 or body.second > 59)
+    {
+        return .{ .status = .bad_request, .body = "{\"error\":\"BadTime\"}" };
+    }
+    const transport = service.transports.open(body.conn, service.allocator, req.io, body.addr) catch |err| {
+        if (tracer(service)) |t| t.failure("clock", "{s} {s}: {s}", .{ body.conn, body.addr, @errorName(err) });
+        return errorResponse(service.allocator, .bad_request, @errorName(err), 0, 0);
+    };
+    var client = printer.Client.init(service.allocator, transport);
+    defer client.deinit();
+    const accepted = client.setClock(.{
+        .year = body.year,
+        .month = body.month,
+        .day = body.day,
+        .hour = body.hour,
+        .minute = body.minute,
+        .second = body.second,
+    }) catch |err| {
+        if (tracer(service)) |t| t.failure("clock", "{s} {s}: {s}", .{ body.conn, body.addr, @errorName(err) });
+        return errorResponse(service.allocator, .bad_request, @errorName(err), 0, 0);
+    };
+    if (tracer(service)) |t| t.info("clock", "{s} {s} set to {d}-{d:0>2}-{d:0>2} {d:0>2}:{d:0>2}:{d:0>2}, answered {d}", .{
+        body.conn, body.addr, body.year, body.month, body.day, body.hour, body.minute, body.second, @intFromBool(accepted),
+    });
+    if (!accepted) return .{ .status = .bad_request, .body = "{\"error\":\"ClockRefused\"}" };
+    return .{ .body = "{\"ok\":true}" };
+}
 
 /// The roll in the printer. The tag carries a barcode, not millimetres, so the
 /// barcode is resolved here: [labels_catalogue.zig] holds every roll the vendor
@@ -1460,6 +1527,7 @@ pub fn applyHttp(ctx: *cordis.Context) !void {
     try addRoute(service, .POST, "/api/render", renderLabel);
     try addRoute(service, .POST, "/api/print", printJob);
     try addRoute(service, .POST, "/api/label/roll", readRoll);
+    try addRoute(service, .POST, "/api/printer/clock", setPrinterClock);
     try addRoute(service, .GET, "/api/trace", traceText);
     try addRoute(service, .POST, "/api/trace", tracePost);
 }
