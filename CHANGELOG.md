@@ -19,6 +19,15 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 ### Changed
 
 - Starting niimbench while it already runs from the same folder opens the running one in the browser and exits, instead of refusing. With `--no-open` it still refuses and names the running process.
+- The **Sync clock** tooltip says it sets the printer to this computer's local date and time, which is what the date button prints.
+- `make help` lists `BROWSER`, the Chromium-family browser the browser checks use.
+
+### Fixed
+
+- **Undo** and **Redo** were enabled on a page just opened, with nothing to undo. They now start disabled.
+- Loading a layout whose background image could not be restored said so for a moment, then the refresh after the load replaced the warning with a plain "loaded". The warning now stays.
+- A picture you have not moved or scaled is fitted to the label again when the **Label** menu, the model, **Width** or **Height** changes the label's size. It used to keep the old fit and could hang off the new label.
+- `POST /api/sources` refuses a name a plugin already uses, as `DELETE` does. It used to add a second record that no read saw, and a `DELETE` of the name then removed the plugin's own record.
 
 ## [0.6.0] - 2026-10-20
 

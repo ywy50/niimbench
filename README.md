@@ -73,10 +73,10 @@ Everything below is detail.
   <img src="docs/assets/editor.png" alt="The niimbench label editor for Niimbot printers: a 50×30 mm label in the preview with three text fields in their dashed boxes, beside the label and printer panel" width="900">
 </p>
 
-One process serves the editor page on `127.0.0.1`, renders labels, and prints them over USB serial or Bluetooth Low Energy through BlueZ. The browser is a client of that server, and so is anything else that calls its HTTP API.
+One process serves the editor page on `127.0.0.1`, renders labels, and prints them over USB serial or Bluetooth Low Energy, through BlueZ on Linux and CoreBluetooth on macOS. The browser is a client of that server, and so is anything else that calls its HTTP API.
 
 - **What you see is what prints.** The preview is the grayscale the printer will get: preview and print share one drawing path on the server.
-- **It finds the printer.** A scan of the serial ports and of BlueZ fills in the connection, the address and the model, and the roll the printer reports.
+- **It finds the printer.** A scan of the serial ports and of Bluetooth fills in the connection, the address and the model, and the roll the printer reports.
 - **Text in real fonts.** Fifteen free fonts are embedded and drawn by niimbench's own TrueType rasteriser, so a print never depends on what is installed.
 - **Pictures in one ink.** An imported picture is reduced to black and white at a threshold you choose, then moved, scaled and turned on the label.
 - **A board, not a form.** Preview, printer, text and image are panels you drag by their titles and resize from a corner. This browser remembers where you put them.
@@ -88,7 +88,7 @@ The documentation index is [docs/README.md](docs/README.md).
 
 ## Running it
 
-`make` listens on `127.0.0.1` with an ephemeral port, prints a URL that carries the session token, and opens it with `xdg-open`. `make serve` leaves the URL for a browser you already have. `PORT=8080` picks the port. `make help` lists the targets and variables.
+`make` listens on `127.0.0.1` with an ephemeral port, prints a URL that carries the session token, and opens it with `xdg-open` (`open` on macOS). It stops when you pick **Quit niimbench…** in the menu on the **niimbench** name, or by itself once no page has been open for 30 minutes, and running `make` again while it runs opens the running one instead of a second server ([docs/user/guide/index.md](docs/user/guide/index.md#stop-and-start-again)). `make serve` leaves the URL for a browser you already have. `PORT=8080` picks the port. `make help` lists the targets and variables.
 
 `label.pgm` is a binary P5 file: `P5`, width, height, maxval `255`, then one byte per pixel. `0` is black and `255` is white.
 
@@ -98,7 +98,7 @@ The editor guide is [docs/user/guide/index.md](docs/user/guide/index.md). A layo
 
 The page places text fields and previews the bitmap the printer will get. Preview and print both go through `POST /api/render` and `POST /api/print`, which share one drawing path on the server.
 
-Each field has its own font, a size in dots, an alignment, a position and an angle. Drag a field's box to move it, drag a corner to resize it, and drag the round handle to turn it. Text that would run off the label is marked clipped. Save layout writes JSON; Load layout reads it back. The saved file leaves out the background image.
+Each field has its own font, a size in dots, a position and an angle. Drag a field's box to move it, drag a corner to resize it, and drag the round handle to turn it. Text that would run off the label is marked clipped. Save layout writes JSON; Load layout reads it back. The saved file leaves out the background image.
 
 The editor draws literal text. The HTTP routes also take a JSON `source` and a field `key` to fill a field from, and sources can be added and removed while the process runs: [docs/subsystems/sources.md](docs/subsystems/sources.md).
 
@@ -114,12 +114,14 @@ The editor draws literal text. The HTTP routes also take a JSON `source` and a f
 
 B18, D11, and D110 densities above 3 are clamped to 3. Head width, density, and the raster live in [docs/subsystems/printer.md](docs/subsystems/printer.md).
 
-The editor scans for printers and lists what it finds under **Found Niimbot devices**. Picking one fills in the connection, the address, and the model, so the label is built for the printer that is there. The scan probes the serial ports and asks BlueZ what Bluetooth devices exist; **Find nearby** adds an inquiry. The subsystem page is [docs/subsystems/printer.md](docs/subsystems/printer.md#discovery).
+The editor scans for printers and lists what it finds under **Found Niimbot devices**. Picking one fills in the connection, the address, and the model, so the label is built for the printer that is there. On Linux the scan probes the serial ports and asks BlueZ what Bluetooth devices exist, and **Find nearby** adds an inquiry; on a Mac it lists the printers already connected, and **Find nearby** listens for advertisements. The subsystem page is [docs/subsystems/printer.md](docs/subsystems/printer.md#discovery).
 
 | Connection | What it needs |
 |---|---|
-| USB | A user who can open the tty: `dialout` on most Linux machines |
-| Bluetooth | BlueZ on the system bus, so a running `bluetoothd`. A BLE printer is written over its print characteristic |
+| USB on Linux | A user who can open the tty: `dialout` on most Linux machines |
+| Bluetooth on Linux | BlueZ on the system bus, so a running `bluetoothd`. A BLE printer is written over its print characteristic |
+| Bluetooth on macOS | The terminal app allowed to use Bluetooth, under System Settings → Privacy & Security → Bluetooth |
+| USB on macOS | Not supported yet |
 
 ## Fonts
 
@@ -140,19 +142,24 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 
 | Path | What it is |
 |---|---|
-| `src/cordis.zig` | Context, inject, reversible effects |
-| `src/packet.zig`, `src/printer.zig`, `src/raster.zig` | Printer core |
+| `src/main.zig`, `src/root.zig` | The CLI: serve, print, version, its flags, and the one-server lock |
+| `src/cordis.zig`, `src/load.zig`, `src/patch.zig` | Context, inject and reversible effects, and loading and mounting the boot list |
+| `src/plugins.zig`, `src/default.patch.yml`, `cordis.patch.yml` | The plugin catalogue, and the boot list compiled in and on disk |
+| `src/server.zig`, `src/editor.html` | The HTTP API with the plugins that serve it, and the editor page |
+| `src/packet.zig`, `src/printer.zig`, `src/raster.zig` | Printer core: frames, the print sequences, the raster, and the model table and roll sizes |
 | `src/label.zig` | Text layout: font, size, alignment, turning, clipping |
 | `src/font.zig`, `src/fonts/` | TrueType reader and rasteriser, and the embedded fonts with their licences |
-| `src/device.zig` | The USB serial and Bluetooth openers, and the two finders |
-| `src/ble.zig`, `src/dbus.zig` | The BLE print channel, and the BlueZ D-Bus client it uses |
-| `src/discovery.zig` | Found-device list and model lookup |
-| `src/server.zig`, `src/editor.html` | HTTP API and the editor page |
-| `src/plugins.zig`, `src/example_source.zig`, `cordis.patch.yml` | Boot list and plugins |
-| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness, and the label catalogue fetcher |
+| `src/device.zig` | The USB serial and Bluetooth openers, and the finders |
+| `src/ble.zig`, `src/dbus.zig` | Linux: the BLE print channel, and the BlueZ D-Bus client it and the finder use |
+| `src/corebluetooth.zig` | macOS: the Bluetooth finder and print channel, through CoreBluetooth |
+| `src/discovery.zig` | Found-device list, the finder registry, and the model lookup |
+| `src/labels_catalogue.zig`, `src/catalogue.json` | The label roll catalogue compiled into the binary |
+| `src/trace.zig` | The in-memory log, published as the `trace` service |
+| `src/example_source.zig` | The example JSON source, a plugin |
+| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness (`with-server.sh`, `drive.js`, `trace.sh`, `harness.patch.yml`), and the label catalogue fetcher |
 | `docs/assets/` | The logo kit, and the README's screenshot with the steps that take it ([docs/assets/README.md](docs/assets/README.md)) |
-| `Makefile` | `make`, `make serve`, `make test`, `make drive`, `make print`, `make labels` |
-| `.github/workflows/` | CI on every push and pull request, and the tag-driven release |
+| `Makefile` | `make`, `make serve`, `make trace`, `make test`, `make drive`, `make print`, `make labels`; `make help` lists every target |
+| `.github/workflows/` | CI on every push to `main` and every pull request, on Linux and on Intel and Apple Silicon Macs, and the tag-driven release |
 | `CHANGELOG.md` | What each release changed |
 | `docs/` | Index, architecture, subsystems, cookbook, user guide, templates, reviews |
 

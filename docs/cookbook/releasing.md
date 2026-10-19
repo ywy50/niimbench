@@ -3,7 +3,7 @@
 Releases are tag-driven. The version is written once, in `build.zig.zon`, and pushing a `vX.Y.Z` tag that matches it runs [../../.github/workflows/release.yml](../../.github/workflows/release.yml), which publishes the release. What a release contains is in the root [README](../../README.md#releases).
 
 1. Pick the version. niimbench is 0.x: a change to the editor, the CLI or the HTTP routes is a minor release (`0.Y.0`), and a fix is a patch release (`0.y.Z`).
-2. In [CHANGELOG.md](../../CHANGELOG.md), move the entries under `## [Unreleased]` into a new `## [X.Y.Z] - YYYY-MM-DD` section below it, leave `## [Unreleased]` empty, and add the new version's link at the bottom. The release notes are that section, word for word.
+2. In [CHANGELOG.md](../../CHANGELOG.md), move the entries under `## [Unreleased]` into a new `## [X.Y.Z] - YYYY-MM-DD` section below it, leave `## [Unreleased]` empty, and at the bottom add the new version's compare link and start the `[Unreleased]` link at the new tag. The release notes are that section, word for word.
 3. Set `.version = "X.Y.Z"` in `build.zig.zon`. It is the only place the version is written; `niimbench --version` and the release workflow both read it.
 4. Run `make test`, then build and check that the binary reports the new version:
 

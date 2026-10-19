@@ -15,9 +15,9 @@ That plugin lives in `src/example_source.zig`. It calls `Sources.add` inside `ap
 | A plugin's `apply` | That fiber is disposed | nothing over HTTP |
 | `POST /api/sources` | The `http` fiber is disposed | `DELETE /api/sources/<name>` |
 
-`Sources.add` copies the name and the body, so the caller keeps its own slice. `Sources.addOwned` takes them over instead, which is what the runtime path uses. `Sources.remove` frees what the registry holds.
+`Sources.add` copies the name and the body, so the caller keeps its own slice. `Sources.addOwned` takes them over instead, which is what the runtime path uses. `Sources.remove` hands back the entry it took out, and the caller frees it.
 
-`POST /api/sources` takes `{"name": "...", "json": "{...}"}`. The body must parse as a JSON object, because `label.Field.key` reads one property out of a flat record. A name that is already installed at runtime is replaced, and the answer says `{"ok":true,"replaced":true}`. Names are limited to 64 bytes with no `/`, `"`, `\`, or control byte, because a name is also a JSON identifier in the page.
+`POST /api/sources` takes `{"name": "...", "json": "{...}"}`. The body must parse as a JSON object, because `label.Field.key` reads one property out of a flat record. A name that is already installed at runtime is replaced, and the answer says `{"ok":true,"replaced":true}`. A name is 1 to 64 bytes with no `/`, `"`, `\`, or control byte, because `GET /api/sources` writes names into its JSON answer as they are; anything else is `bad name`. A name a plugin holds is refused with `source belongs to a plugin`, as a `DELETE` of it is.
 
 Records installed this way are owned by a `RuntimeSources` list on the `http` plugin. `DELETE /api/sources/<name>` drops one, `GET /api/runtime-sources` lists the ones it owns, and disposing the `http` fiber drops whatever is left. A record a plugin owns is refused, so the route cannot outlive the effect that owns the record.
 

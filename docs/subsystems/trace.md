@@ -1,6 +1,6 @@
 # Trace
 
-The `trace` plugin keeps a running log of what the process and the page have been asked to do, in memory, readable while it runs. It is a diagnostic: when a label comes out wrong, or a button does nothing, the useful question is *what did each side actually do* — and that answer is not in a stack trace. The plugin publishes a `Trace` service that other plugins write to, and two routes that read it back.
+The `trace` plugin keeps a running log of what the process and the page have been asked to do, in memory, readable while it runs. It is a diagnostic: when a label comes out wrong, or a button does nothing, the useful question is *what did each side actually do* — and that answer is not in a stack trace. The plugin publishes a `Trace` service that other plugins write to. The `http` plugin serves it at two routes, one that reads it back and one the page writes to.
 
 The printer is on the other end of a wire and the editor is in another process, so a single line has to carry enough to place it: the plugin records a relative time, who said it, how bad it is, and the message.
 
@@ -19,8 +19,8 @@ A read looks like this:
 ```
       0ms info    trace     opened
    3521ms info    roll      01222281 -> 12x40 mm 96x320 dots from the catalogue
-   3526ms info    page      view: vertical, roll 96x320, view 320x96, canvas 320x96
-   9377ms info    print     96x320 dots, 304 rows printed, 1 field(s), density 3, bluetooth AA:BB:CC:DD:EE:FF
+   3526ms info    page      view: vertical · roll 96×320 · view 320×96 · canvas 320×96
+   9377ms info    print     96x320 dots, 304 rows printed, 1 field(s), 1 copy, density 3, bluetooth AA:BB:CC:DD:EE:FF
    9377ms error   print     bluetooth AA:BB:CC:DD:EE:FF model=d110 failed: MethodFailed
 ```
 
@@ -31,19 +31,20 @@ The first column is milliseconds since the log opened, so `3521` and `3526` are 
 | Source | When |
 |---|---|
 | `trace` | The plugin starting, and a clear |
+| `server` | `quit from the page` when the menu stops it |
+| `scan` | A scan whose finder failed, and why |
 | `roll` | A barcode and the size it resolved to, or why the read failed |
 | `print` | What was composed, where each field was, what the printer was, and how it ended |
 | `clock` | What time a printer's clock was set to, and what it answered |
-| `printer` | The link opening, what each print command answered, every `PrintStatus` reading as raw bytes, and the `PrintEnd` try that closed the job |
-| `page` | The view the page is showing, a picked printer, the position and angle of every field box when that changes, and any script error |
+| `printer` | The link opening, the D-series protocol probe (`protocol N`, or why it failed), what each print command answered, how many rows went in how many packets, every `PrintStatus` reading as raw bytes, a head polled by `PrintEnd` instead, the `PrintEnd` try that closed the job, a heartbeat that failed, and at `warn` a copy the job did not ask for (`page N done and another copy started`) |
+| `page` | The boot steps, a scan's result, the view the page is showing, a picked printer, the position and angle of every field box when that changes, every step of a drag, a picture imported and sent, and any script error |
 
 The page reports its own errors — `window.onerror` and `unhandledrejection` both post a line — so a broken editor shows up in the log instead of only in a console that is gone by the time anyone asks. It also posts its view state whenever that changes, which is the number worth having when the preview and the printer disagree.
 
-To add a line from the server, take the service and call it:
+To add a line from the server, look the service up and call it. `tracer` in `src/server.zig` does the lookup on every call, so a context without the plugin records nothing:
 
 ```zig
-const trace = ctx.get("trace") orelse null;   // optional: absent, nothing is recorded
-trace.info("roll", "{s} -> {d} dots", .{ barcode, dots });
+if (tracer(service)) |t| t.info("roll", "{s} -> {d} dots", .{ barcode, dots });
 ```
 
 `warn` and `failure` are the other levels.
@@ -52,7 +53,7 @@ trace.info("roll", "{s} -> {d} dots", .{ barcode, dots });
 
 The plugin owns nothing but a fixed ring of `Trace.capacity` entries and a buffer per entry, so it cannot grow while the process runs and a page that reports in a loop cannot exhaust memory. The oldest entries are overwritten; `?clear=1` bounds a run explicitly. The service is published with `ctx.set` and dropped with the fiber's effect, like every other plugin's.
 
-The plugin is optional. A context that mounts only `http` serves every route and records nothing: `create` takes the service as an optional pointer, and each caller checks it.
+The plugin is optional. A context that mounts only `http` serves every other route and records nothing, because each call looks the service up as it goes; both trace routes answer `404` with `no trace plugin`.
 
 ## Reading it next to a report
 
@@ -62,10 +63,11 @@ At startup the server writes its URL, token included, to `.niimbench.token` in i
 make trace
 ```
 
-`tools/trace.sh` wraps the two calls a bug report needs: it clears the log, runs whatever command you give it, and prints the lines that appeared, so the output is only about that command.
+`tools/trace.sh` wraps the two calls a bug report needs: it clears the log, runs whatever command you give it, and prints the lines that appeared, so the output is only about that command. The command gets `NIIMBENCH_URL` and `NIIMBENCH_TOKEN` in its environment. Against the server running from this folder, both come from the token file; this one prints to a USB path that does not exist, which needs no printer and still records the job and its failure:
 
 ```sh
-tools/trace.sh --token "$TOKEN" -- zig build run -- --no-open
+url=$(cat .niimbench.token)
+tools/trace.sh --url "${url%%/?token=*}" --token "${url##*token=}" -- sh -c 'curl -s -H "content-type: application/json" -d "{\"width\":96,\"height\":96,\"fields\":[{\"text\":\"A\"}],\"model\":\"d110\",\"conn\":\"usb\",\"addr\":\"/nonexistent\"}" "$NIIMBENCH_URL/api/print?token=$NIIMBENCH_TOKEN"'
 ```
 
 The log is text on purpose. It reads with `curl`, pastes into a report, and diffs between two runs without a viewer.

@@ -16,7 +16,7 @@ The `editor` plugin injects `http` and registers `GET /`. Disposing that fiber r
 | GET | `/api/sources/<name>` | One JSON record |
 | DELETE | `/api/sources/<name>` | Drop a record installed at runtime |
 | GET | `/api/label/metrics` | Every embedded font's advance table, for editor boxes |
-| GET | `/api/label/sizes` | Die-cut rolls for each model, with the pixel width and height, and each model's `max_width` and `max_density` |
+| GET | `/api/label/sizes` | `dots_per_mm`, and per model its `max_width`, `max_density`, `page_margin`, `default` roll and die-cut rolls with their pixel width and height |
 | POST | `/api/label/track` | What each field draws, and where it came from |
 | POST | `/api/label/roll` | The roll in the printer, sized for the model |
 | POST | `/api/printer/clock` | Set the printer's clock to the time the page sends |
@@ -36,9 +36,11 @@ The listen address is `127.0.0.1` and the port comes from `ctx.http_port` (`0` a
 http://127.0.0.1:<port>/?token=<32 hex chars>
 ```
 
-Pass `--no-open` to skip `xdg-open`. `--parent PID` makes the server die with its parent, which is how the harnesses start it ([../development.md](../development.md#throwaway-servers)). The token is generated with `getrandom` for that process only.
+`--port N` picks the port. Pass `--no-open` to skip opening the page with `xdg-open` (Linux) or `open` (macOS). `--parent PID` makes the server die with its parent, which is how the harnesses start it ([../development.md](../development.md#throwaway-servers)). The token is random for that process only, from `getrandom` on Linux and `arc4random_buf` on macOS.
 
-`GET /?token=` answers `302` with `Set-Cookie: niimbench=<token>; HttpOnly; Path=/; SameSite=Strict` and `Location: /`. The next request sends that cookie and receives the page. API calls from the page send the cookie and do not put the token back on the URL. A request with neither a matching query token nor that cookie is `401`.
+`GET /?token=` answers `302` with `Set-Cookie: niimbench=<token>; HttpOnly; Path=/; SameSite=Strict` and `Location: /`, so the address bar no longer shows the token. The next request sends that cookie and receives the page, with the token written into it, and the page's own API calls carry it as `?token=`. A request with neither a matching query token nor that cookie is `401`.
+
+The server stops on its own in two cases. `POST /api/quit` sets a flag, and `serve` returns after that request. `serve` also returns when no request has arrived for `--idle-minutes`, 30 by default; `0` never stops. An open page calls `GET /api/health` once a minute, so only a server with no page left stops. What a second start from the same directory does is in [../development.md](../development.md#process-lifetime).
 
 ## Devices
 
@@ -71,7 +73,7 @@ When a finder of the scan failed, the answer keeps the finding it made anyway an
 }
 ```
 
-`source` is the registry name. Each field draws `text`, unless `key` is set, in which case the value comes from that source object. `background_b64` is optional grayscale laid under the text. Lines that would pass the right or bottom edge are clipped, not wrapped.
+`source` is the registry name. Each field draws `text`, unless `key` is set, in which case the value comes from that source object. `background_b64` is optional and laid under the text: either grayscale, one byte per pixel, or 1 bit per pixel packed most significant bit first, a row padded to whole bytes, which is what the editor sends. Any other length is `BadPixels`. Lines that would pass the right or bottom edge are clipped, not wrapped.
 
 Each field takes `text`, `key`, `x`, `y`, `font`, `size`, `align_mode`, and `rotation`.
 
@@ -81,7 +83,7 @@ Each field takes `text`, `key`, `x`, `y`, `font`, `size`, `align_mode`, and `rot
 
 A newline in `text` (or in a value a `key` resolves to) starts a second line, `size` dots below the previous one, so a field is a block of lines. A blank line advances without drawing.
 
-`align_mode` is `left`, `center`, or `right` and decides what `x` means: the left edge, the centre, or the right edge of the block, measured after `key` is resolved ([text.md](text.md#placement-and-turning)). Any other value is `BadAlign`.
+`align_mode` is `left`, `center`, or `right` and decides what `x` means: the left edge, the centre, or the right edge of the block, measured after `key` is resolved ([text.md](text.md#placement-and-turning)). Any other value is `bad json`.
 
 A body with no `fields` and no background still prints raw `pixels_b64`, which is the path used before the editor drew text:
 
@@ -99,9 +101,9 @@ A body with no `fields` and no background still prints raw `pixels_b64`, which i
 
 `pixels_b64` is raw grayscale, one byte per pixel, not a PNG.
 
-A print body may carry `copies`, 1 to 99, default 1, and anything else is `BadCopies`. A D11 or D110 prints the copies itself: on protocol 4 the job has that many pages and the page that many copies, and below it `PrintQuantity` is set to the count. A B-series sequence has no count, so the job is sent once per copy. The `print` trace line names the count.
+A print body may carry `copies`, 1 to 99, default 1. 0 or a count above 99 is `BadCopies`; a value that is not a whole number from 0 to 65535 is `bad json`. A D11 or D110 prints the copies itself: on protocol 4 the job has that many pages and the page that many copies, and below it `PrintQuantity` is set to the count. A B-series sequence has no count, so the job is sent once per copy. The `print` trace line names the count.
 
-`POST /api/printer/clock` takes `{"conn", "addr", "year", "month", "day", "hour", "minute", "second"}` and sets the printer's clock, which its date button prints and which counts from 1970 until something sets it. The page sends its own local time, because the browser knows the time zone of the machine it runs on and the printer keeps none. The packet is `PrinterConfig2` (`0x07`) as the protocol notes draw it: `01` (set), the year as two bytes, then month, day, hour, minute and second. The answer echoes the first byte and then gives the result: a D110_M answers `01 01`, done. Upstream's library puts an item byte `08` in front, which a D110_M refuses with `08 00`, so that form is only tried when the first is refused. A year outside 2000 to 2099 or another field out of range is `BadTime`, a printer that refuses both forms is `ClockRefused`, and the `clock` trace line says what was set and what the printer answered.
+`POST /api/printer/clock` takes `{"conn", "addr", "year", "month", "day", "hour", "minute", "second"}` and sets the printer's clock, which its date button prints and which counts from 1970 until something sets it. The page sends its own local time, because the browser knows the time zone of the machine it runs on and the printer keeps none. The packet is `PrinterConfig2` (`0x07`) as the protocol notes draw it: `01` (set), the year as two bytes, then month, day, hour, minute and second. The answer echoes the first byte and then gives the result: a D110_M answers `01 01`, done. Upstream's library puts an item byte `08` in front, which a D110_M refuses with `08 00`, so that form is only tried when the first is refused. All eight fields are required, and a missing one is `bad json`. An empty `addr` is `no address`, a year outside 2000 to 2099 or another field out of range is `BadTime`, a printer that cannot be opened answers with the transport's error name, and a printer that refuses both forms is `ClockRefused`. Success is `{"ok":true}`. The `clock` trace line says what was set and what the printer answered.
 
 The render answer and the print are always the roll: width across the head, height along the tape. Neither route turns the page. `rotate` is still accepted in a body for older callers and does nothing; the CLI's `--rotate` turns a raw PGM page before sending it, which is a different path and the only place a page is turned.
 
@@ -110,6 +112,14 @@ The editor's **Orientation** buttons are not this either. They turn the picture 
 ## The roll
 
 `POST /api/label/roll` reads the roll's barcode from the printer's tag and answers the roll's size in millimetres and in dots — the whole label, which is what the Width and Height fields are set to. A print leaves the model's page margin off the end ([printer.md](printer.md#raster)), so a 12×40 roll answers 96×320, the editor lays out on 96×320, and 304 rows are printed. It carries the preset id when this bench has a row for it.
+
+The body is `{"conn": "usb"|"bluetooth", "addr": "...", "model": "b21"}`; `model` defaults to `b21`, and `allow_cloud` is below. The answer:
+
+```json
+{"barcode":"01222281","width_mm":12,"height_mm":40,"source":"catalogue","width":96,"height":320,"id":"12x40"}
+```
+
+`id` is the size's entry in `/api/label/sizes`, or null when this bench has no row for it. An empty `addr` is `no address`, an unknown model is `unknown model`, a printer with no tag on its roll is `no roll`, a barcode the catalogue does not hold is `unknown roll`, and a failed cloud lookup is `roll lookup failed`; a printer that cannot be opened or read answers with the error'''s name.
 
 The barcode is resolved from the catalogue compiled into the binary, which holds every roll the vendor lists, so the answer needs no network and no configuration. The body may set `"allow_cloud": true` to permit a second attempt against the vendor's cloud for a barcode the catalogue does not carry; without it such a barcode is `unknown roll`. The answer's `source` says which resolved it, and the editor shows `(cloud)` when it was the cloud. The editor picks a printer and takes the canvas from this answer, so the roll sets the size rather than the person. The catalogue itself is [../labels/README.md](../labels/README.md).
 
@@ -123,7 +133,7 @@ The barcode is resolved from the catalogue compiled into the binary, which holds
 
 `NothingToPrint` is a `render` body with no fields, no background, and no `pixels_b64`. `UnknownSource` is a 404. Everything else is 400. The `sources` routes answer `{"error":"..."}` only.
 
-A body larger than the server accepts answers `413` with the reason named, rather than dropping the connection. A request that sends `Expect: 100-continue`, as curl does with any body over 1 MB, gets `100 Continue` before its body is read.
+A body larger than 4 MiB answers `413` with `{"error":"body: StreamTooLong"}`, rather than dropping the connection. A request that sends `Expect: 100-continue`, as curl does with any body over 1 MB, gets `100 Continue` before its body is read.
 
 After a successful print the context emits `print/done`.
 
@@ -155,10 +165,8 @@ After a successful print the context emits `print/done`.
 ```
 
 ```json
-{"fields":[{"origin":"record","text":"NB-1"},{"origin":"literal"},{"origin":"missing-key"}]}
+{"fields":[{"origin":"record","text":"NB-1","x":0},{"origin":"literal","text":"hand written","x":0},{"origin":"missing-key","x":0}]}
 ```
-
-Each entry also carries `x`, the block's left edge as the renderer places it. It is negative for a centred or right-aligned block that starts left of the label.
 
 `origin` is one of:
 
@@ -171,11 +179,9 @@ Each entry also carries `x`, the block's left edge as the renderer places it. It
 | `structured` | The value is an object or array, which draws as empty text |
 | `dynamic` | The record has no value here that can be reported as plain text |
 
-Every entry also carries `x`, the left edge of the line after its alignment, and `text` when a value resolved. The editor draws its selection box at that `x` and sizes it from that `text`, so the box matches the ink even when `center` or `right` moved the line.
+Every entry also carries `x`, the left edge of the block as the renderer places it after its alignment, negative for a centred or right-aligned block that starts left of the label, and `text` for a literal or a resolved record. The editor draws its selection box at that `x` and sizes it from that `text`, so the box matches the ink even when `center` or `right` moved the line.
 
-The editor uses this to say which field reads the selected record, instead of guessing from the field text. Resolving the value server-side keeps one implementation of `label.resolve`.
-
-A field whose `font` the build does not carry is refused the way `render` refuses it: 400 with `{"error":"UnknownFont"}`.
+A field whose `font` the build does not carry is refused the way `render` refuses it: 400 with `{"error":"UnknownFont","width":0,"height":0}`. Resolving the value server-side keeps one implementation of `label.resolve`.
 
 ## Listening
 

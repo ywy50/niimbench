@@ -5,7 +5,8 @@ Vendor documentation, kept for the hardware facts the code has to match. These a
 | File | What it is |
 |---|---|
 | [d110.md](d110.md) | The D110's specification, indicator table, and troubleshooting in English |
-| [d110_m.md](d110_m.md) | The D110_M's own facts: the model id, and that it is BLE only |
+| [d110_m.md](d110_m.md) | The D110_M's own facts: the model id, that it is BLE only, its protocol version, and its clock |
+
 The D110's own manual is the vendor's, so it is not published here. A local copy lives beside these pages, ignored by git: the PDF as `niimbot-d110-user-manual-ru.pdf`, published by a reseller, and its Russian text as `niimbot-d110-user-manual-ru.md`, extracted with `pdftotext`, where the PDF's tables arrive as column lists rather than rows.
 
 ## The community wiki
