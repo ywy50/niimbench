@@ -55,7 +55,8 @@ const help_text =
     \\  serve the editor (default)
     \\    --port 8080
     \\    --no-open
-    \\    --parent PID   die with PID, which must be this process's parent
+    \\    --idle-minutes 30   stop when no page has talked to it this long; 0 never stops
+    \\    --parent PID        die with PID, which must be this process's parent
     \\  print a PGM image
     \\    print --image label.pgm --addr /dev/ttyACM0 [--model b21] [--conn usb|bluetooth]
     \\          [--density 5] [--rotate 0|90|180|270]
@@ -74,6 +75,16 @@ const help_text =
 /// lock to clean up.
 const lock_path = ".niimbench.lock";
 
+/// Say what holds the lock: the pid the running server wrote into it.
+fn reportHeld(io: std.Io) void {
+    var held: [1024]u8 = undefined;
+    const text = std.mem.trimEnd(u8, std.Io.Dir.cwd().readFile(io, lock_path, &held) catch "", "\n");
+    std.debug.print(
+        "niimbench is already serving{s}{s}\nStop it first, or use it: two servers means two tokens and two ports.\n",
+        .{ if (text.len > 0) ": " else "", text },
+    );
+}
+
 fn takeServeLock(io: std.Io) !std.Io.File {
     var file = try std.Io.Dir.cwd().createFile(io, lock_path, .{ .read = true, .truncate = false });
     errdefer file.close(io);
@@ -81,17 +92,7 @@ fn takeServeLock(io: std.Io) !std.Io.File {
         error.FileLocksUnsupported => return file,
         else => return err,
     };
-    if (!got) {
-        var held: [1024]u8 = undefined;
-        var reader = file.reader(io, &held);
-        const text = reader.interface.allocRemaining(std.heap.page_allocator, .limited(1024)) catch "";
-        defer if (text.len > 0) std.heap.page_allocator.free(text);
-        std.debug.print(
-            "niimbench is already serving{s}{s}\nStop it first, or use it: two servers means two tokens and two ports.\n",
-            .{ if (text.len > 0) ": " else "", text },
-        );
-        return error.AlreadyServing;
-    }
+    if (!got) return error.AlreadyServing;
     try file.setLength(io, 0);
     var buffer: [128]u8 = undefined;
     const line = std.fmt.bufPrint(&buffer, "pid {d}\n", .{if (builtin.os.tag == .linux) std.os.linux.getpid() else std.c.getpid()}) catch "running\n";
@@ -137,6 +138,7 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
     var open_browser = true;
     var port: u16 = 0;
     var parent: ?std.posix.pid_t = null;
+    var idle_minutes: u32 = 30;
     var i: usize = 0;
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--no-open")) {
@@ -145,6 +147,10 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
             i += 1;
             if (i >= args.len) return error.MissingPort;
             port = try std.fmt.parseInt(u16, args[i], 10);
+        } else if (std.mem.eql(u8, args[i], "--idle-minutes")) {
+            i += 1;
+            if (i >= args.len) return error.MissingIdleMinutes;
+            idle_minutes = try std.fmt.parseInt(u32, args[i], 10);
         } else if (std.mem.eql(u8, args[i], "--parent")) {
             i += 1;
             if (i >= args.len) return error.MissingParent;
@@ -161,7 +167,14 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
     // running is an answer, not a crash, so it exits quietly with a failure
     // status rather than unwinding a stack trace at whoever typed the command.
     var lock = takeServeLock(init.io) catch |err| switch (err) {
-        error.AlreadyServing => std.process.exit(1),
+        error.AlreadyServing => {
+            // A second launch, from a menu or a double-click, opens the
+            // running server's page. Asked not to open a browser, it says
+            // what is running and fails, as a script expects.
+            if (open_browser and server.reopen(init.io)) std.process.exit(0);
+            reportHeld(init.io);
+            std.process.exit(1);
+        },
         else => return err,
     };
     defer lock.close(init.io);
@@ -171,7 +184,10 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
     ctx.http_port = port;
     try load.loadDefault(&ctx, init.io);
     const http = ctx.require(server.HttpService, "http");
-    try server.serve(http, init.io, open_browser);
+    switch (try server.serve(http, init.io, open_browser, idle_minutes)) {
+        .quit => std.debug.print("niimbench stopped: quit from the page\n", .{}),
+        .idle => std.debug.print("niimbench stopped: no page for {d} minutes\n", .{idle_minutes}),
+    }
 }
 
 fn runPrint(init: std.process.Init, args: []const []const u8) !void {

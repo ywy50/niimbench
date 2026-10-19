@@ -239,6 +239,8 @@ pub const HttpService = struct {
     sources: *Sources,
     runtime: *RuntimeSources,
     catalogue: labels.Catalogue,
+    /// Set by `POST /api/quit`. `serve` returns after the request that set it.
+    quit_requested: bool = false,
 
     pub fn dispatch(self: *HttpService, req: RequestView) !Response {
         const from_query = queryValue(req.query, "token");
@@ -1288,7 +1290,41 @@ fn writeTokenFile(io: std.Io, dir: std.Io.Dir, url: []const u8) !void {
     } });
 }
 
-pub fn serve(service: *HttpService, io: std.Io, open_browser: bool) !void {
+/// Why `serve` returned.
+pub const Stop = enum {
+    /// The page's Quit menu.
+    quit,
+    /// No request for the idle time: every page that was open has gone.
+    idle,
+};
+
+/// An open page checks in once a minute, so a server that has heard nothing
+/// for `idle_minutes` has no page left. 0 never stops.
+fn idleExpired(quiet_ms: i64, idle_minutes: u32) bool {
+    return idle_minutes != 0 and quiet_ms >= @as(i64, idle_minutes) * std.time.ms_per_min;
+}
+
+/// The address of the server already running from `dir`, from the token file
+/// it wrote at startup, without its line end.
+fn runningUrl(io: std.Io, dir: std.Io.Dir, buf: []u8) ?[]const u8 {
+    const text = dir.readFile(io, token_path, buf) catch return null;
+    const url = std.mem.trim(u8, text, " \r\n");
+    return if (url.len == 0) null else url;
+}
+
+/// A second launch from the same directory, from a menu or a double-click,
+/// means "show me niimbench": open the running server's page in the browser
+/// and report it. False when there is no address to open.
+pub fn reopen(io: std.Io) bool {
+    var buf: [256]u8 = undefined;
+    const url = runningUrl(io, .cwd(), &buf) orelse return false;
+    // Waited for, not left running: the process ends right after this.
+    openBrowserTask(io, url);
+    std.debug.print("niimbench is already running here; opened it in the browser: {s}\n", .{url});
+    return true;
+}
+
+pub fn serve(service: *HttpService, io: std.Io, open_browser: bool, idle_minutes: u32) !Stop {
     const address = try std.Io.net.IpAddress.parse(service.host, service.port);
     var listener = try address.listen(io, .{ .reuse_address = true });
     defer listener.deinit(io);
@@ -1304,15 +1340,37 @@ pub fn serve(service: *HttpService, io: std.Io, open_browser: bool) !void {
     try stdout_file.interface.flush();
     // The server still runs without the file; only `make trace` needs it.
     writeTokenFile(io, .cwd(), url) catch |err| std.log.warn("{s}: {s}", .{ token_path, @errorName(err) });
-    if (open_browser) openBrowser(io, url[0 .. url.len - 1]);
+    var opener = if (open_browser) openBrowser(io, url[0 .. url.len - 1]) else null;
+    // The opener finished long before; awaiting it frees it.
+    defer if (opener) |*task| task.await(io);
 
+    var last_request = std.Io.Clock.awake.now(io);
     while (true) {
+        // Wait for a connection a minute at a time, so a server no page talks
+        // to notices that it is idle.
+        var fds = [_]std.posix.pollfd{.{ .fd = listener.socket.handle, .events = std.posix.POLL.IN, .revents = 0 }};
+        const ready = std.posix.poll(&fds, std.time.ms_per_min) catch 1;
+        if (ready == 0) {
+            const quiet = last_request.durationTo(std.Io.Clock.awake.now(io)).toMilliseconds();
+            if (idleExpired(quiet, idle_minutes)) return .idle;
+            continue;
+        }
         const stream = listener.accept(io) catch |err| {
             std.log.err("accept failed: {s}", .{@errorName(err)});
             continue;
         };
         handle(service, io, stream);
+        last_request = std.Io.Clock.awake.now(io);
+        if (service.quit_requested) return .quit;
     }
+}
+
+/// Stop the server, from the page's Quit menu, which asks first. The answer
+/// goes out, and `serve` returns after this request.
+pub fn quitServer(service: *HttpService, _: RequestView) !Response {
+    service.quit_requested = true;
+    if (tracer(service)) |t| t.info("server", "quit from the page", .{});
+    return .{ .body = "{\"ok\":true}" };
 }
 
 fn handle(service: *HttpService, io: std.Io, stream: std.Io.net.Stream) void {
@@ -1439,9 +1497,11 @@ fn queryValue(query: []const u8, name: []const u8) ?[]const u8 {
     return null;
 }
 
-fn openBrowser(io: std.Io, url: []const u8) void {
-    const future = io.concurrent(openBrowserTask, .{ io, url }) catch return;
-    _ = future;
+/// Start the browser beside the server. The caller awaits the returned task
+/// before it returns: left alone, the task's memory outlived the server,
+/// which the allocator reported as a leak once Quit let `serve` return.
+fn openBrowser(io: std.Io, url: []const u8) ?std.Io.Future(void) {
+    return io.concurrent(openBrowserTask, .{ io, url }) catch null;
 }
 
 fn openBrowserTask(io: std.Io, url: []const u8) void {
@@ -1533,6 +1593,7 @@ pub fn applyHttp(ctx: *cordis.Context) !void {
     try addRoute(service, .POST, "/api/print", printJob);
     try addRoute(service, .POST, "/api/label/roll", readRoll);
     try addRoute(service, .POST, "/api/printer/clock", setPrinterClock);
+    try addRoute(service, .POST, "/api/quit", quitServer);
     try addRoute(service, .GET, "/api/trace", traceText);
     try addRoute(service, .POST, "/api/trace", tracePost);
 }
@@ -2710,4 +2771,36 @@ test "every label size is laid out whole, whether the menu or the roll gave it" 
             try std.testing.expectEqual(@as(usize, size.height_mm) * raster.dots_per_mm, whole.height);
         }
     }
+}
+
+test "Quit sets the flag serve stops on, and the idle rule waits for its minutes" {
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    try mountHttp(&ctx);
+    const http = ctx.require(HttpService, "http");
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    try std.testing.expect(!http.quit_requested);
+    const response = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/quit", .query = query, .body = "{}" });
+    defer if (response.owned) gpa.free(response.body);
+    try std.testing.expectEqual(std.http.Status.ok, response.status);
+    try std.testing.expect(http.quit_requested);
+
+    // An open page checks in once a minute; 30 quiet minutes means none is.
+    try std.testing.expect(!idleExpired(29 * std.time.ms_per_min, 30));
+    try std.testing.expect(idleExpired(30 * std.time.ms_per_min, 30));
+    // 0 never stops.
+    try std.testing.expect(!idleExpired(1000 * std.time.ms_per_min, 0));
+}
+
+test "a second launch finds the running server's address in the token file" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    var buf: [256]u8 = undefined;
+    // No file, nothing to open: the second launch says what is running instead.
+    try std.testing.expectEqual(@as(?[]const u8, null), runningUrl(io, tmp.dir, &buf));
+    try writeTokenFile(io, tmp.dir, "http://127.0.0.1:8080/?token=abc\n");
+    try std.testing.expectEqualStrings("http://127.0.0.1:8080/?token=abc", runningUrl(io, tmp.dir, &buf).?);
 }

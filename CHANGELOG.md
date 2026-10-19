@@ -11,6 +11,15 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- **Quit niimbench…**, in a menu on the **niimbench** name at the top left, stops the server after asking. **Reset panels** moved into the same menu, so the header's right side holds only what printing needs.
+- The server stops by itself when no page has been open for 30 minutes. `--idle-minutes N` changes the time, and 0 keeps it running.
+
+### Changed
+
+- Starting niimbench while it already runs from the same folder opens the running one in the browser and exits, instead of refusing. With `--no-open` it still refuses and names the running process.
+
 ## [0.6.0] - 2026-10-20
 
 ### Added
