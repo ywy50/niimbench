@@ -44,3 +44,29 @@ jobs:
       # the browser checks run here rather than skip.
       - name: make test
         run: make test
+
+  # macOS reaches Bluetooth through CoreBluetooth instead of BlueZ
+  # (src/corebluetooth.zig). This job runs `zig build test` on a Mac, where the
+  # CoreBluetooth checks run instead of skipping, then serves the page once.
+  # The runner has no Bluetooth radio, so the live scan check answers with why
+  # it cannot listen; printing to a printer is checked by hand.
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - name: zig build test
+        run: zig build test --summary all
+      - name: Serve the page
+        run: |
+          zig build
+          tools/with-server.sh sh -c 'curl -fsSL -b "" -o "$NIIMBENCH_DIR/page.html" "$NIIMBENCH_URL" && grep -q "<title>niimbench" "$NIIMBENCH_DIR/page.html"'

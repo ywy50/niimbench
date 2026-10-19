@@ -13,6 +13,11 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ### Added
 
+- **Bluetooth on macOS.** On a Mac, niimbench finds and prints to a Niimbot
+  printer over Bluetooth through Apple's CoreBluetooth. Build it from source
+  for now. The first scan asks whether the terminal may use Bluetooth, and a
+  printer's address on a Mac is the UUID macOS gives it. USB on a Mac is not
+  supported yet.
 - **Copies**, beside **Print**: print the label up to 99 times in one job. A D11 or D110 prints the copies itself; a B-series printer gets the job once per copy.
 - **Set clock**, at the right end of the printer status line: sets the printer's clock to this computer's local time, so the date button on a D110 prints today instead of 1970.
 

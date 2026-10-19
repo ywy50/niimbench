@@ -20,6 +20,7 @@ src/            Zig sources, the embedded editor, and the embedded patch
   ble.zig       The BLE print channel, written through BlueZ
   discovery.zig Found printers, the finder registry, the model lookup
   dbus.zig      BlueZ over the system bus, for the finder and ble.zig
+  corebluetooth.zig  Bluetooth on macOS: the finder and the print channel
   trace.zig     The in-memory log, published as the `trace` service
 docs/           Documentation (docs/AGENTS.md)
 tools/          The checks `make test` runs, and the label catalogue fetcher

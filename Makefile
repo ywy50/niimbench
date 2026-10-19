@@ -37,7 +37,7 @@ help:
 		'' \
 		'PRINT' \
 		'  IMAGE=label.pgm      binary P5 file to print (required)' \
-		'  ADDR=/dev/ttyACM0    tty path or Bluetooth MAC (required)' \
+		'  ADDR=/dev/ttyACM0    tty path or Bluetooth address (required)' \
 		'  MODEL=$(MODEL)            printer model' \
 		'  CONN=$(CONN)             usb or bluetooth' \
 		'  DENSITY=$(DENSITY)            print density' \
@@ -138,7 +138,7 @@ drive: build
 
 print:
 	@test -n "$(IMAGE)" || { echo "set IMAGE= to a binary P5 file"; exit 1; }
-	@test -n "$(ADDR)" || { echo "set ADDR= to a tty path or a Bluetooth MAC"; exit 1; }
+	@test -n "$(ADDR)" || { echo "set ADDR= to a tty path or a Bluetooth address"; exit 1; }
 	$(ZIG) build run -- print --image "$(IMAGE)" --addr "$(ADDR)" --model "$(MODEL)" --conn "$(CONN)" --density "$(DENSITY)" --rotate "$(ROTATE)" $(ARGS)
 
 # Refresh the label catalogue and copy it next to the code that embeds it.
