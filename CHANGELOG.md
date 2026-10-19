@@ -11,6 +11,15 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Changed
+
+- On a D11 or D110 the editor lays out on the whole label, 96×320 for a 12×40 roll, and hatches the last 2 mm that the printer leaves blank for its gap sensor. Width and Height show the whole label. A print sends all but those rows, as before.
+
+### Fixed
+
+- Centred text on a D11 or D110 printed 1 mm off centre, toward the end of the label that leaves the printer first. The editor laid out on the 304 printed rows of a 320-dot label, so its centre was 8 dots short of the paper's. Center, Fit and new text now centre on the whole label, on every roll size.
+- Picking a roll from the **Label** menu and reading it from the printer gave different heights on the D-series, 320 and 304 for a 12×40. Both now give the whole label, and a print from either sends the same 304 rows.
+
 ## [0.4.0] - 2026-10-19
 
 ### Changed

@@ -775,7 +775,8 @@
       return normalizeDegrees(Math.round(n / 15) * 15);
     }
 
-    /// Printer coordinates: width across the head, height along the tape.
+    /// Printer coordinates: width across the head, height along the tape. The
+    /// whole label, so its middle is the paper's middle.
     function rollSize() {
       return {
         width: Number(document.querySelector("#width").value) || 1,
@@ -783,11 +784,19 @@
       };
     }
 
+    /// The rows the printer prints: the label less the model's page margin at
+    /// its end, which the gap sensor needs blank to find the next label. The
+    /// server leaves the same rows off when it prints.
+    function printableHeight() {
+      const entry = sizeCatalog && sizeCatalog.models && sizeCatalog.models[document.querySelector("#model").value];
+      return rollSize().height - ((entry && entry.page_margin) || 0);
+    }
+
     /// The page size and the picture of it always move together. A caller that
     /// learns a roll's size — the tag, a preset, a saved layout — sets the page
-    /// here rather than only one of the two, because a form that says 320 while
-    /// the picture is 304 lays the fields out against a label the printer will
-    /// not accept, and they come out clipped.
+    /// here rather than only one of the two, because a form that says one height
+    /// while the picture is another lays the fields out against a label that
+    /// does not exist, and they come out clipped.
     function usePage(width, height) {
       document.querySelector("#width").value = String(width);
       document.querySelector("#height").value = String(height);
@@ -1205,8 +1214,9 @@
         if (top < 0) continue;
         const trial = { ...field, size, x: left + Math.floor(shiftFor(field, w)), y: top };
         const box = boxRect({ ...trial, text }, placedLeft(trial), trial.y);
+        // Centred on the paper, and clear of the end the printer never prints.
         if (box.x < margin || box.y < margin ||
-          box.x + box.w > roll.width - margin || box.y + box.h > roll.height - margin) continue;
+          box.x + box.w > roll.width - margin || box.y + box.h > Math.min(roll.height - margin, printableHeight())) continue;
         record();
         Object.assign(field, { size, x: trial.x, y: trial.y });
         controls.size.value = String(size);
@@ -1675,6 +1685,34 @@
       overlayCtx.restore();
     }
 
+    /// The end of the label the printer leaves blank, hatched. It is on the
+    /// overlay, so the pixels sent are never touched, and in the view's frame:
+    /// the label's last rows are the bottom in Horizontal and the right-hand end
+    /// in Vertical.
+    function drawUnprinted(px) {
+      const roll = rollSize();
+      const from = printableHeight();
+      if (from >= roll.height) return;
+      const strip = pageTurn() === 90
+        ? { x: from, y: 0, w: roll.height - from, h: canvas.height }
+        : { x: 0, y: from, w: canvas.width, h: roll.height - from };
+      overlayCtx.save();
+      overlayCtx.beginPath();
+      overlayCtx.rect(strip.x, strip.y, strip.w, strip.h);
+      overlayCtx.clip();
+      overlayCtx.fillStyle = "rgba(120, 120, 120, 0.18)";
+      overlayCtx.fillRect(strip.x, strip.y, strip.w, strip.h);
+      overlayCtx.strokeStyle = "rgba(120, 120, 120, 0.6)";
+      overlayCtx.lineWidth = px;
+      for (let d = -strip.h; d < strip.w; d += 6 * px) {
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(strip.x + d, strip.y + strip.h);
+        overlayCtx.lineTo(strip.x + d + strip.h, strip.y);
+        overlayCtx.stroke();
+      }
+      overlayCtx.restore();
+    }
+
     /// The picture's box as the preview shows it: turning the roll turns the
     /// centre and the angle, and does not resize the box.
     function viewImageBox(box) {
@@ -1846,6 +1884,7 @@
       overlayCtx.setTransform(width / canvas.width, 0, 0, height / canvas.height, 0, 0);
       const px = canvas.width / canvas.clientWidth;
       drawGrid(px);
+      drawUnprinted(px);
       drawImageOutline(px);
       for (const box of boxes) {
         const top = { x: (box.quad[0].x + box.quad[1].x) / 2, y: (box.quad[0].y + box.quad[1].y) / 2 };
@@ -2019,7 +2058,7 @@
         placedLeft(model),
         Number.isFinite(model.y) ? model.y : 0,
       );
-      return boxClipped(box, width ?? roll.width, height ?? roll.height);
+      return boxClipped(box, width ?? roll.width, height ?? printableHeight());
     }
 
     /// The clip marker: a class on the row and the warning in the note line.
@@ -2125,7 +2164,8 @@
       await report();
       const roll = rollSize();
       const labelWidth = roll.width;
-      const labelHeight = roll.height;
+      // A box that runs into the unprinted end is clipped like one past the edge.
+      const labelHeight = printableHeight();
       boxes = rows.map((row) => {
         const field = row.model;
         const text = previewText(field);

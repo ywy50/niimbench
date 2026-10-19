@@ -175,14 +175,6 @@ pub fn sizePixels(size: LabelSize, model: Model) struct { width: usize, height: 
     };
 }
 
-/// The canvas a pixel size is drawn on: the same size, less the model's page
-/// margin. This is the height a caller gets back when it asks a roll what page
-/// to lay out, so the editor's canvas and the printed page agree.
-pub fn pagePixels(size: LabelSize, model: Model) struct { width: usize, height: usize } {
-    const px = sizePixels(size, model);
-    return .{ .width = px.width, .height = px.height -| model.pageMargin() };
-}
-
 /// The roll shipped with that model: D11 12×40, D110 15×30, B18 14×50, B1 and B21 50×30.
 pub fn defaultLabelId(model: Model) []const u8 {
     return switch (model) {
@@ -262,10 +254,10 @@ test "clockwise rotation matches the paper turn" {
 }
 
 test "the D-series pages leave the gap sensor a margin" {
-    // A 12x40 roll is 320 dots tall. A page drawn to 320 leaves the gap sensor
-    // nothing to find and the printer feeds the next label out blank, so the
-    // drawn page stops 16 dots (2 mm) short. Measured on a D110_M: 304 dots
-    // printed, 308 over-fed.
+    // A 12x40 roll is 320 dots tall. A print of all 320 leaves the gap sensor
+    // nothing to find and the printer feeds the next label out blank, so a
+    // print stops 16 dots (2 mm) short of the label it was laid out on.
+    // Measured on a D110_M: 304 dots printed, 308 over-fed.
     try std.testing.expectEqual(@as(usize, 16), Model.d110.pageMargin());
     try std.testing.expectEqual(@as(usize, 16), Model.d11.pageMargin());
     try std.testing.expectEqual(@as(usize, 0), Model.b21.pageMargin());

@@ -103,7 +103,7 @@ The editor's **Orientation** buttons are not this either. They turn the picture 
 
 ## The roll
 
-`POST /api/label/roll` reads the roll's barcode from the printer's tag and answers the roll's size in millimetres and in dots — the whole label, which is what the Width and Height fields are set to. The margin that keeps the gap sensor happy belongs to `compose`, the one place a page is drawn, so a 12×40 roll answers 96×320 and the page drawn on it is 304 rows. It carries the preset id when this bench has a row for it.
+`POST /api/label/roll` reads the roll's barcode from the printer's tag and answers the roll's size in millimetres and in dots — the whole label, which is what the Width and Height fields are set to. A print leaves the model's page margin off the end ([printer.md](printer.md#raster)), so a 12×40 roll answers 96×320, the editor lays out on 96×320, and 304 rows are printed. It carries the preset id when this bench has a row for it.
 
 The barcode is resolved from the catalogue compiled into the binary, which holds every roll the vendor lists, so the answer needs no network and no configuration. The body may set `"allow_cloud": true` to permit a second attempt against the vendor's cloud for a barcode the catalogue does not carry; without it such a barcode is `unknown roll`. The answer's `source` says which resolved it, and the editor shows `(cloud)` when it was the cloud. The editor picks a printer and takes the canvas from this answer, so the roll sets the size rather than the person. The catalogue itself is [../labels/README.md](../labels/README.md).
 
