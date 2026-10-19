@@ -64,9 +64,13 @@ pub const Reply = struct {
     reply_to: u32 = 0,
     signature: []const u8 = "",
     error_name: []const u8 = "",
+    /// Header fields 1, 2 and 3: what a signal is about.
+    path: []const u8 = "",
+    interface: []const u8 = "",
+    member: []const u8 = "",
     body_offset: usize = 0,
 
-    pub const Kind = enum { method_return, error_response, other };
+    pub const Kind = enum { method_return, error_response, signal, other };
 
     pub fn deinit(self: *Reply) void {
         self.allocator.free(self.message);
@@ -78,6 +82,14 @@ pub const Conn = struct {
     io: Io,
     stream: Io.net.Stream,
     serial: u32 = 1,
+    /// The characteristic `watchValue` subscribed to.
+    watched: ?[]u8 = null,
+    /// Bytes its notifications carried, in arrival order, until the reader
+    /// takes them.
+    notified: std.ArrayList(u8) = .empty,
+    /// The latest notification on its own: what BlueZ's cached value holds.
+    latest: [512]u8 = undefined,
+    latest_len: usize = 0,
 
     pub fn connect(allocator: std.mem.Allocator, io: Io) !*Conn {
         for (bus_paths) |path| {
@@ -100,6 +112,8 @@ pub const Conn = struct {
     }
 
     pub fn deinit(self: *Conn) void {
+        if (self.watched) |path| self.allocator.free(path);
+        self.notified.deinit(self.allocator);
         self.stream.close(self.io);
         self.allocator.destroy(self);
     }
@@ -178,8 +192,8 @@ pub const Conn = struct {
         if (reply.kind != .method_return) return error.MethodFailed;
     }
 
-    /// The read half. BlueZ caches the last notified value in the property, so
-    /// polling it is what turns a notification back into a byte stream. The
+    /// The cached half. BlueZ keeps the last notified value in the property;
+    /// the transport reads it only when no signal announced an answer. The
     /// value is copied into `out`, so the reply buffer can be freed here.
     pub fn readValue(self: *Conn, char_path: []const u8, out: []u8) !usize {
         var body: std.ArrayList(u8) = .empty;
@@ -196,7 +210,7 @@ pub const Conn = struct {
     // ---- transport --------------------------------------------------------
 
     /// The bus socket is read directly rather than through `Io`, because a
-    /// GATT notification is picked up by polling, not by an async read, and a
+    /// GATT notification is waited for with `poll`, not an async read, and a
     /// bus that stops answering has to become an error instead of a hang.
     fn fd(self: *const Conn) std.posix.fd_t {
         return self.stream.socket.handle;
@@ -235,7 +249,7 @@ pub const Conn = struct {
     }
 
     /// Block until the bus has something for this connection or `timeout_ms`
-    /// passes. Used by the GATT transport, which polls for printer answers.
+    /// passes. The GATT transport waits on it for the printer's answers.
     pub fn waitForData(self: *Conn, timeout_ms: i32) !bool {
         var fds = [_]std.posix.pollfd{.{ .fd = self.fd(), .events = std.posix.POLL.IN, .revents = 0 }};
         const ready = std.posix.poll(&fds, timeout_ms) catch return error.BusUnavailable;
@@ -301,17 +315,67 @@ pub const Conn = struct {
 
         // The bus interleaves signals with replies, so the next message is not
         // necessarily ours. Only a method return or error whose `reply_serial`
-        // matches this call answers it.
+        // matches this call answers it. A printer's answer can arrive while a
+        // call waits, so a signal is kept, not dropped: dropping it lost the
+        // answer, and the reader waited out its timeout instead.
         var attempt: usize = 0;
         while (attempt < 32) : (attempt += 1) {
             var reply = try self.readMessage();
-            if (reply.kind == .other or reply.reply_to != serial) {
+            if (reply.kind == .signal) try self.keepSignal(&reply);
+            if (reply.kind == .other or reply.kind == .signal or reply.reply_to != serial) {
                 reply.deinit();
                 continue;
             }
             return reply;
         }
         return error.BadMessage;
+    }
+
+    // ---- notifications ---------------------------------------------------
+
+    /// Ask the bus for the `PropertiesChanged` signals of one characteristic.
+    /// BlueZ sends one for every notification, even when the value has not
+    /// changed, so each answer the printer gives arrives exactly once. The
+    /// bus delivers a signal only to a client with a matching rule: without
+    /// this call none came. Call it before `startNotify`, or the first answer
+    /// can arrive before the rule.
+    pub fn watchValue(self: *Conn, char_path: []const u8) !void {
+        var rule_buf: [256]u8 = undefined;
+        const rule = std.fmt.bufPrint(&rule_buf, "type='signal',sender='org.bluez',interface='org.freedesktop.DBus.Properties',member='PropertiesChanged',path='{s}',arg0='org.bluez.GattCharacteristic1'", .{char_path}) catch return error.TooLong;
+        var body: std.ArrayList(u8) = .empty;
+        defer body.deinit(self.allocator);
+        try putStringAt(&body, self.allocator, 0, rule);
+        var reply = try self.callWithBody("org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "AddMatch", "s", body.items);
+        defer reply.deinit();
+        if (reply.kind != .method_return) return error.MethodFailed;
+        if (self.watched) |old| self.allocator.free(old);
+        self.watched = try self.allocator.dupe(u8, char_path);
+    }
+
+    /// Wait up to `timeout_ms` for a notification of the watched value,
+    /// reading the bus as messages arrive rather than sleeping. True when
+    /// `notified` holds bytes.
+    pub fn awaitNotification(self: *Conn, timeout_ms: i32) !bool {
+        if (self.notified.items.len != 0) return true;
+        const start = Io.Clock.awake.now(self.io);
+        while (true) {
+            const spent: i64 = start.durationTo(Io.Clock.awake.now(self.io)).toMilliseconds();
+            if (spent >= timeout_ms) return false;
+            if (!try self.waitForData(@intCast(timeout_ms - spent))) return false;
+            var message = try self.readMessage();
+            defer message.deinit();
+            if (message.kind == .signal) try self.keepSignal(&message);
+            if (self.notified.items.len != 0) return true;
+        }
+    }
+
+    /// Append the value a `PropertiesChanged` signal carries for the watched
+    /// characteristic. Any other signal is ignored.
+    fn keepSignal(self: *Conn, message: *const Reply) !void {
+        const watched = self.watched orelse return;
+        const n = (try notifiedValue(message, watched, &self.latest)) orelse return;
+        self.latest_len = n;
+        try self.notified.appendSlice(self.allocator, self.latest[0..n]);
     }
 
     fn readMessage(self: *Conn) !Reply {
@@ -325,41 +389,83 @@ pub const Conn = struct {
         const pad = (8 - (after_fields % 8)) % 8;
         const total = after_fields + pad + @as(usize, body_len);
         const message = try self.allocator.alloc(u8, total);
-        errdefer self.allocator.free(message);
-        @memcpy(message[0..16], &fixed);
-        try self.readExact(message[16..]);
-        if (std.mem.readInt(u32, message[4..8], .little) != body_len) return error.BadMessage;
-
-        var reply = Reply{
-            .allocator = self.allocator,
-            .message = message,
-            .kind = switch (fixed[1]) {
-                2 => .method_return,
-                3 => .error_response,
-                else => .other,
-            },
-            .serial = std.mem.readInt(u32, fixed[8..12], .little),
-            .body_offset = after_fields + pad,
-        };
-        errdefer reply.deinit();
-        var cur = Cursor{ .buf = message, .pos = 16 };
-        while (cur.pos < after_fields) {
-            cur.alignTo(8);
-            const code = try cur.readU8();
-            const value_signature = try cur.readSignature();
-            switch (code) {
-                5 => reply.reply_to = try cur.readU32(),
-                8 => reply.signature = try cur.readSignature(),
-                4 => reply.error_name = try cur.readString(),
-                else => {
-                    var index: usize = 0;
-                    try cur.skipValue(value_signature, &index);
-                },
-            }
+        {
+            errdefer self.allocator.free(message);
+            @memcpy(message[0..16], &fixed);
+            try self.readExact(message[16..]);
         }
-        return reply;
+        return parseMessage(self.allocator, message);
     }
 };
+
+/// The header of one whole message off the bus. The `Reply` owns `message`,
+/// and an error frees it, once.
+fn parseMessage(allocator: std.mem.Allocator, message: []u8) !Reply {
+    errdefer allocator.free(message);
+    if (message.len < 16 or message[0] != 'l') return error.BadMessage;
+    const fields_len = std.mem.readInt(u32, message[12..16], .little);
+    const after_fields = 16 + @as(usize, fields_len);
+    const pad = (8 - (after_fields % 8)) % 8;
+    if (after_fields + pad > message.len) return error.BadMessage;
+    var reply = Reply{
+        .allocator = allocator,
+        .message = message,
+        .kind = switch (message[1]) {
+            2 => .method_return,
+            3 => .error_response,
+            4 => .signal,
+            else => .other,
+        },
+        .serial = std.mem.readInt(u32, message[8..12], .little),
+        .body_offset = after_fields + pad,
+    };
+    var cur = Cursor{ .buf = message, .pos = 16 };
+    while (cur.pos < after_fields) {
+        cur.alignTo(8);
+        const code = try cur.readU8();
+        const value_signature = try cur.readSignature();
+        switch (code) {
+            1 => reply.path = try cur.readString(),
+            2 => reply.interface = try cur.readString(),
+            3 => reply.member = try cur.readString(),
+            5 => reply.reply_to = try cur.readU32(),
+            8 => reply.signature = try cur.readSignature(),
+            4 => reply.error_name = try cur.readString(),
+            else => {
+                var index: usize = 0;
+                try cur.skipValue(value_signature, &index);
+            },
+        }
+    }
+    return reply;
+}
+
+/// The bytes a `PropertiesChanged` signal carries as the `Value` of the
+/// `GattCharacteristic1` at `char_path`, or null for any other signal. The
+/// body is `sa{sv}as`: the interface, the changed properties, the names that
+/// were invalidated.
+fn notifiedValue(message: *const Reply, char_path: []const u8, out: []u8) !?usize {
+    if (message.kind != .signal) return null;
+    if (!std.mem.eql(u8, message.member, "PropertiesChanged")) return null;
+    if (!std.mem.eql(u8, message.interface, "org.freedesktop.DBus.Properties")) return null;
+    if (!std.mem.eql(u8, message.path, char_path)) return null;
+    if (!std.mem.startsWith(u8, message.signature, "sa{sv}")) return null;
+    var cur = Cursor{ .buf = message.message, .pos = message.body_offset };
+    if (!std.mem.eql(u8, try cur.readString(), "org.bluez.GattCharacteristic1")) return null;
+    // An array's length counts its elements, not the padding to the first.
+    const len = try cur.readU32();
+    cur.alignTo(8);
+    const end = cur.pos + len;
+    if (end > cur.buf.len) return error.BadMessage;
+    while (cur.pos < end) {
+        cur.alignTo(8);
+        const key = try cur.readString();
+        if (std.mem.eql(u8, key, "Value")) return try cur.readByteArray(out);
+        var index: usize = 0;
+        try cur.skipValue("v", &index);
+    }
+    return null;
+}
 
 /// The whole method-call message: the fixed header, the four required header
 /// fields, the `SIGNATURE` field when the call has arguments, and the body.
@@ -947,4 +1053,78 @@ test "a WriteValue call matches the bytes the bus accepts" {
 
     try std.testing.expectEqual(expected.len, message.items.len);
     try std.testing.expectEqualSlices(u8, &expected, message.items);
+}
+
+/// A notification as BlueZ announces it: `PropertiesChanged` on the
+/// characteristic, with `Value` behind another property so a reader has to
+/// step over one.
+fn testNotification(allocator: std.mem.Allocator, char_path: []const u8, value: []const u8) ![]u8 {
+    var body: std.ArrayList(u8) = .empty;
+    defer body.deinit(allocator);
+    try putStringAt(&body, allocator, 0, "org.bluez.GattCharacteristic1");
+    try padTo(&body, allocator, 0, 4);
+    const length_at = body.items.len;
+    try body.appendNTimes(allocator, 0, 4);
+    try padTo(&body, allocator, 0, 8);
+    const first = body.items.len;
+    try putStringAt(&body, allocator, 0, "Notifying");
+    try body.appendSlice(allocator, &.{ 1, 'b', 0 });
+    try padTo(&body, allocator, 0, 4);
+    try body.appendSlice(allocator, &.{ 1, 0, 0, 0 });
+    try padTo(&body, allocator, 0, 8);
+    try putStringAt(&body, allocator, 0, "Value");
+    try body.appendSlice(allocator, &.{ 2, 'a', 'y', 0 });
+    try putByteArrayAt(&body, allocator, 0, value);
+    std.mem.writeInt(u32, body.items[length_at..][0..4], @intCast(body.items.len - first), .little);
+    // `as`: nothing invalidated.
+    try padTo(&body, allocator, 0, 4);
+    try body.appendNTimes(allocator, 0, 4);
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(allocator);
+    try encodeCall(&out, allocator, 9, "org.bluez", char_path, "org.freedesktop.DBus.Properties", "PropertiesChanged", "sa{sv}as", body.items);
+    out.items[1] = 4; // signal
+    return out.toOwnedSlice(allocator);
+}
+
+const test_char_path = "/org/bluez/hci0/dev_C4_17_82_25_20_64/service0020/char0021";
+const test_status = [_]u8{ 0x55, 0x55, 0xB3, 0x04, 0x00, 0x00, 0x64, 0x64, 0x33, 0xAA, 0xAA };
+
+test "a PropertiesChanged signal yields the value the printer notified" {
+    const gpa = std.testing.allocator;
+    var message = try parseMessage(gpa, try testNotification(gpa, test_char_path, &test_status));
+    defer message.deinit();
+    var out: [64]u8 = undefined;
+    const n = (try notifiedValue(&message, test_char_path, &out)) orelse return error.NoValue;
+    try std.testing.expectEqualSlices(u8, &test_status, out[0..n]);
+    // Another characteristic's value is not this one's answer.
+    try std.testing.expectEqual(@as(?usize, null), try notifiedValue(&message, "/org/bluez/hci0/other", &out));
+}
+
+test "a notification that arrives while a call waits for its reply is kept" {
+    // The printer's answer can land on the bus between a call and its reply.
+    // It was dropped there, and the reader waited out its timeout for it.
+    const gpa = std.testing.allocator;
+    var fds: [2]std.posix.fd_t = undefined;
+    if (std.os.linux.socketpair(std.os.linux.AF.UNIX, std.os.linux.SOCK.STREAM, 0, &fds) != 0) return error.SkipZigTest;
+    defer _ = std.os.linux.close(fds[1]);
+    const conn = try gpa.create(Conn);
+    conn.* = .{ .allocator = gpa, .io = std.testing.io, .stream = .{ .socket = .{ .handle = fds[0], .address = undefined } } };
+    defer conn.deinit();
+    conn.watched = try gpa.dupe(u8, test_char_path);
+
+    // The bus side: the notification, then the reply to call serial 1.
+    const signal = try testNotification(gpa, test_char_path, &test_status);
+    defer gpa.free(signal);
+    const reply = [_]u8{ 'l', 2, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 8, 0, 0, 0, 5, 1, 'u', 0, 1, 0, 0, 0 };
+    for ([_][]const u8{ signal, &reply }) |bytes| {
+        const wrote = std.os.linux.write(fds[1], bytes.ptr, bytes.len);
+        try std.testing.expectEqual(bytes.len, wrote);
+    }
+
+    var answered = try conn.callWithBody("org.bluez", test_char_path, "org.bluez.GattCharacteristic1", "WriteValue", "", "");
+    defer answered.deinit();
+    try std.testing.expectEqual(Reply.Kind.method_return, answered.kind);
+    try std.testing.expect(try conn.awaitNotification(0));
+    try std.testing.expectEqualSlices(u8, &test_status, conn.notified.items);
 }

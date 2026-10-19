@@ -10,21 +10,19 @@ const read_wait_ms: i32 = 500;
 /// The print channel of a BLE Niimbot printer, reached through BlueZ rather
 /// than through an RFCOMM socket. A BLE-only model such as the D110 has no
 /// Classic radio at all: it refuses RFCOMM with `EHOSTDOWN`, and the same
-/// `55 55 … aa aa` frames travel as GATT writes here instead. Reads come back
-/// as notifications, which BlueZ caches in the characteristic's `Value`
-/// property, so a read is a poll of that property plus the bytes already
-/// buffered from the last one.
+/// `55 55 … aa aa` frames travel as GATT writes here instead. Answers come back
+/// as notifications, which BlueZ announces as `PropertiesChanged` signals, one
+/// per notification, and also caches in the characteristic's `Value` property.
 pub const Handler = struct {
     allocator: std.mem.Allocator,
     conn: *dbus.Conn,
     char_path: []u8,
     buffer: std.ArrayList(u8) = .empty,
     start: usize = 0,
-    /// The last value the stack handed over. The characteristic keeps the
-    /// previous frame after it has been read, and the stack updates it
-    /// asynchronously, so a poll right after a write can still return the
-    /// answer to the *last* request. Only a value that differs from this is
-    /// new bytes.
+    /// The last value handed over, by a signal or by a read of the cache. The
+    /// cache keeps a frame after it has been handed over, so a read of it can
+    /// return the answer to the *last* request. Only a cached value that
+    /// differs from this is new bytes.
     last: [512]u8 = undefined,
     last_len: usize = 0,
 
@@ -47,13 +45,30 @@ pub const Handler = struct {
     fn read(ptr: *anyopaque, buf: []u8) !usize {
         const self: *Handler = @ptrCast(@alignCast(ptr));
         if (try self.drain(buf)) |n| return n;
-        // Nothing buffered: ask for the characteristic value, which is where
-        // the stack caches what the printer notified. The property update is
-        // not always announced on the bus, so polling it is what makes the
-        // reply reliable. Zero means "nothing arrived", which callers retry.
-        std.Io.sleep(self.conn.io, .fromMilliseconds(read_wait_ms), .awake) catch {};
+        // Wait on the bus for the printer's answer, which arrives as a signal
+        // the moment BlueZ has it. Reading only the cached value could not
+        // tell a second, identical answer from the first, and waited out the
+        // client's timeout on every repeated status: 3 s a print.
+        if (try self.conn.awaitNotification(read_wait_ms)) {
+            try self.takeNotified();
+            return (try self.drain(buf)) orelse 0;
+        }
+        // No signal in the half second: read the cache, for a stack that did
+        // not announce the notification. Zero means "nothing arrived", which
+        // callers retry.
         try self.pull();
         return (try self.drain(buf)) orelse 0;
+    }
+
+    /// Move the bytes the signals carried into the buffer. The cache now holds
+    /// the latest of them, so it becomes `last`, and the fallback read does
+    /// not hand the same answer over a second time.
+    fn takeNotified(self: *Handler) !void {
+        try self.buffer.appendSlice(self.allocator, self.conn.notified.items);
+        self.conn.notified.clearRetainingCapacity();
+        const latest = self.conn.latest[0..self.conn.latest_len];
+        @memcpy(self.last[0..latest.len], latest);
+        self.last_len = latest.len;
     }
 
     /// Hand over what is already buffered, if anything.
@@ -103,6 +118,7 @@ pub fn open(allocator: std.mem.Allocator, io: std.Io, address: []const u8) !prin
     const char_path = (try conn.findCharacteristic(dbus.niimbot_le_characteristic)) orelse
         return error.PrintCharacteristicMissing;
     errdefer allocator.free(char_path);
+    try conn.watchValue(char_path);
     try conn.startNotify(char_path);
 
     const self = try allocator.create(Handler);
