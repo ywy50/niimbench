@@ -11,6 +11,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Changed
+
+- The font menu lists Fira Sans and Fira Sans Bold first. A field that names no font, and a new row in the editor, is drawn in Fira Sans Bold.
+
 ### Fixed
 
 - The `http` plugin's `inject` declaration lists only what its `apply` requires. `trace` was declared required although every route treats it as optional, so a context without the trace plugin could not boot the editor, and withdrawing the plugin at runtime dropped the whole `http` fiber.

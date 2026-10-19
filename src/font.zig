@@ -18,6 +18,8 @@ pub const Font = struct {
 };
 
 pub const fonts = [_]Font{
+    embed("fira-sans", "Fira Sans", "FiraSans-Book.ttf"),
+    embed("fira-sans-bold", "Fira Sans Bold", "FiraSans-Bold.ttf"),
     embed("dejavu-sans", "DejaVu Sans", "DejaVuSans.ttf"),
     embed("dejavu-sans-bold", "DejaVu Sans Bold", "DejaVuSans-Bold.ttf"),
     embed("dejavu-sans-mono", "DejaVu Sans Mono", "DejaVuSansMono.ttf"),
@@ -28,15 +30,13 @@ pub const fonts = [_]Font{
     embed("liberation-mono", "Liberation Mono", "LiberationMono-Regular.ttf"),
     embed("open-sans", "Open Sans", "OpenSans-Regular.ttf"),
     embed("open-sans-bold", "Open Sans Bold", "OpenSans-Bold.ttf"),
-    embed("fira-sans", "Fira Sans", "FiraSans-Book.ttf"),
-    embed("fira-sans-bold", "Fira Sans Bold", "FiraSans-Bold.ttf"),
     embed("noto-sans", "Noto Sans", "NotoSans-Regular.ttf"),
     embed("noto-serif", "Noto Serif", "NotoSerif-Regular.ttf"),
     embed("hack", "Hack", "Hack-Regular.ttf"),
 };
 
 /// The font a field is drawn in when it names none.
-pub const default_id = "dejavu-sans";
+pub const default_id = "fira-sans-bold";
 
 fn embed(comptime id: []const u8, comptime name: []const u8, comptime file: []const u8) Font {
     @setEvalBranchQuota(100_000);

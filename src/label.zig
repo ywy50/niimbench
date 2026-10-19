@@ -623,7 +623,8 @@ test "a field is drawn in the font it names" {
     try std.testing.expectEqualSlices(u8, default.pixels, named.pixels);
     // Every other font draws the same text differently, and the block it
     // reports is the one it draws in.
-    for (font.fonts[1..]) |other| {
+    for (font.fonts) |other| {
+        if (std.mem.eql(u8, other.id, font.default_id)) continue;
         const drawn = try render(gpa, 200, 30, &.{.{ .text = "Label 42", .x = 2, .y = 2, .size = 20, .font = other.id }}, "");
         defer gpa.free(drawn.pixels);
         try std.testing.expect(!std.mem.eql(u8, default.pixels, drawn.pixels));

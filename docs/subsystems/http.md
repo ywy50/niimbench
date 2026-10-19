@@ -73,7 +73,7 @@ When a finder of the scan failed, the answer keeps the finding it made anyway an
 
 Each field takes `text`, `key`, `x`, `y`, `font`, `size`, `align_mode`, and `rotation`.
 
-`font` is the id of an embedded font, `dejavu-sans` when it is left out, and `size` is the line height in dots, 16 when it is left out. What both mean, how a line is measured, and how its letters are drawn is [text.md](text.md). A font the build does not carry is `UnknownFont`.
+`font` is the id of an embedded font, `fira-sans-bold` when it is left out, and `size` is the line height in dots, 16 when it is left out. What both mean, how a line is measured, and how its letters are drawn is [text.md](text.md). A font the build does not carry is `UnknownFont`.
 
 `rotation` is the field's own angle in degrees, clockwise about the centre of its block: `0` is the letters across the head's width, `90` along the tape, and anything from `0` to `359` is allowed, including the angles between. The angle turns the letters only — it never resizes the page, and it is the **only** thing that turns a field. `direction` is accepted for older callers and ignored: a field is turned by `rotation`. Turning the page is not this and is not something the composed routes do.
 
@@ -127,10 +127,10 @@ After a successful print the context emits `print/done`.
 
 ```json
 {
-  "default": "dejavu-sans",
+  "default": "fira-sans-bold",
   "max_size": 1024,
   "fonts": [
-    { "id": "dejavu-sans", "name": "DejaVu Sans", "line_units": 2384, "missing": 1229, "advances": [[32, 651, 821, 942]] }
+    { "id": "fira-sans", "name": "Fira Sans", "line_units": 1200, "missing": 666, "advances": [[32, 268, 241, 390]] }
   ]
 }
 ```

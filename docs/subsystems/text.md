@@ -6,7 +6,7 @@ How a field's text becomes dots on a label: the embedded fonts, what `size` mean
 
 ### Fonts
 
-A field's `font` is the id of one of the fonts embedded in the binary; the default is `dejavu-sans`. The list of fonts, their files, versions and licences is [../../src/fonts/README.md](../../src/fonts/README.md), and `font.fonts` in `src/font.zig` is the same list in code. The editor's font menu shows every font the server reports at `/api/label/metrics`.
+A field's `font` is the id of one of the fonts embedded in the binary; the default is `fira-sans-bold`. The list of fonts, their files, versions and licences is [../../src/fonts/README.md](../../src/fonts/README.md), and `font.fonts` in `src/font.zig` is the same list in that order. The editor's font menu shows every font the server reports at `/api/label/metrics`, in that order, so Fira Sans and Fira Sans Bold are the first two.
 
 ### Size
 

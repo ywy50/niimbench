@@ -9,7 +9,7 @@ Files to copy. Behavior they rely on lives in the linked page, not here.
 
 ## Layout JSON
 
-Load layout requires an object with a `fields` array. Each field may set `text`, `x`, `y`, `font`, `size`, `align_mode`, and `rotation`. `font` is one of the ids in [../../src/fonts/README.md](../../src/fonts/README.md), DejaVu Sans when it is missing or unknown. `size` is the line height in dots. A layout that says `scale` instead, from before text had sizes in dots, loads at `scale * 11`. Optional label fields are `width`, `height`, `model`, `density`, `rotate`, `conn`, and `addr`. At most 64 fields. The editor draws literal text only, so a field's `key` and the layout's `source` are dropped on load; the HTTP routes still take both ([../subsystems/sources.md](../subsystems/sources.md)).
+Load layout requires an object with a `fields` array. Each field may set `text`, `x`, `y`, `font`, `size`, `align_mode`, and `rotation`. `font` is one of the ids in [../../src/fonts/README.md](../../src/fonts/README.md), Fira Sans Bold when it is missing or unknown. `size` is the line height in dots. A layout that says `scale` instead, from before text had sizes in dots, loads at `scale * 11`. Optional label fields are `width`, `height`, `model`, `density`, `rotate`, `conn`, and `addr`. At most 64 fields. The editor draws literal text only, so a field's `key` and the layout's `source` are dropped on load; the HTTP routes still take both ([../subsystems/sources.md](../subsystems/sources.md)).
 
 Save layout writes that object and deletes `background_b64`. The render body, which can include a background, is specified in [../subsystems/http.md](../subsystems/http.md).
 

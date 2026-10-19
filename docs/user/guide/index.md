@@ -8,7 +8,7 @@ http://127.0.0.1:<port>/?token=<32 hex chars>
 
 Open that URL. The browser stores the token in a cookie and lands on `http://127.0.0.1:<port>/`, so the address bar no longer shows it. This guide begins after that page is up.
 
-The page opens with one text field that says `niimbench`, centred on the label in DejaVu Sans at the largest size up to 32 dots that fits across the roll. The preview is the grayscale the printer will get. `POST /api/render` and `POST /api/print` share that drawing path.
+The page opens with one text field that says `niimbench`, centred on the label in Fira Sans Bold at the largest size up to 32 dots that fits across the roll. The preview is the grayscale the printer will get. `POST /api/render` and `POST /api/print` share that drawing path.
 
 ## Arrange the panels
 
@@ -46,7 +46,7 @@ Click a field's box or the picture to select it: its outline turns solid and thi
 
 **Add text** appends a row. Each row has its text, a **font**, a **size**, an `x` and `y` in pixels, an angle, and **Wrap**, **Fit**, **Center**, **Copy** and **Remove**. Size is the line height in dots, any whole number from 1 to 1024 — dragging a corner of the field's box sets the same number — and it is a different thing from **Label** in the **Label and printer** panel, which is the size of the roll itself. 8 dots is 1 mm. Every size is allowed, including one too wide for the roll: the box turns red and the row says it is clipped, and **Fit** or **Wrap** fixes it. **Center** puts the field back where new text starts: in the middle of the label, upright in the view, at the size it has. **Copy** adds another field with the same text, font and size directly below. Inputs apply when they change.
 
-**Font** picks the typeface a row is drawn in, from the fifteen free fonts built into niimbench: sans, serif and monospaced faces from DejaVu, Liberation, Open Sans, Fira Sans, Noto and Hack, with bold versions of the sans faces. A new row starts in DejaVu Sans. The same size can look larger or smaller from one font to the next, because size is the whole line, including the room a font keeps for accents and descenders; the box always shows what that line takes on the label. The list, with each font's licence, is [src/fonts/README.md](../../../src/fonts/README.md).
+**Font** picks the typeface a row is drawn in, from the fifteen free fonts built into niimbench: sans, serif and monospaced faces from DejaVu, Liberation, Open Sans, Fira Sans, Noto and Hack, with bold versions of the sans faces. Fira Sans and Fira Sans Bold are the first two in the menu. A new row starts in Fira Sans Bold. The same size can look larger or smaller from one font to the next, because size is the whole line, including the room a font keeps for accents and descenders; the box always shows what that line takes on the label. The list, with each font's licence, is [src/fonts/README.md](../../../src/fonts/README.md).
 
 **Fit** centres the field on the label and makes it as large as the label allows: the largest size whose box, turned the way the field is, stays a millimetre inside every edge. It grows a small field and shrinks a clipped one, in one click. With **Keep text upright** on in **Vertical**, the field is turned with the view, so **Fit** fills the width the preview shows. If not even a 1-dot line fits, the field is left as it is.
 
@@ -108,7 +108,7 @@ The history holds the same JSON that **Save layout** writes, so it does not cove
 
 **Save layout**, in the header, downloads `niimbench-label.json`: width, height, fields, density, model, connection, address, and rotation, and for each field its text, position, font, size, alignment and angle. The picture is left out on purpose.
 
-**Load layout** reads that JSON. It needs an object with a `fields` array of at most 64 objects. A field's `size` is its line height in dots. A layout saved before sizes were in dots says `scale` instead, and loads at `scale * 11` dots. A field's `font` is one of the built-in font ids; a layout without one, or naming a font this build does not have, loads in DejaVu Sans, and the row's menu shows it. A `background_b64` field is ignored and the status line says the background was not loaded.
+**Load layout** reads that JSON. It needs an object with a `fields` array of at most 64 objects. A field's `size` is its line height in dots. A layout saved before sizes were in dots says `scale` instead, and loads at `scale * 11` dots. A field's `font` is one of the built-in font ids; a layout without one, or naming a font this build does not have, loads in Fira Sans Bold, and the row's menu shows it. A `background_b64` field is ignored and the status line says the background was not loaded.
 
 [../../templates/example-label.json](../../templates/example-label.json) is a file in that shape. It draws a title in a bold font and a part number in a mono font, on a 384×96 B21 label.
 
