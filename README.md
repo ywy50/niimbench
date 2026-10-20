@@ -23,7 +23,51 @@ niimbench designs and prints labels on Niimbot label printers, the D110, D110_M,
 
 ## Quick start
 
-Run the latest release on a 64-bit x86 Linux machine, with nothing to install:
+Pick what you have. Each way ends with the editor open in your browser.
+
+| You have | Go to |
+|---|---|
+| Debian or Ubuntu | [Debian or Ubuntu](#debian-or-ubuntu) |
+| Fedora | [Fedora](#fedora) |
+| Arch Linux | [Arch Linux](#arch-linux) |
+| Another Linux, or a Raspberry Pi | [Any Linux](#any-linux) |
+| A Mac | [Mac](#mac) |
+| Windows | [Windows and macOS](#windows-and-macos) |
+| A checkout of this repository | [From source](#from-source) |
+
+### Debian or Ubuntu
+
+The package also puts niimbench in your desktop menu:
+
+```bash
+curl -fsSLO https://github.com/ywy50/niimbench/releases/latest/download/niimbench-x86_64-linux.deb
+sudo apt install ./niimbench-x86_64-linux.deb
+```
+
+On a 64-bit ARM machine, write `aarch64` where these say `x86_64`.
+
+### Fedora
+
+```bash
+sudo dnf install https://github.com/ywy50/niimbench/releases/latest/download/niimbench-x86_64-linux.rpm
+```
+
+On a 64-bit ARM machine, write `aarch64` where this says `x86_64`.
+
+### Arch Linux
+
+The package is `niimbench-bin`, the same release build and menu entry, built from the `PKGBUILD` on the release:
+
+```bash
+mkdir niimbench-bin
+cd niimbench-bin
+curl -fsSLo PKGBUILD https://github.com/ywy50/niimbench/releases/latest/download/PKGBUILD
+makepkg -si
+```
+
+### Any Linux
+
+Nothing to install. On a 64-bit x86 machine:
 
 ```bash
 curl -fsSL https://github.com/ywy50/niimbench/releases/latest/download/niimbench-x86_64-linux.tar.gz | tar xz
@@ -37,31 +81,9 @@ curl -fsSL https://github.com/ywy50/niimbench/releases/latest/download/niimbench
 ./niimbench-aarch64-linux/niimbench
 ```
 
-On Debian or Ubuntu, install the package instead, which also puts niimbench in the desktop menu:
+### Mac
 
-```bash
-curl -fsSLO https://github.com/ywy50/niimbench/releases/latest/download/niimbench-x86_64-linux.deb
-sudo apt install ./niimbench-x86_64-linux.deb
-```
-
-On Fedora:
-
-```bash
-sudo dnf install https://github.com/ywy50/niimbench/releases/latest/download/niimbench-x86_64-linux.rpm
-```
-
-On a 64-bit ARM machine, the package names say `aarch64` where these say `x86_64`.
-
-On Arch Linux, build and install the package `niimbench-bin`, the same release build and menu entry, from the `PKGBUILD` on the release:
-
-```bash
-mkdir niimbench-bin
-cd niimbench-bin
-curl -fsSLo PKGBUILD https://github.com/ywy50/niimbench/releases/latest/download/PKGBUILD
-makepkg -si
-```
-
-On a Mac with macOS 13 or later, Apple silicon or Intel, install the app and open it:
+macOS 13 or later, Apple silicon or Intel. Install the app and open it:
 
 ```bash
 curl -fsSLO https://github.com/ywy50/niimbench/releases/latest/download/niimbench-macos.zip
@@ -69,9 +91,11 @@ ditto -x -k niimbench-macos.zip /Applications
 open /Applications/niimbench.app
 ```
 
-On Windows, run the x86_64 build inside WSL 2 and open the address it prints in your Windows browser. What works on each is under [Windows and macOS](#windows-and-macos).
+Downloaded with a browser instead, the app needs your OK the first time: see [First open](#first-open).
 
-From source you need Zig 0.17. Node and a Chromium-family browser are only needed for `make test`.
+### From source
+
+You need Zig 0.17. Node and a Chromium-family browser are only needed for `make test`.
 
 Serve the editor and open it in your browser:
 
@@ -120,13 +144,23 @@ The documentation index is [docs/README.md](docs/README.md).
 
 ## Running it
 
-`make` listens on `127.0.0.1` with an ephemeral port, prints a URL that carries the session token, and opens it with `xdg-open` (`open` on macOS). It stops when you pick **Quit niimbench…** in the menu on the **niimbench** name, or by itself once no page has been open for 30 minutes, and running `make` again while it runs opens the running one instead of a second server ([docs/user/guide/index.md](docs/user/guide/index.md#stop-and-start-again)). `make serve` leaves the URL for a browser you already have. `PORT=8080` picks the port. `make help` lists the targets and variables.
+- **Start.** `make`, the desktop menu entry, the Mac app or the binary itself. niimbench listens on `127.0.0.1` with an ephemeral port, prints a URL that carries the session token, and opens it with `xdg-open` (`open` on macOS).
+- **Stop.** Pick **Quit niimbench…** in the menu on the **niimbench** name. It also stops by itself once no page has been open for 30 minutes.
+- **Start it again while it runs.** That opens the running one instead of a second server ([docs/user/guide/index.md](docs/user/guide/index.md#stop-and-start-again)).
+- **Other ways to run it.** `make serve` leaves the URL for a browser you already have. `PORT=8080` picks the port. `make help` lists the targets and variables.
 
-The `.deb` and `.rpm` install `niimbench` in `/usr/bin` and a **niimbench** entry in the desktop menu, which runs `niimbench --app`: the editor opens in your browser, picking the entry again while it runs opens the running one, and the lock and token file live in `~/.local/state/niimbench` rather than in whatever folder the menu starts it in. Each tarball carries the same entry and its icons under `share/`; with the binary on your `PATH`, copy that folder into `~/.local/share` for a menu entry of your own.
+### The desktop menu entry
 
-`label.pgm` is a binary P5 file: `P5`, width, height, maxval `255`, then one byte per pixel. `0` is black and `255` is white.
+- The `.deb` and `.rpm` install `niimbench` in `/usr/bin` and a **niimbench** entry in the desktop menu, which runs `niimbench --app`.
+- From the menu, the editor opens in your browser, and picking the entry again while it runs opens the running one.
+- Its lock and token file live in `~/.local/state/niimbench`, rather than in whatever folder the menu starts it in.
+- Each tarball carries the same entry and its icons under `share/`. With the binary on your `PATH`, copy that folder into `~/.local/share` for a menu entry of your own.
 
-The editor guide is [docs/user/guide/index.md](docs/user/guide/index.md). A layout you can load is [docs/templates/example-label.json](docs/templates/example-label.json).
+### Next steps
+
+- The editor guide is [docs/user/guide/index.md](docs/user/guide/index.md).
+- A layout you can load is [docs/templates/example-label.json](docs/templates/example-label.json).
+- `label.pgm`, for `make print`, is a binary P5 file: `P5`, width, height, maxval `255`, then one byte per pixel. `0` is black and `255` is white.
 
 ## Editor
 
@@ -149,13 +183,18 @@ The editor draws literal text. The HTTP routes also take a JSON `source` and a f
 
 B18, D11, and D110 densities above 3 are clamped to 3. Head width, density, and the raster live in [docs/subsystems/printer.md](docs/subsystems/printer.md).
 
-The editor scans for printers and lists what it finds under **Found Niimbot devices**. Picking one fills in the connection, the address, and the model, so the label is built for the printer that is there. On Linux the scan probes the serial ports and asks BlueZ what Bluetooth devices exist, and **Find nearby** adds an inquiry; on a Mac it lists the printers already connected, and **Find nearby** listens for advertisements. The subsystem page is [docs/subsystems/printer.md](docs/subsystems/printer.md#discovery).
+The editor scans for printers and lists what it finds under **Found Niimbot devices**. Picking one fills in the connection, the address, and the model, so the label is built for the printer that is there.
+
+- **On Linux** the scan probes the serial ports and asks BlueZ what Bluetooth devices exist. **Find nearby** adds an inquiry.
+- **On a Mac** it lists the printers already connected. **Find nearby** listens for advertisements.
+
+How finding works is [docs/subsystems/printer.md](docs/subsystems/printer.md#discovery).
 
 | Connection | What it needs |
 |---|---|
 | USB on Linux | A user who can open the tty: `dialout` on most Linux machines |
 | Bluetooth on Linux | BlueZ on the system bus, so a running `bluetoothd`. A BLE printer is written over its print characteristic |
-| Bluetooth on macOS | The terminal app allowed to use Bluetooth, under System Settings → Privacy & Security → Bluetooth |
+| Bluetooth on macOS | niimbench allowed to use Bluetooth, under System Settings → Privacy & Security → Bluetooth; run from a checkout, the terminal app instead |
 | USB on macOS | Not supported yet |
 
 ## Fonts
@@ -172,6 +211,73 @@ Text is drawn by niimbench's own TrueType rasteriser from fonts embedded in the 
 | Hack | Regular, monospaced |
 
 Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), and how text is drawn is [docs/subsystems/text.md](docs/subsystems/text.md).
+
+## Windows and macOS
+
+niimbench reaches a printer through the operating system's own interfaces. On Linux those are BlueZ for Bluetooth and the kernel's serial ports for USB. On macOS it is Apple's CoreBluetooth, so a Mac prints over Bluetooth; USB on a Mac is not supported yet.
+
+### The Mac app
+
+`niimbench.app` comes in `niimbench-macos.zip` on the releases page. It runs on macOS 13 or later, on Apple silicon and on Intel.
+
+- **Opening it** opens the editor in your browser. It has no window or Dock icon of its own: the page is the app.
+- **Opening it again** while it runs opens its page.
+- **Quitting:** pick **Quit niimbench…** in the page's menu. It also stops by itself 30 minutes after the last page closed.
+- **Its files:** the lock and token file are in `~/Library/Application Support/niimbench`.
+
+### First open
+
+The app is signed ad hoc, not with an Apple Developer ID, and it is not notarized. Downloaded with a browser, its first open is refused with a message that Apple could not verify niimbench. Allow it once:
+
+- **macOS 15:** open System Settings → Privacy & Security, and pick **Open Anyway** next to that message.
+- **macOS 13 and 14:** Control-click the app and pick **Open**.
+
+A copy fetched with `curl`, as in the quick start, is not marked as downloaded and opens without asking.
+
+### Bluetooth on a Mac
+
+- The first scan asks whether niimbench may use Bluetooth. Allow it, or later turn it on under System Settings → Privacy & Security → Bluetooth. Until then a print answers `BluetoothNotAllowed`.
+- Run from a checkout with `make`, it is your terminal app that macOS asks about instead.
+- macOS does not show programs a Bluetooth address. The printer list shows a UUID your Mac made up for the printer, and that UUID is the address to print to.
+- CI checks the macOS code on GitHub's Macs, which have no Bluetooth radio, so printing from a Mac has not yet been tried against a real printer.
+
+From source, Zig 0.17 serves the editor from the checkout with `make`, and `make macos-app` builds the app into `zig-out/macos` ([docs/development.md](docs/development.md#the-mac-app)).
+
+### Windows
+
+- The Linux build runs inside WSL 2. Start it there and open the address it prints in your Windows browser, which WSL forwards to it.
+- A printer on USB, such as the B21, is reached once [usbipd-win](https://github.com/dorssel/usbipd-win) attaches it to WSL, where it shows up as `/dev/ttyACM0`.
+- Bluetooth is not available inside WSL, so a Bluetooth-only printer such as the D110 cannot print from there.
+
+## Releases
+
+Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has these files:
+
+| File | What it is |
+|---|---|
+| `niimbench-x86_64-linux.tar.gz`, `niimbench-aarch64-linux.tar.gz` | A static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, the licences of the fonts compiled into the binary, and a desktop menu entry with its icons under `share/` |
+| `niimbench-x86_64-linux.deb`, `niimbench-aarch64-linux.deb` | The same files, installed where the system looks for them. They recommend BlueZ and `xdg-utils` and depend on nothing |
+| `niimbench-x86_64-linux.rpm`, `niimbench-aarch64-linux.rpm` | The same as the `.deb`, for Fedora and other RPM systems |
+| `PKGBUILD` | The Arch package `niimbench-bin`, written from the tarballs' checksums |
+| `niimbench-macos.zip` | The Mac app, with one binary for both kinds of Mac |
+
+Every file comes with a `.sha256` and a build provenance attestation signed by the release workflow.
+
+Check a Linux download before you run it, the same way for the `.deb` and the `.rpm`:
+
+```bash
+sha256sum -c niimbench-x86_64-linux.tar.gz.sha256
+gh attestation verify niimbench-x86_64-linux.tar.gz --repo ywy50/niimbench
+```
+
+Check the Mac app:
+
+```bash
+shasum -a 256 -c niimbench-macos.zip.sha256
+gh attestation verify niimbench-macos.zip --repo ywy50/niimbench
+```
+
+`niimbench --version` prints the version, and [CHANGELOG.md](CHANGELOG.md) says what each one changed. Cutting a release is [docs/cookbook/releasing.md](docs/cookbook/releasing.md).
 
 ## Layout
 
@@ -191,49 +297,20 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 | `src/labels_catalogue.zig`, `src/catalogue.json` | The label roll catalogue compiled into the binary |
 | `src/trace.zig` | The in-memory log, published as the `trace` service |
 | `src/example_source.zig` | The example JSON source, a plugin |
-| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness (`with-server.sh`, `drive.js`, `trace.sh`, `harness.patch.yml`), the label catalogue fetcher, the Linux release and package builds and checks (`linux-dist.sh`, `linux-package-check.sh`, `get-nfpm.sh`), the AUR package's (`aur.sh`, `aur-check.sh`, `aur-push.sh`), and the Mac app's build and check (`macos-app.sh`, `macos-app-check.sh`) |
+| `tools/` | The browser and node checks `make test` runs, and the page lint |
+| `tools/with-server.sh`, `tools/drive.js`, `tools/trace.sh`, `tools/harness.patch.yml` | The throwaway-server and browser-driving harness |
+| `tools/fetch-labels.py` | The label catalogue fetcher |
+| `tools/linux-dist.sh`, `tools/linux-package-check.sh`, `tools/get-nfpm.sh` | The Linux release and package builds, and their checks |
+| `tools/aur.sh`, `tools/aur-check.sh`, `tools/aur-push.sh` | The Arch package's build, check and AUR publishing |
+| `tools/macos-app.sh`, `tools/macos-app-check.sh` | The Mac app's build and check |
 | `packaging/linux/` | The desktop menu entry, and the nfpm config the `.deb` and `.rpm` are made from |
-| `packaging/aur/` | The template each release's AUR `PKGBUILD` is written from |
+| `packaging/aur/` | The template each release's Arch `PKGBUILD` is written from |
 | `packaging/macos/` | The Mac app's two `Info.plist` files, its launcher, and its icon on the macOS grid |
 | `docs/assets/` | The logo kit, and the README's screenshot with the steps that take it ([docs/assets/README.md](docs/assets/README.md)) |
 | `Makefile` | `make`, `make serve`, `make trace`, `make test`, `make drive`, `make print`, `make labels`, `make macos-app`; `make help` lists every target |
 | `.github/workflows/` | CI on every push to `main` and every pull request, on Linux and on Intel and Apple Silicon Macs, and the tag-driven release |
 | `CHANGELOG.md` | What each release changed |
 | `docs/` | Index, architecture, subsystems, cookbook, user guide, templates, reviews |
-
-## Windows and macOS
-
-niimbench reaches a printer through the operating system's own interfaces. On Linux those are BlueZ for Bluetooth and the kernel's serial ports for USB. On macOS it is Apple's CoreBluetooth, so a Mac prints over Bluetooth; USB on a Mac is not supported yet.
-
-On a Mac, niimbench is an app. `niimbench.app`, in `niimbench-macos.zip` on the releases page, runs on macOS 13 or later, on Apple silicon and on Intel. Opening it opens the editor in your browser. It has no window or Dock icon of its own: the page is the app. **Quit niimbench…** in the page's menu stops it, and it stops by itself 30 minutes after the last page closed. Opening the app again while it runs opens its page. It keeps its lock and token file in `~/Library/Application Support/niimbench`.
-
-The app is signed ad hoc, not with an Apple Developer ID, and it is not notarized. Downloaded with a browser, its first open is refused with a message that Apple could not verify niimbench. Allow it once: on macOS 15, under System Settings → Privacy & Security, with **Open Anyway** next to that message; on macOS 13 and 14, Control-click the app and pick **Open**. A copy fetched with `curl`, as in the quick start, is not marked as downloaded and opens without asking.
-
-The first scan asks whether niimbench may use Bluetooth. Allow it, or later turn it on under System Settings → Privacy & Security → Bluetooth; until then a print answers `BluetoothNotAllowed`. Run from a checkout with `make`, it is your terminal app that macOS asks about instead. macOS does not show programs a Bluetooth address, so the printer list shows a UUID your Mac made up for the printer, and that UUID is the address to print to. CI checks the macOS code on GitHub's Macs, which have no Bluetooth radio, so printing from a Mac has not yet been tried against a real printer.
-
-From source, Zig 0.17 serves the editor from the checkout with `make`, and `make macos-app` builds the app into `zig-out/macos` ([docs/development.md](docs/development.md#the-mac-app)).
-
-On Windows, the Linux build runs inside WSL 2. Start it there and open the address it prints in your Windows browser, which WSL forwards to it. A printer on USB, such as the B21, is reached once [usbipd-win](https://github.com/dorssel/usbipd-win) attaches it to WSL, where it shows up as `/dev/ttyACM0`. Bluetooth is not available inside WSL, so a Bluetooth-only printer such as the D110 cannot print from there.
-
-## Releases
-
-Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has, for x86_64 and for arm64 Linux, a tarball, a `.deb` and an `.rpm`, and `niimbench-macos.zip`, the Mac app. Each tarball holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, the licences of the fonts compiled into the binary, and a desktop menu entry with its icons under `share/`. The `.deb` and `.rpm` install the same files where the system looks for them; they recommend BlueZ and `xdg-utils` and depend on nothing. Each release also carries `PKGBUILD`, the Arch package `niimbench-bin`, written from the tarballs' checksums. The Mac app carries one binary for both kinds of Mac. Every download comes with a `.sha256` and a build provenance attestation signed by the release workflow.
-
-Check a Linux download before you run it, the same way for the `.deb` and the `.rpm`:
-
-```bash
-sha256sum -c niimbench-x86_64-linux.tar.gz.sha256
-gh attestation verify niimbench-x86_64-linux.tar.gz --repo ywy50/niimbench
-```
-
-Check the Mac app:
-
-```bash
-shasum -a 256 -c niimbench-macos.zip.sha256
-gh attestation verify niimbench-macos.zip --repo ywy50/niimbench
-```
-
-`niimbench --version` prints the version, and [CHANGELOG.md](CHANGELOG.md) says what each one changed. Cutting a release is [docs/cookbook/releasing.md](docs/cookbook/releasing.md).
 
 ## Contributing
 
