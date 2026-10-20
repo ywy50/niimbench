@@ -1,0 +1,35 @@
+# Maintainer: ywy50 <84476743+ywy50@users.noreply.github.com>
+#
+# Written for each release by tools/aur.sh from packaging/aur/PKGBUILD.in in
+# https://github.com/ywy50/niimbench; change the template there, not this file.
+# The binary is the release's own static build, the one its provenance
+# attestation covers, so it is installed as it was published.
+pkgname=niimbench-bin
+pkgver=@VERSION@
+pkgrel=1
+pkgdesc='Label editor and print server for Niimbot label printers'
+arch=('x86_64' 'aarch64')
+url='https://github.com/ywy50/niimbench'
+license=('MIT' 'OFL-1.1' 'Bitstream-Vera')
+# The icons go in the hicolor theme, whose folders that package owns.
+depends=('hicolor-icon-theme')
+provides=('niimbench')
+conflicts=('niimbench')
+optdepends=('bluez: print to Bluetooth printers'
+            'xdg-utils: open the editor in the browser')
+options=('!strip' '!debug')
+source_x86_64=("niimbench-x86_64-linux-$pkgver.tar.gz::@BASE@/niimbench-x86_64-linux.tar.gz")
+source_aarch64=("niimbench-aarch64-linux-$pkgver.tar.gz::@BASE@/niimbench-aarch64-linux.tar.gz")
+sha256sums_x86_64=('@SHA256_X86_64@')
+sha256sums_aarch64=('@SHA256_AARCH64@')
+
+package() {
+  cd "niimbench-$CARCH-linux"
+  install -Dm755 niimbench "$pkgdir/usr/bin/niimbench"
+  install -Dm644 share/applications/niimbench.desktop "$pkgdir/usr/share/applications/niimbench.desktop"
+  install -Dm644 share/icons/hicolor/scalable/apps/niimbench.svg "$pkgdir/usr/share/icons/hicolor/scalable/apps/niimbench.svg"
+  install -Dm644 share/icons/hicolor/512x512/apps/niimbench.png "$pkgdir/usr/share/icons/hicolor/512x512/apps/niimbench.png"
+  install -Dm644 README.md CHANGELOG.md -t "$pkgdir/usr/share/doc/niimbench"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 licenses/fonts/* -t "$pkgdir/usr/share/licenses/$pkgname/fonts"
+}
