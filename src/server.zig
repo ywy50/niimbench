@@ -244,7 +244,9 @@ pub const HttpService = struct {
 
     pub fn dispatch(self: *HttpService, req: RequestView) !Response {
         const from_query = queryValue(req.query, "token");
-        const presented = from_query orelse cookieValue(req.cookie, "niimbench") orelse "";
+        var cookie_name_buf: [24]u8 = undefined;
+        const presented = from_query orelse cookieValue(req.cookie, cookieName(&cookie_name_buf, self.port)) orelse
+            cookieValue(req.cookie, "niimbench") orelse "";
         if (!std.mem.eql(u8, presented, &self.token_hex)) {
             return .{ .status = .unauthorized, .body = "{\"error\":\"bad token\"}" };
         }
@@ -264,7 +266,14 @@ pub const HttpService = struct {
         // table, so it picks its own method. The token is checked before
         // anything looks at the name.
         if (std.mem.startsWith(u8, req.path, "/api/sources/")) {
-            const name = req.path["/api/sources/".len..];
+            // A name is a path segment, so a client percent-encodes a space
+            // or a `?` in it; read undecoded, such a source could be
+            // installed but never read or deleted.
+            const raw = req.path["/api/sources/".len..];
+            var name_buf: [1024]u8 = undefined;
+            if (raw.len > name_buf.len) return .{ .status = .not_found, .body = "{\"error\":\"unknown source\"}" };
+            @memcpy(name_buf[0..raw.len], raw);
+            const name = std.Uri.percentDecodeInPlace(name_buf[0..raw.len]);
             return switch (req.method) {
                 .GET => sourceRecord(self, name),
                 .DELETE => deleteSource(self, name),
@@ -410,7 +419,7 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
     }
     const gray = compose(service, job) catch |err| {
         if (tracer(service)) |t| t.failure("print", "compose {d}x{d} {s} model={s}: {s}", .{ job.width, job.height, job.conn, job.model, @errorName(err) });
-        return composeError(service.allocator, err, size.width, size.height);
+        return composeError(service.allocator, err, job.width, job.height);
     };
     defer service.allocator.free(gray.pixels);
     // A composed body is the whole label, and the printer gets all of it but
@@ -1259,7 +1268,9 @@ const LabelSize = struct { width: usize, height: usize };
 
 fn requestSize(allocator: std.mem.Allocator, body: []const u8) LabelSize {
     const Sizes = struct { width: ?usize = null, height: ?usize = null };
-    const parsed = std.json.parseFromSlice(Sizes, allocator, body, .{}) catch {
+    // A label body carries more than its size; without ignoring the rest every
+    // real body failed to parse and was answered with the default size.
+    const parsed = std.json.parseFromSlice(Sizes, allocator, body, .{ .ignore_unknown_fields = true }) catch {
         return .{ .width = default_label_width, .height = default_label_height };
     };
     defer parsed.deinit();
@@ -1335,20 +1346,34 @@ pub fn serve(service: *HttpService, io: std.Io, open_browser: bool, idle_minutes
     var listener = try address.listen(io, .{ .reuse_address = true });
     defer listener.deinit(io);
     const port = listener.socket.address.getPort();
+    // The port the cookie is named after, which `--port 0` leaves to the system.
+    service.port = port;
 
     var url_buf: [128]u8 = undefined;
     const url = try std.fmt.bufPrint(&url_buf, "http://{s}:{d}/?token={s}\n", .{
         service.host, port, service.token_hex,
     });
     var stdout_buffer: [256]u8 = undefined;
-    var stdout_file: std.Io.File.Writer = .init(.stdout(), io, &stdout_buffer);
+    // Streaming, not positional: stdout is often a log file that stderr
+    // shares, and a positional write at offset 0 was overwritten by the
+    // lines written after it.
+    var stdout_file: std.Io.File.Writer = .initStreaming(.stdout(), io, &stdout_buffer);
     try stdout_file.interface.writeAll(url);
     try stdout_file.interface.flush();
     // The server still runs without the file; only `make trace` needs it.
-    writeTokenFile(io, .cwd(), url) catch |err| std.log.warn("{s}: {s}", .{ token_path, @errorName(err) });
+    const wrote_token = if (writeTokenFile(io, .cwd(), url)) true else |err| blk: {
+        std.log.warn("{s}: {s}", .{ token_path, @errorName(err) });
+        break :blk false;
+    };
+    // Gone with the server, so a later `make trace` or second start finds no
+    // address of a server that has stopped.
+    defer if (wrote_token) std.Io.Dir.cwd().deleteFile(io, token_path) catch {};
     var opener = if (open_browser) openBrowser(io, url[0 .. url.len - 1]) else null;
-    // The opener finished long before; awaiting it frees it.
-    defer if (opener) |*task| task.await(io);
+    // Usually long finished. xdg-open with no desktop it knows runs a browser
+    // that was not running in the foreground, and waits for it; cancelling
+    // ends that wait, so Quit does not last as long as the browser, which
+    // stays open.
+    defer if (opener) |*task| task.cancel(io);
 
     var last_request = std.Io.Clock.awake.now(io);
     while (true) {
@@ -1365,6 +1390,14 @@ pub fn serve(service: *HttpService, io: std.Io, open_browser: bool, idle_minutes
             std.log.err("accept failed: {s}", .{@errorName(err)});
             continue;
         };
+        // One connection at a time, so one that sends nothing, such as a
+        // browser's speculative preconnect, held every other request and the
+        // idle stop. A local client sends its request at once.
+        var head_fds = [_]std.posix.pollfd{.{ .fd = stream.socket.handle, .events = std.posix.POLL.IN, .revents = 0 }};
+        if ((std.posix.poll(&head_fds, 2 * std.time.ms_per_s) catch 1) == 0) {
+            stream.close(io);
+            continue;
+        }
         handle(service, io, stream);
         last_request = std.Io.Clock.awake.now(io);
         if (service.quit_requested) return .quit;
@@ -1398,7 +1431,14 @@ fn handle(service: *HttpService, io: std.Io, stream: std.Io.net.Stream) void {
     // Read the cookie before the body. `iterateHeaders` asserts that the head
     // is still the current read state, and consuming a body moves the reader
     // past it, which would abort the process on any request that carries one.
-    const cookie = headerValue(&request, "cookie");
+    // Copied, because the header is a slice of the receive buffer, which a
+    // body larger than it overwrites: the cookie of such a request read as a
+    // bad token.
+    var request_cookie_buf: [8192]u8 = undefined;
+    const request_cookie = headerValue(&request, "cookie");
+    const cookie_len = @min(request_cookie.len, request_cookie_buf.len);
+    @memcpy(request_cookie_buf[0..cookie_len], request_cookie[0..cookie_len]);
+    const cookie = request_cookie_buf[0..cookie_len];
 
     var body: []u8 = &.{};
     defer if (body.len != 0) service.allocator.free(body);
@@ -1440,8 +1480,9 @@ fn handle(service: *HttpService, io: std.Io, stream: std.Io.net.Stream) void {
     };
     defer if (response.owned) service.allocator.free(response.body);
 
-    var cookie_buf: [80]u8 = undefined;
-    const cookie_header = std.fmt.bufPrint(&cookie_buf, "niimbench={s}; HttpOnly; Path=/; SameSite=Strict", .{&service.token_hex}) catch return;
+    var name_buf: [24]u8 = undefined;
+    var cookie_buf: [160]u8 = undefined;
+    const cookie_header = std.fmt.bufPrint(&cookie_buf, "{s}={s}; HttpOnly; Path=/; SameSite=Strict", .{ cookieName(&name_buf, service.port), &service.token_hex }) catch return;
 
     var headers: [4]std.http.Header = undefined;
     var count: usize = 0;
@@ -1471,6 +1512,14 @@ fn headerValue(request: *std.http.Server.Request, name: []const u8) []const u8 {
         if (std.ascii.eqlIgnoreCase(header.name, name)) return header.value;
     }
     return "";
+}
+
+/// The session cookie's name, which carries the port: a browser keeps one
+/// cookie per name for 127.0.0.1 whatever the port, so two servers running
+/// at once, from two folders, each signed the other's page out. `niimbench`
+/// alone is still read.
+fn cookieName(buf: *[24]u8, port: u16) []const u8 {
+    return std.fmt.bufPrint(buf, "niimbench-{d}", .{port}) catch unreachable;
 }
 
 fn cookieValue(header: []const u8, name: []const u8) ?[]const u8 {
@@ -1545,6 +1594,7 @@ pub fn create(
     catalogue: labels.Catalogue,
 ) !*HttpService {
     const service = try ctx.allocator.create(HttpService);
+    errdefer ctx.allocator.destroy(service);
     service.* = .{
         .allocator = ctx.allocator,
         .ctx = ctx,
@@ -1575,16 +1625,26 @@ pub fn applyHttp(ctx: *cordis.Context) !void {
     const transports = ctx.require(device.Registry, "transports");
     const devices = ctx.require(discovery.Registry, "devices");
     const sources = ctx.require(Sources, "sources");
+    // Each allocation belongs to whatever took it, and only a failure before
+    // then frees it here: the effect owns `runtime` once registered, and
+    // freeing it again after a later failure ran the effect on freed memory.
     const runtime = try ctx.allocator.create(RuntimeSources);
-    errdefer ctx.allocator.destroy(runtime);
     runtime.* = .{ .allocator = ctx.allocator, .sources = sources };
-    try ctx.effect(dropRuntimeSources, runtime);
+    ctx.effect(dropRuntimeSources, runtime) catch |err| {
+        ctx.allocator.destroy(runtime);
+        return err;
+    };
     // The label catalogue is compiled in, so a roll's barcode resolves without
     // a network round trip. It is parsed once and lives as long as the service.
     var catalogue = try labels.load(ctx.allocator);
-    errdefer catalogue.deinit();
-    const service = try create(ctx, printer_service, transports, devices, sources, runtime, catalogue);
-    try ctx.set("http", service, destroyHttp);
+    const service = create(ctx, printer_service, transports, devices, sources, runtime, catalogue) catch |err| {
+        catalogue.deinit();
+        return err;
+    };
+    ctx.set("http", service, destroyHttp) catch |err| {
+        destroyHttp(service);
+        return err;
+    };
     try addRoute(service, .GET, "/api/health", health);
     try addRoute(service, .GET, "/api/ports", listPorts);
     try addRoute(service, .GET, "/api/devices", listDevices);

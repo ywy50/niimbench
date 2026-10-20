@@ -183,7 +183,9 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
     defer ctx.deinit();
     ctx.http_port = port;
     try load.loadDefault(&ctx, init.io);
-    const http = ctx.require(server.HttpService, "http");
+    // A boot list whose `http` row could not start leaves no server: say so,
+    // rather than stopping on a missing service.
+    const http: *server.HttpService = @ptrCast(@alignCast(ctx.get("http") orelse return error.HttpInactive));
     switch (try server.serve(http, init.io, open_browser, idle_minutes)) {
         .quit => std.debug.print("niimbench stopped: quit from the page\n", .{}),
         .idle => std.debug.print("niimbench stopped: no page for {d} minutes\n", .{idle_minutes}),
@@ -244,7 +246,7 @@ fn runPrint(init: std.process.Init, args: []const []const u8) !void {
     var ctx = cordis.Context.init(init.gpa);
     defer ctx.deinit();
     try load.loadDefault(&ctx, init.io);
-    const http = ctx.require(server.HttpService, "http");
+    const http: *server.HttpService = @ptrCast(@alignCast(ctx.get("http") orelse return error.HttpInactive));
     try http.printer.submit(init.io, http.transports.*, init.gpa, model, conn, addr, turned.pixels, turned.width, turned.height, density, 1, null);
 }
 
@@ -279,10 +281,14 @@ fn parsePgm(allocator: std.mem.Allocator, bytes: []const u8) !Pgm {
 }
 
 fn pgmInt(bytes: []const u8, i: *usize) !usize {
-    while (i.* < bytes.len and (bytes[i.*] == ' ' or bytes[i.*] == '\n' or bytes[i.*] == '\r' or bytes[i.*] == '\t')) i.* += 1;
-    if (i.* < bytes.len and bytes[i.*] == '#') {
-        while (i.* < bytes.len and bytes[i.*] != '\n') i.* += 1;
-        return pgmInt(bytes, i);
+    // Whitespace and whole comment lines, as many as there are. A loop, not a
+    // call per comment: a file of a million comment lines overflowed the stack.
+    while (i.* < bytes.len) {
+        if (bytes[i.*] == ' ' or bytes[i.*] == '\n' or bytes[i.*] == '\r' or bytes[i.*] == '\t') {
+            i.* += 1;
+        } else if (bytes[i.*] == '#') {
+            while (i.* < bytes.len and bytes[i.*] != '\n') i.* += 1;
+        } else break;
     }
     const start = i.*;
     while (i.* < bytes.len and bytes[i.*] >= '0' and bytes[i.*] <= '9') i.* += 1;
@@ -292,7 +298,7 @@ fn pgmInt(bytes: []const u8, i: *usize) !usize {
 
 fn writeStdout(io: std.Io, text: []const u8) !void {
     var buffer: [512]u8 = undefined;
-    var stdout_file: std.Io.File.Writer = .init(.stdout(), io, &buffer);
+    var stdout_file: std.Io.File.Writer = .initStreaming(.stdout(), io, &buffer);
     try stdout_file.interface.writeAll(text);
     try stdout_file.interface.flush();
 }
