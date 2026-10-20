@@ -5,7 +5,7 @@
 # This clears it, runs the command you give it, and prints only the lines that
 # appeared, so the output is about that command and nothing else.
 #
-#   tools/trace.sh --port 8080 -- zig build run -- --no-open
+#   tools/trace.sh -- curl -s ...
 #   tools/trace.sh --url http://127.0.0.1:8080 --token abc123 -- curl -s ...
 #
 # The command is run exactly as written, so quote it the way you would type it.
@@ -13,8 +13,10 @@
 # curl inside it does not have to be told the token twice.
 #
 # `--port` is a shortcut for `--url http://127.0.0.1:PORT`. Without `--token`
-# the script runs the command first and reads the token the server prints, which
-# is the step that otherwise makes a diagnostic tool go unused.
+# the address and token are those of the server running from this folder, read
+# from the `.niimbench.token` file it writes, as `make trace` reads them. The
+# server has to be running already: one started by COMMAND would be gone, with
+# its log, by the time COMMAND returns.
 set -eu
 
 usage() {
@@ -23,7 +25,8 @@ usage: tools/trace.sh [--url URL] [--port PORT] [--token TOKEN] -- COMMAND [ARGS
 
   --url URL     where the server is listening (default http://127.0.0.1:8080)
   --port PORT   shorthand for --url http://127.0.0.1:PORT
-  --token TOK   the session token; without it, one is read from COMMAND's output
+  --token TOK   the session token; without it, the URL and token come from
+                .niimbench.token, which the server running here writes
   --            everything after this is the command to run
 
 The log is cleared, COMMAND runs, and the lines it produced are printed.
@@ -51,36 +54,29 @@ if [ $# -eq 0 ]; then usage >&2; echo "no command given" >&2; exit 2; fi
 
 command -v curl >/dev/null 2>&1 || { echo "curl is needed for tools/trace.sh" >&2; exit 1; }
 
-# The log's URL. `extra` is `?clear=1` or empty.
+if [ -z "$token" ]; then
+  if [ ! -r .niimbench.token ]; then
+    echo "tools/trace.sh: no .niimbench.token here: start the server in this folder, or pass --url and --token" >&2
+    exit 1
+  fi
+  startup=$(cat .niimbench.token)
+  token=${startup##*token=}
+  if [ -z "$port" ] && [ "$url" = "http://127.0.0.1:8080" ]; then url=${startup%%/\?token=*}; fi
+fi
+
+# The log's URL, with `clear=1` or nothing as its one extra parameter.
 trace_url() {
-  if [ -n "$token" ]; then printf '%s/api/trace?token=%s%s' "$url" "$token" "$1";
-  else printf '%s/api/trace%s' "$url" "$1"; fi
+  printf '%s/api/trace?token=%s%s' "$url" "$token" "${1:+&$1}"
 }
 
 NIIMBENCH_URL="$url"
-export NIIMBENCH_URL
-
-if [ -z "$token" ]; then
-  # No token yet: run the command, read the one the server printed, then show
-  # the log it wrote. The token usually arrives on the startup URL.
-  output=$("$@" 2>&1) || status=$?
-  status=${status:-0}
-  printf '%s\n' "$output"
-  token=$(printf '%s' "$output" | sed -n 's/.*[?&]token=\([0-9a-f]\{8,\}\).*/\1/p' | head -1)
-  if [ -z "$token" ]; then
-    echo "tools/trace.sh: no token in the command's output; pass --token" >&2
-    exit 1
-  fi
-  printf '\n--- trace ---\n'
-  curl -s "$(trace_url "")"
-  exit "$status"
-fi
-
 NIIMBENCH_TOKEN="$token"
-export NIIMBENCH_TOKEN
-curl -s "$(trace_url "?clear=1")" >/dev/null
+export NIIMBENCH_URL NIIMBENCH_TOKEN
+# -f, so a server that is gone or a wrong token fails here instead of
+# printing an old log as if it were this command's.
+curl -fsS "$(trace_url "clear=1")" >/dev/null
 status=0
 "$@" || status=$?
 printf '\n--- trace ---\n'
-curl -s "$(trace_url "")"
+curl -fsS "$(trace_url "")"
 exit "$status"

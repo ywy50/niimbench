@@ -20,9 +20,10 @@ const files = execFileSync("git", ["ls-files", "--cached", "--others", "--exclud
 
 function slug(heading) {
   return heading.trim().toLowerCase()
-    .replace(/[`*_]/g, "")
+    // An underscore stays, as GitHub keeps it: `D110_M` is `#d110_m`.
+    .replace(/[`*]/g, "")
     .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
-    .replace(/[^\p{L}\p{N}\s-]/gu, "")
+    .replace(/[^\p{L}\p{N}\s_-]/gu, "")
     .replace(/\s/g, "-");
 }
 

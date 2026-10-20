@@ -45,7 +45,7 @@ server=$(cat "$dir/finished")
 gone "$server" || fail "the server $server outlived the command run under it"
 
 # 2. A launcher killed outright still takes its server with it.
-"$here/with-server.sh" sh -c 'echo "$NIIMBENCH_PID $$" > "$1.tmp"; mv "$1.tmp" "$1"; exec sleep 600' _ "$dir/killed" &
+"$here/with-server.sh" sh -c 'echo "$NIIMBENCH_PID $$ $NIIMBENCH_DIR" > "$1.tmp"; mv "$1.tmp" "$1"; exec sleep 600' _ "$dir/killed" &
 launcher=$!
 i=0
 while [ ! -s "$dir/killed" ] && [ $i -lt 200 ]; do i=$((i + 1)); sleep 0.1; done
@@ -53,12 +53,14 @@ if [ ! -s "$dir/killed" ]; then
   kill -KILL "$launcher" 2>/dev/null || true
   fail "the launcher never started its command"
 else
-  read -r server sleeper < "$dir/killed"
+  read -r server sleeper server_dir < "$dir/killed"
   alive "$server" || fail "the server $server was not running before the launcher was killed"
   kill -KILL "$launcher"
   gone "$server" || fail "the server $server outlived a launcher killed with SIGKILL"
   # The command was the launcher's child, not the server's, so it is ours.
   kill "$sleeper" 2>/dev/null || true
+  # So is the server's folder: a launcher killed outright never removes it.
+  rm -rf "$server_dir"
 fi
 
 # 3. A wrong parent is refused, so a server cannot start believing it is watched.
