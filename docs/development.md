@@ -46,6 +46,9 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 | [../tools/linux-dist.sh](../tools/linux-dist.sh) | Builds one Linux release: the static binary, its tarball, and the `.deb` and `.rpm` |
 | [../tools/linux-package-check.sh](../tools/linux-package-check.sh) | Installs a `.deb` or `.rpm` in a clean container and checks what it installed and that it starts |
 | [../tools/get-nfpm.sh](../tools/get-nfpm.sh) | Puts the pinned, checksum-checked nfpm that makes the packages in a folder |
+| [../tools/aur.sh](../tools/aur.sh) | Writes the AUR package's `PKGBUILD` and `.SRCINFO` for a release, from its tarballs' checksums |
+| [../tools/aur-check.sh](../tools/aur-check.sh) | Builds, installs and lints the AUR package in a clean archlinux container, and checks it starts |
+| [../tools/aur-push.sh](../tools/aur-push.sh) | Publishes the AUR package, when an AUR key is given |
 | [../tools/macos-app.sh](../tools/macos-app.sh) | Builds `niimbench.app` and its zip on a Mac (`make macos-app`) |
 | [../tools/macos-app-check.sh](../tools/macos-app-check.sh) | Starts `niimbench.app` as Finder does and checks it serves, reopens and quits (`make macos-app-check`) |
 
@@ -91,6 +94,19 @@ tools/linux-package-check.sh zig-out/dist/niimbench-x86_64-linux.deb debian:stab
 tools/linux-package-check.sh zig-out/dist/niimbench-x86_64-linux.rpm fedora:42
 ```
 
+## The AUR package
+
+The AUR package is `niimbench-bin`: the release's own static binary, as published and attested, with the menu entry and icons from its tarball. [../packaging/aur/PKGBUILD.in](../packaging/aur/PKGBUILD.in) is its template. [../tools/aur.sh](../tools/aur.sh) fills in the version and each architecture's sha256, read from the `.sha256` files published beside the tarballs, and has makepkg write the `.SRCINFO`, here on Arch or in an archlinux container. A check points it at tarballs on disk instead of a release:
+
+```sh
+tools/linux-dist.sh x86_64-linux /tmp/dist
+tools/linux-dist.sh aarch64-linux /tmp/dist
+tools/aur.sh 0.7.0 /tmp/aur file:///tmp/dist
+tools/aur-check.sh /tmp/aur file:///tmp/dist
+```
+
+[../tools/aur-check.sh](../tools/aur-check.sh) builds the package with makepkg and installs it with pacman in a clean archlinux container, lints the `PKGBUILD` and the package with namcap, and starts it as the menu entry does. namcap's findings fail it, except four it expects: a `-bin` package names `x86_64` in its sources, and the binary is the attested release build, so it is left unstripped, and static, so it has no dynamic loader for RELRO or PIE to harden. The AUR wants `hicolor-icon-theme` as a dependency for the icons. Publishing is [cookbook/releasing.md](cookbook/releasing.md#the-aur-package).
+
 ## The Mac app
 
 `make macos-app` runs [../tools/macos-app.sh](../tools/macos-app.sh) on a Mac and leaves `niimbench.app`, `niimbench-macos.zip` and its `.sha256` in `zig-out/macos`. It builds niimbench for `aarch64-macos.13.0` and `x86_64-macos.13.0`, joins them with `lipo`, makes the icon from [../packaging/macos/icon-1024.png](../packaging/macos/icon-1024.png) with `sips` and `iconutil`, signs ad hoc with `codesign --sign -`, and zips with `ditto`, which keeps the signature. It fails if the binary is not both architectures or does not report `build.zig.zon`'s version.
@@ -112,7 +128,7 @@ rsvg-convert -w 1024 -h 1024 packaging/macos/icon.svg -o packaging/macos/icon-10
 
 ## CI and releases
 
-[../.github/workflows/ci.yml](../.github/workflows/ci.yml) runs `zig fmt --check` and `make test` on every push to `main` and every pull request, on Ubuntu with the runner's own Chrome, so the browser checks run there rather than skip. A `macos` job runs `zig build test` and serves the page once on an arm64 and an Intel Mac, where the CoreBluetooth checks run instead of skipping. A `linux-packages` job builds the x86_64 tarball, `.deb` and `.rpm` and installs each in a Debian and a Fedora container, and a `macos-app` job builds the Mac app, starts it as Finder does, and keeps its zip as a download on the run. [../.github/workflows/release.yml](../.github/workflows/release.yml) publishes a `vX.Y.Z` tag. The version is written once, in `build.zig.zon`, which `build.zig` passes to the code as `build_options.version` and `niimbench --version` prints. Cutting a release is [cookbook/releasing.md](cookbook/releasing.md).
+[../.github/workflows/ci.yml](../.github/workflows/ci.yml) runs `zig fmt --check` and `make test` on every push to `main` and every pull request, on Ubuntu with the runner's own Chrome, so the browser checks run there rather than skip. A `macos` job runs `zig build test` and serves the page once on an arm64 and an Intel Mac, where the CoreBluetooth checks run instead of skipping. A `linux-packages` job builds the x86_64 tarball, `.deb` and `.rpm` and installs each in a Debian and a Fedora container, an `aur` job writes the AUR package from tarballs for both architectures and builds, installs and lints it on Arch, and a `macos-app` job builds the Mac app, starts it as Finder does, and keeps its zip as a download on the run. [../.github/workflows/release.yml](../.github/workflows/release.yml) publishes a `vX.Y.Z` tag. The version is written once, in `build.zig.zon`, which `build.zig` passes to the code as `build_options.version` and `niimbench --version` prints. Cutting a release is [cookbook/releasing.md](cookbook/releasing.md).
 
 ## Docs map
 

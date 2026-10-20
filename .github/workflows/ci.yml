@@ -131,3 +131,29 @@ jobs:
             zig-out/dist/*.rpm
             zig-out/dist/*.sha256
           if-no-files-found: error
+
+  # The AUR package niimbench-bin. tools/aur.sh writes its PKGBUILD from
+  # tarballs built here for both architectures, as a release publishes them,
+  # and tools/aur-check.sh builds and installs it with makepkg and pacman in a
+  # clean archlinux container, lints it with namcap, and starts it as its menu
+  # entry does. Publishing to the AUR happens only at a release.
+  aur:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - name: Build both tarballs
+        run: |
+          tools/linux-dist.sh x86_64-linux "$RUNNER_TEMP/dist"
+          tools/linux-dist.sh aarch64-linux "$RUNNER_TEMP/dist"
+      - name: Write the PKGBUILD and .SRCINFO
+        run: |
+          version=$(sed -n 's/^ *\.version = "\([^"]*\)",.*/\1/p' build.zig.zon)
+          tools/aur.sh "$version" "$RUNNER_TEMP/aur" "file://$RUNNER_TEMP/dist"
+      - name: Build, install and check it on Arch
+        run: tools/aur-check.sh "$RUNNER_TEMP/aur" "file://$RUNNER_TEMP/dist"

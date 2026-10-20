@@ -15,6 +15,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 - **A Mac app.** `niimbench-macos.zip` holds `niimbench.app`, for macOS 13 or later on Apple silicon and Intel. Opening it opens the editor in the browser, opening it again while it runs opens its page, and the page's **Quit niimbench…** stops it. It is signed ad hoc and not notarized, so its first open needs your say-so; the README says how.
 - **`.deb` and `.rpm` packages** for x86_64 and arm64 Linux. They install `niimbench` and a desktop menu entry that starts it with `--app`, recommend BlueZ and `xdg-utils`, and depend on nothing. The tarballs carry the same menu entry and icons under `share/`.
+- **An AUR package**, `niimbench-bin`, which each release writes from its tarballs' checksums, checks on Arch, and publishes once the repository has an AUR key ([docs/cookbook/releasing.md](docs/cookbook/releasing.md#the-aur-package)).
 - `--app` serves from a per-user folder, `~/Library/Application Support/niimbench` on a Mac and `~/.local/state/niimbench` elsewhere, for a start from an app or a desktop menu that has no folder of its own.
 
 ## [0.7.0] - 2026-10-20

@@ -52,6 +52,14 @@ sudo dnf install https://github.com/ywy50/niimbench/releases/latest/download/nii
 
 On a 64-bit ARM machine, the package names say `aarch64` where these say `x86_64`.
 
+On Arch Linux, build and install the AUR package `niimbench-bin`, the same release build and menu entry, with your AUR helper or by hand:
+
+```bash
+git clone https://aur.archlinux.org/niimbench-bin.git
+cd niimbench-bin
+makepkg -si
+```
+
 On a Mac with macOS 13 or later, Apple silicon or Intel, install the app and open it:
 
 ```bash
@@ -182,8 +190,9 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 | `src/labels_catalogue.zig`, `src/catalogue.json` | The label roll catalogue compiled into the binary |
 | `src/trace.zig` | The in-memory log, published as the `trace` service |
 | `src/example_source.zig` | The example JSON source, a plugin |
-| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness (`with-server.sh`, `drive.js`, `trace.sh`, `harness.patch.yml`), the label catalogue fetcher, the Linux release and package builds and checks (`linux-dist.sh`, `linux-package-check.sh`, `get-nfpm.sh`), and the Mac app's build and check (`macos-app.sh`, `macos-app-check.sh`) |
+| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness (`with-server.sh`, `drive.js`, `trace.sh`, `harness.patch.yml`), the label catalogue fetcher, the Linux release and package builds and checks (`linux-dist.sh`, `linux-package-check.sh`, `get-nfpm.sh`), the AUR package's (`aur.sh`, `aur-check.sh`, `aur-push.sh`), and the Mac app's build and check (`macos-app.sh`, `macos-app-check.sh`) |
 | `packaging/linux/` | The desktop menu entry, and the nfpm config the `.deb` and `.rpm` are made from |
+| `packaging/aur/` | The template each release's AUR `PKGBUILD` is written from |
 | `packaging/macos/` | The Mac app's two `Info.plist` files, its launcher, and its icon on the macOS grid |
 | `docs/assets/` | The logo kit, and the README's screenshot with the steps that take it ([docs/assets/README.md](docs/assets/README.md)) |
 | `Makefile` | `make`, `make serve`, `make trace`, `make test`, `make drive`, `make print`, `make labels`, `make macos-app`; `make help` lists every target |
@@ -207,7 +216,7 @@ On Windows, the Linux build runs inside WSL 2. Start it there and open the addre
 
 ## Releases
 
-Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has, for x86_64 and for arm64 Linux, a tarball, a `.deb` and an `.rpm`, and `niimbench-macos.zip`, the Mac app. Each tarball holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, the licences of the fonts compiled into the binary, and a desktop menu entry with its icons under `share/`. The `.deb` and `.rpm` install the same files where the system looks for them; they recommend BlueZ and `xdg-utils` and depend on nothing. The Mac app carries one binary for both kinds of Mac. Every download comes with a `.sha256` and a build provenance attestation signed by the release workflow.
+Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has, for x86_64 and for arm64 Linux, a tarball, a `.deb` and an `.rpm`, and `niimbench-macos.zip`, the Mac app. Each tarball holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, the licences of the fonts compiled into the binary, and a desktop menu entry with its icons under `share/`. The `.deb` and `.rpm` install the same files where the system looks for them; they recommend BlueZ and `xdg-utils` and depend on nothing. Each release also writes the AUR package `niimbench-bin` from the tarballs' checksums. The Mac app carries one binary for both kinds of Mac. Every download comes with a `.sha256` and a build provenance attestation signed by the release workflow.
 
 Check a Linux download before you run it, the same way for the `.deb` and the `.rpm`:
 

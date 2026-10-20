@@ -21,7 +21,7 @@ Releases are tag-driven. The version is written once, in `build.zig.zon`, and pu
    git push origin "v$version"
    ```
 
-7. Watch the release workflow. It fails, publishing nothing, if the tag is not on `main`, if it disagrees with `build.zig.zon`, or if `CHANGELOG.md` has no section for it. Otherwise it creates the release, then on an x86_64 and an arm64 runner re-runs `make test` (on arm64 without the browser checks, which need stable Chrome and run on x86_64), runs `tools/linux-dist.sh` for the static `ReleaseSafe` binary, its tarball, `.deb` and `.rpm`, installs each package in a Debian and a Fedora container with `tools/linux-package-check.sh`, and uploads them with their checksums and build provenance. A Mac runner re-runs `zig build test`, builds the Mac app with `tools/macos-app.sh`, opens it with `tools/macos-app-check.sh`, and uploads `niimbench-macos.zip` the same way.
+7. Watch the release workflow. It fails, publishing nothing, if the tag is not on `main`, if it disagrees with `build.zig.zon`, or if `CHANGELOG.md` has no section for it. Otherwise it creates the release, then on an x86_64 and an arm64 runner re-runs `make test` (on arm64 without the browser checks, which need stable Chrome and run on x86_64), runs `tools/linux-dist.sh` for the static `ReleaseSafe` binary, its tarball, `.deb` and `.rpm`, installs each package in a Debian and a Fedora container with `tools/linux-package-check.sh`, and uploads them with their checksums and build provenance. A Mac runner re-runs `zig build test`, builds the Mac app with `tools/macos-app.sh`, opens it with `tools/macos-app-check.sh`, and uploads `niimbench-macos.zip` the same way. Once the Linux files are up, an `aur` job writes the AUR package `niimbench-bin` from their checksums, builds and installs it on Arch, keeps its `PKGBUILD` and `.SRCINFO` on the run, and publishes them to the AUR when the repository has the key ([the AUR package](#the-aur-package)).
 
    A failed tag is deleted, fixed on `main` through a pull request, and pushed again. Deleting it takes:
 
@@ -29,6 +29,35 @@ Releases are tag-driven. The version is written once, in `build.zig.zon`, and pu
    git push origin ":refs/tags/v$version"
    git tag -d "v$version"
    ```
+
+## The AUR package
+
+The release's `aur` job publishes `niimbench-bin` to the AUR with `tools/aur-push.sh`, which signs in with the SSH key in the repository secret `AUR_SSH_PRIVATE_KEY`. Until that secret exists the job says so and the release goes ahead without it. Setting it up is done once, by whoever will own the package on the AUR:
+
+1. Make an account at [aur.archlinux.org](https://aur.archlinux.org/register), if there is none.
+2. Make an SSH key for it alone, with no passphrase, since a workflow uses it:
+
+   ```sh
+   ssh-keygen -t ed25519 -N '' -C niimbench-aur -f ~/.ssh/niimbench-aur
+   ```
+
+3. Paste `~/.ssh/niimbench-aur.pub` into **My Account → SSH Public Key** on the AUR.
+4. Give the private key to the repository:
+
+   ```sh
+   gh secret set AUR_SSH_PRIVATE_KEY --repo ywy50/niimbench < ~/.ssh/niimbench-aur
+   ```
+
+The next release then creates the package on its first push and updates it on every one after. A release made before that, or one whose push failed, is published by hand from the files its run kept, from the run's **niimbench-bin-aur** download, unzipped here as `PKGBUILD` and `.SRCINFO`:
+
+```sh
+git clone ssh://aur@aur.archlinux.org/niimbench-bin.git
+cp PKGBUILD .SRCINFO niimbench-bin/
+cd niimbench-bin
+git add PKGBUILD .SRCINFO
+git commit -m "niimbench-bin $(sed -n 's/^pkgver=//p' PKGBUILD)"
+git push origin HEAD:master
+```
 
 ## Check
 
