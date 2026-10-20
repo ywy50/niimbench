@@ -44,6 +44,14 @@ chmod 755 "$app/Contents/MacOS/niimbench" "$server/Contents/MacOS/niimbench"
 sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Contents/Info.plist"
 sed "s/@VERSION@/$version/g" packaging/macos/Server-Info.plist > "$server/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist" "$server/Contents/Info.plist"
+# What CI's Macs cannot catch by running the app, checked by reading it: macOS
+# ends an app that reaches for Bluetooth without saying why in its Info.plist,
+# and either app without LSUIElement would sit in the Dock answering nothing.
+plist_has() { [ "$(plutil -extract "$2" raw -o - "$1" 2>/dev/null)" = "$3" ] || { echo "macos-app: $1 has no $2 = $3" >&2; exit 1; }; }
+plutil -extract NSBluetoothAlwaysUsageDescription raw -o - "$server/Contents/Info.plist" >/dev/null ||
+  { echo "macos-app: the server's Info.plist does not say why it uses Bluetooth" >&2; exit 1; }
+plist_has "$app/Contents/Info.plist" LSUIElement true
+plist_has "$server/Contents/Info.plist" LSUIElement true
 
 # The icon, every size Finder asks for, from the one 1024-pixel picture.
 iconset="$work/niimbench.iconset"
