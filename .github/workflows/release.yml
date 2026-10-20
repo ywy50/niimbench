@@ -4,8 +4,8 @@ name: release
 # matches build.zig.zon, creates a GitHub Release whose notes are that
 # version's CHANGELOG.md section, then, on each platform with a runner, re-runs
 # the suite on the tagged tree, builds a static ReleaseSafe binary, checks it
-# reports the tag, and uploads a tarball, its checksum and a signed build
-# provenance attestation. A Mac builds the Mac app and uploads its zip the
+# reports the tag, and uploads a tarball, a .deb and an .rpm, their checksums
+# and a signed build provenance attestation. A Mac builds the Mac app and uploads its zip the
 # same way. The procedure is docs/cookbook/releasing.md.
 
 on:
@@ -139,43 +139,32 @@ jobs:
         env:
           BROWSER: ""
         run: make test
-      - name: Build a static ReleaseSafe binary
-        run: zig build -Doptimize=ReleaseSafe -Dtarget=${{ matrix.target }} --prefix "$RUNNER_TEMP/niimbench"
-      # The binary proves its version before it ships, and the fonts compiled
-      # into it travel with their licences, which their terms require.
-      - name: Package
-        shell: bash
+      - name: Install nfpm
         run: |
-          set -euo pipefail
-          VERSION="${GITHUB_REF_NAME#v}"
-          BIN="$RUNNER_TEMP/niimbench/bin/niimbench"
-          REPORTED="$("$BIN" --version | awk '{print $2}')"
-          if [ "$REPORTED" != "$VERSION" ]; then
-            echo "ERROR: the binary reports $REPORTED, the tag says $VERSION" >&2
-            exit 1
-          fi
-          if file "$BIN" | grep -q dynamically; then
-            echo "ERROR: $BIN is dynamically linked; releases are static" >&2
-            exit 1
-          fi
-          # A name without the version, so releases/latest/download/<name>
-          # always means the newest one.
-          NAME="niimbench-${{ matrix.target }}"
-          mkdir -p "dist/$NAME/licenses/fonts"
-          cp "$BIN" LICENSE README.md CHANGELOG.md "dist/$NAME/"
-          cp src/fonts/README.md src/fonts/*LICENSE* src/fonts/*OFL* "dist/$NAME/licenses/fonts/"
-          tar -C dist --owner=0 --group=0 --numeric-owner -czf "dist/$NAME.tar.gz" "$NAME"
-          (cd dist && sha256sum "$NAME.tar.gz" > "$NAME.tar.gz.sha256")
-          cat "dist/$NAME.tar.gz.sha256"
+          tools/get-nfpm.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      # The static ReleaseSafe binary, its tarball and the .deb and .rpm, the
+      # same script CI runs. It fails unless the binary is static and reports
+      # build.zig.zon's version, which the release job matched to the tag.
+      # The tarball carries the fonts' licences, which their terms require.
+      - name: Build the binary, the tarball and the packages
+        run: tools/linux-dist.sh ${{ matrix.target }} dist
+      - name: Install each package as a person does
+        run: |
+          tools/linux-package-check.sh dist/niimbench-${{ matrix.target }}.deb debian:stable-slim
+          tools/linux-package-check.sh dist/niimbench-${{ matrix.target }}.rpm fedora:42
       - name: Attest build provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: dist/*.tar.gz
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.deb
+            dist/*.rpm
       - name: Upload to the release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${GITHUB_REF_NAME}" dist/*.tar.gz dist/*.sha256 --clobber
+        run: gh release upload "${GITHUB_REF_NAME}" dist/*.tar.gz dist/*.deb dist/*.rpm dist/*.sha256 --clobber
 
   # The Mac app, built on a Mac because the bundle tools are Apple's. The
   # binary inside is both architectures, so one runner makes it; the suite

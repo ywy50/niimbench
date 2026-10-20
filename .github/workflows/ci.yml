@@ -97,3 +97,37 @@ jobs:
             zig-out/macos/niimbench-macos.zip
             zig-out/macos/niimbench-macos.zip.sha256
           if-no-files-found: error
+
+  # The Linux packages. tools/linux-dist.sh builds the tarball, the .deb and
+  # the .rpm the way a release does, and tools/linux-package-check.sh installs
+  # each in a clean container with apt or dnf, checks what it put where, and
+  # starts it as its menu entry does. The files are kept on the run.
+  linux-packages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - name: Install nfpm
+        run: |
+          tools/get-nfpm.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Build the tarball and the packages
+        run: tools/linux-dist.sh x86_64-linux
+      - name: Install the .deb on Debian
+        run: tools/linux-package-check.sh zig-out/dist/niimbench-x86_64-linux.deb debian:stable-slim
+      - name: Install the .rpm on Fedora
+        run: tools/linux-package-check.sh zig-out/dist/niimbench-x86_64-linux.rpm fedora:42
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: niimbench-linux-x86_64
+          path: |
+            zig-out/dist/*.tar.gz
+            zig-out/dist/*.deb
+            zig-out/dist/*.rpm
+            zig-out/dist/*.sha256
+          if-no-files-found: error

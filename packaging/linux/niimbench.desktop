@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=niimbench
+GenericName=Label Editor
+Comment=Design and print labels on Niimbot label printers
+Exec=niimbench --app
+Icon=niimbench
+Terminal=false
+Categories=Office;
+Keywords=label;printer;Niimbot;thermal;
+StartupNotify=false

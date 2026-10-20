@@ -1,0 +1,53 @@
+# The .deb and the .rpm. tools/linux-dist.sh stages the release tarball's files
+# and runs nfpm in that folder, which every `src` below is relative to, so a
+# package holds what the tarball does, installed where the system looks for it.
+# nfpm expands the environment in `version` and `arch`, not in `contents`.
+name: niimbench
+arch: ${NIIMBENCH_ARCH}
+platform: linux
+version: ${NIIMBENCH_VERSION}
+release: 1
+section: utils
+priority: optional
+maintainer: ywy50 <84476743+ywy50@users.noreply.github.com>
+description: |-
+  Label editor and print server for Niimbot label printers.
+  niimbench serves a label editor on 127.0.0.1 and prints to the B1, B18,
+  B21, D11, D110 and D110_M over USB serial, or over Bluetooth through BlueZ.
+  The menu entry starts it with --app and opens the editor in the browser.
+vendor: niimbench
+homepage: https://github.com/ywy50/niimbench
+license: MIT AND OFL-1.1 AND Bitstream-Vera
+# Bluetooth printing goes through BlueZ, and the editor opens with xdg-open.
+# Neither is needed to print over USB from a browser opened by hand.
+recommends:
+  - bluez
+  - xdg-utils
+contents:
+  - src: ./niimbench
+    dst: /usr/bin/niimbench
+    file_info:
+      mode: 0755
+  - src: ./share/applications/niimbench.desktop
+    dst: /usr/share/applications/niimbench.desktop
+  - src: ./share/icons/hicolor/scalable/apps/niimbench.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/niimbench.svg
+  - src: ./share/icons/hicolor/512x512/apps/niimbench.png
+    dst: /usr/share/icons/hicolor/512x512/apps/niimbench.png
+  # Plain files, not nfpm's `doc` and `license` types: those are RPM's, and
+  # the .deb leaves files of either type out altogether.
+  - src: ./README.md
+    dst: /usr/share/doc/niimbench/README.md
+  - src: ./CHANGELOG.md
+    dst: /usr/share/doc/niimbench/CHANGELOG.md
+  - src: ./LICENSE
+    dst: /usr/share/licenses/niimbench/LICENSE
+  # The fonts compiled into the binary travel with their licences, which
+  # their terms require.
+  - src: ./licenses/fonts/
+    dst: /usr/share/licenses/niimbench/fonts/
+    type: tree
+  # Debian looks for the licence in the package's doc folder, as copyright.
+  - src: ./LICENSE
+    dst: /usr/share/doc/niimbench/copyright
+    packager: deb

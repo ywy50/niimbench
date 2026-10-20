@@ -43,6 +43,9 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 | [../tools/screens.drive.js](../tools/screens.drive.js) | Resizes the page from a phone to a wide desktop, and with the text panel dragged narrow, and fails when anything is cut off or overlaps (`make screens-test`) |
 | [../tools/stray-test.sh](../tools/stray-test.sh) | Checks no server outlives its launcher, even one killed with SIGKILL (`make stray-test`) |
 | [../tools/fetch-labels.py](../tools/fetch-labels.py) | Refreshes the label catalogue from the vendor cloud (`make labels`); standard library only, run through `uv` |
+| [../tools/linux-dist.sh](../tools/linux-dist.sh) | Builds one Linux release: the static binary, its tarball, and the `.deb` and `.rpm` |
+| [../tools/linux-package-check.sh](../tools/linux-package-check.sh) | Installs a `.deb` or `.rpm` in a clean container and checks what it installed and that it starts |
+| [../tools/get-nfpm.sh](../tools/get-nfpm.sh) | Puts the pinned, checksum-checked nfpm that makes the packages in a folder |
 | [../tools/macos-app.sh](../tools/macos-app.sh) | Builds `niimbench.app` and its zip on a Mac (`make macos-app`) |
 | [../tools/macos-app-check.sh](../tools/macos-app-check.sh) | Starts `niimbench.app` as Finder does and checks it serves, reopens and quits (`make macos-app-check`) |
 
@@ -70,6 +73,24 @@ The server cannot outlive the script. `with-server.sh` passes its own pid as `--
 
 `make drive` loads the page in a headless browser and drives it with real mouse input. `STEPS=` names a steps file, whose API is at the top of [../tools/drive.js](../tools/drive.js); without one it opens the page, screenshots it into `zig-out/drive/`, and fails if the page threw. When `setpriv` is installed, the browser runs under `setpriv --pdeathsig KILL`, so it dies with the driver.
 
+## Linux packages
+
+[../tools/linux-dist.sh](../tools/linux-dist.sh) builds one Linux release into `zig-out/dist`, or the folder it is given: it builds the static `ReleaseSafe` binary for `x86_64-linux` or `aarch64-linux`, fails if the binary is dynamic or, where it can run, reports another version than `build.zig.zon`, stages the tarball's files, and writes `niimbench-TARGET.tar.gz`, `.deb` and `.rpm`, each with its `.sha256`. The packages are made by [nfpm](https://nfpm.goreleaser.com) from [../packaging/linux/nfpm.yaml](../packaging/linux/nfpm.yaml), run in the staged folder, so a package holds exactly what the tarball does. Without nfpm on `PATH` the tarball is still built. Put the pinned nfpm in a folder, then build:
+
+```sh
+tools/get-nfpm.sh ~/.local/bin
+tools/linux-dist.sh x86_64-linux
+```
+
+The packages install the binary in `/usr/bin`, [../packaging/linux/niimbench.desktop](../packaging/linux/niimbench.desktop) in `/usr/share/applications`, the icon at `scalable` and `512x512` under `/usr/share/icons/hicolor`, the README and changelog under `/usr/share/doc/niimbench`, and the licences under `/usr/share/licenses/niimbench`. The menu entry runs `niimbench --app`. nfpm's `doc` and `license` file types are RPM's and are left out of a `.deb` altogether, so every file is a plain one.
+
+[../tools/linux-package-check.sh](../tools/linux-package-check.sh) installs a package in a clean container with docker, as a person would with `apt` or `dnf`, checks the version, the menu entry, the icons and the licences, then, as a user of its own, starts `niimbench --app` and checks it serves from `~/.local/state/niimbench`, quits and cleans up. Nothing is installed on the machine that runs it:
+
+```sh
+tools/linux-package-check.sh zig-out/dist/niimbench-x86_64-linux.deb debian:stable-slim
+tools/linux-package-check.sh zig-out/dist/niimbench-x86_64-linux.rpm fedora:42
+```
+
 ## The Mac app
 
 `make macos-app` runs [../tools/macos-app.sh](../tools/macos-app.sh) on a Mac and leaves `niimbench.app`, `niimbench-macos.zip` and its `.sha256` in `zig-out/macos`. It builds niimbench for `aarch64-macos.13.0` and `x86_64-macos.13.0`, joins them with `lipo`, makes the icon from [../packaging/macos/icon-1024.png](../packaging/macos/icon-1024.png) with `sips` and `iconutil`, signs ad hoc with `codesign --sign -`, and zips with `ditto`, which keeps the signature. It fails if the binary is not both architectures or does not report `build.zig.zon`'s version.
@@ -91,7 +112,7 @@ rsvg-convert -w 1024 -h 1024 packaging/macos/icon.svg -o packaging/macos/icon-10
 
 ## CI and releases
 
-[../.github/workflows/ci.yml](../.github/workflows/ci.yml) runs `zig fmt --check` and `make test` on every push to `main` and every pull request, on Ubuntu with the runner's own Chrome, so the browser checks run there rather than skip. A `macos` job runs `zig build test` and serves the page once on an arm64 and an Intel Mac, where the CoreBluetooth checks run instead of skipping. A `macos-app` job builds the Mac app, starts it as Finder does, and keeps its zip as a download on the run. [../.github/workflows/release.yml](../.github/workflows/release.yml) publishes a `vX.Y.Z` tag. The version is written once, in `build.zig.zon`, which `build.zig` passes to the code as `build_options.version` and `niimbench --version` prints. Cutting a release is [cookbook/releasing.md](cookbook/releasing.md).
+[../.github/workflows/ci.yml](../.github/workflows/ci.yml) runs `zig fmt --check` and `make test` on every push to `main` and every pull request, on Ubuntu with the runner's own Chrome, so the browser checks run there rather than skip. A `macos` job runs `zig build test` and serves the page once on an arm64 and an Intel Mac, where the CoreBluetooth checks run instead of skipping. A `linux-packages` job builds the x86_64 tarball, `.deb` and `.rpm` and installs each in a Debian and a Fedora container, and a `macos-app` job builds the Mac app, starts it as Finder does, and keeps its zip as a download on the run. [../.github/workflows/release.yml](../.github/workflows/release.yml) publishes a `vX.Y.Z` tag. The version is written once, in `build.zig.zon`, which `build.zig` passes to the code as `build_options.version` and `niimbench --version` prints. Cutting a release is [cookbook/releasing.md](cookbook/releasing.md).
 
 ## Docs map
 
