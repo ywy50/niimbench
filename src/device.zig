@@ -109,14 +109,31 @@ pub fn openSerialProbe(addr: []const u8) !printer.Transport {
 
 fn openSerialWithTimeout(addr: []const u8, vtime: u8) !printer.Transport {
     if (addr.len == 0 or std.mem.eql(u8, addr, "auto")) return error.AddressRequired;
+    // Opened without blocking, because a port without CLOCAL whose carrier is
+    // down blocks a plain open until carrier appears, and a scan opens every
+    // port, printer or not, on the server's one thread. Once CLOCAL is set,
+    // reads block again, waiting VTIME as they should.
     const fd = try std.posix.openat(std.posix.AT.FDCWD, addr, .{
         .ACCMODE = .RDWR,
         .NOCTTY = true,
         .CLOEXEC = true,
+        .NONBLOCK = true,
     }, 0);
     errdefer _ = std.os.linux.close(fd);
     try configureSerial(fd, vtime);
+    try clearNonblock(fd);
     return fdTransport(fd);
+}
+
+fn clearNonblock(fd: std.posix.fd_t) !void {
+    var rc = std.os.linux.fcntl(fd, std.os.linux.F.GETFL, 0);
+    var signed: isize = @bitCast(rc);
+    if (signed < 0) return error.SerialSetupFailed;
+    const nonblock: u32 = @bitCast(@as(std.os.linux.O, .{ .NONBLOCK = true }));
+    const flags: u32 = @intCast(signed);
+    rc = std.os.linux.fcntl(fd, std.os.linux.F.SETFL, flags & ~nonblock);
+    signed = @bitCast(rc);
+    if (signed < 0) return error.SerialSetupFailed;
 }
 
 fn configureSerial(fd: std.posix.fd_t, vtime: u8) !void {
@@ -236,6 +253,11 @@ pub fn readModelId(transport: printer.Transport) !?u16 {
         acc_len += n;
         var off: usize = 0;
         while (acc_len - off >= 7) {
+            // Not a frame start: step over the byte, as the printer client does.
+            if (acc[off] != 0x55 or acc[off + 1] != 0x55) {
+                off += 1;
+                continue;
+            }
             const frame_len = @as(usize, acc[off + 3]) + 7;
             if (acc_len - off < frame_len) break;
             var data: [packet.Packet.max_data]u8 = undefined;
@@ -244,6 +266,8 @@ pub fn readModelId(transport: printer.Transport) !?u16 {
                 continue;
             };
             if (frame.packet_type == expect) {
+                // One byte `VV` is the id `VV 00`.
+                if (frame.data.len == 1) return @as(u16, frame.data[0]) << 8;
                 var id: u16 = 0;
                 for (frame.data) |byte| id = (id << 8) | byte;
                 return id;
@@ -454,4 +478,23 @@ test "Bluetooth names are filtered and carry their model" {
     // The same address twice is one device.
     putBluetooth(&scan, "NIIMBOT B21", "AA:BB:CC:DD:EE:FF", false);
     try std.testing.expectEqual(@as(usize, 1), found.slice().len);
+}
+
+test "a stray byte ahead of the model id answer is stepped over" {
+    const gpa = std.testing.allocator;
+    var script = ProbeScript{ .allocator = gpa };
+    defer script.written.deinit(gpa);
+    script.inbound[0] = 0x00;
+    script.inbound_len = 1;
+    try script.answer(0x48, &.{ 0x09, 0x10 });
+    try std.testing.expectEqual(@as(?u16, 2320), try readModelId(script.transport()));
+}
+
+test "a one-byte model id is its high byte" {
+    // `VV` alone means `VV 00`: 0x03 is 768, a B21.
+    const gpa = std.testing.allocator;
+    var script = ProbeScript{ .allocator = gpa };
+    defer script.written.deinit(gpa);
+    try script.answer(0x48, &.{0x03});
+    try std.testing.expectEqual(@as(?u16, 768), try readModelId(script.transport()));
 }

@@ -26,7 +26,7 @@ The `editor` plugin injects `http` and registers `GET /`. Disposing that fiber r
 | POST | `/api/render` | Draw fields onto a grayscale label |
 | POST | `/api/print` | Draw the same way, then print |
 
-`/api/sources/<name>` picks its own method, so it sits outside the route table: `GET` reads the record, `DELETE` drops it, anything else is 404. A record a plugin added answers `source belongs to a plugin`, because only the plugin's fiber owns that lifetime.
+`/api/sources/<name>` picks its own method, so it sits outside the route table: `GET` reads the record, `DELETE` drops it, anything else is 404. The name is percent-decoded, so a source named `my record` is `/api/sources/my%20record`. A record a plugin added answers `source belongs to a plugin`, because only the plugin's fiber owns that lifetime.
 
 ## Session
 
@@ -38,7 +38,7 @@ http://127.0.0.1:<port>/?token=<32 hex chars>
 
 `--port N` picks the port. Pass `--no-open` to skip opening the page with `xdg-open` (Linux) or `open` (macOS). `--parent PID` makes the server die with its parent, which is how the harnesses start it ([../development.md](../development.md#throwaway-servers)). The token is random for that process only, from `getrandom` on Linux and `arc4random_buf` on macOS.
 
-`GET /?token=` answers `302` with `Set-Cookie: niimbench=<token>; HttpOnly; Path=/; SameSite=Strict` and `Location: /`, so the address bar no longer shows the token. The next request sends that cookie and receives the page, with the token written into it, and the page's own API calls carry it as `?token=`. A request with neither a matching query token nor that cookie is `401`.
+`GET /?token=` answers `302` with `Set-Cookie: niimbench-<port>=<token>; HttpOnly; Path=/; SameSite=Strict` and `Location: /`, so the address bar no longer shows the token. The cookie's name carries the port because a browser keeps one cookie per name for `127.0.0.1` whatever the port, and two servers running at once would otherwise each sign the other's page out. The next request sends that cookie and receives the page, with the token written into it, and the page's own API calls carry it as `?token=`. A cookie named plain `niimbench` is still read. A request with neither a matching query token nor such a cookie is `401`.
 
 The server stops on its own in two cases. `POST /api/quit` sets a flag, and `serve` returns after that request. `serve` also returns when no request has arrived for `--idle-minutes`, 30 by default; `0` never stops. An open page calls `GET /api/health` once a minute, so only a server with no page left stops. What a second start from the same directory does is in [../development.md](../development.md#process-lifetime).
 
@@ -125,7 +125,7 @@ The barcode is resolved from the catalogue compiled into the binary, which holds
 
 ## Failures
 
-`render` answers a failure in the same shape as a success, including the label size, so the page can draw an empty label instead of keeping a stale preview:
+`render` and `print` answer a failure in the same shape as a success, including the label size the body asked for, so the page can draw an empty label instead of keeping a stale preview. A body whose size cannot be read at all gets the default, 384×96, and the page keeps its own **Width** and **Height** whatever the answer says:
 
 ```json
 { "error": "UnknownSource", "width": 384, "height": 96 }
@@ -185,4 +185,4 @@ A field whose `font` the build does not carry is refused the way `render` refuse
 
 ## Listening
 
-The listener reads a request body only when the head announced a `content-length`. A method that may carry a body does not have to, and reading to end-of-stream on a body that never arrives would block the single-threaded accept loop.
+The listener reads a request body only when the head announced a `content-length`. A method that may carry a body does not have to, and reading to end-of-stream on a body that never arrives would block the single-threaded accept loop. For the same reason a connection that sends nothing for two seconds is closed unanswered: a browser opens spare connections ahead of need, and one held open idle stopped every other request and the idle stop.

@@ -388,9 +388,8 @@
     </div>
     <div class="header-end">
     <p id="status" aria-live="polite">idle</p>
-    <!-- `form` lets Print submit the form it is not inside. -->
     <label class="copies" title="how many of this label to print, 1 to 99">Copies <input type="number" id="copies" min="1" max="99" step="1" value="1"></label>
-    <button type="submit" form="label" id="print" class="primary" title="print the label (Ctrl+Enter in a text field)">Print</button>
+    <button type="button" id="print" class="primary" title="print the label (Ctrl+Enter in a text field)">Print</button>
     </div>
   </header>
   <form id="label">
@@ -610,6 +609,10 @@
     const typingPauseMs = 1000;
     let typingIn = null;
     let typedAt = 0;
+    // The model and label the last refresh drew. A menu's `change` fires once
+    // it already holds the new choice, so its undo step puts these back.
+    let drawnModel = "";
+    let drawnLabel = "";
     let boxes = [];
     /// The roll the fields were last laid out on. Every change of roll — a
     /// model, a size preset, a typed width — ends in `refresh`, so this is
@@ -723,8 +726,9 @@
 
     /// A newline starts the next line, so a field is a block of lines. These
     /// mirror `blockWidth` and `blockHeight` in `label.zig`.
+    /// A trailing `\r` is dropped, as `label.zig` drops it.
     function blockLines(text) {
-      return String(text ?? "").split("\n");
+      return String(text ?? "").split("\n").map((line) => line.replace(/\r$/, ""));
     }
 
     /// Break one paragraph so every line fits: `fits(line)` says whether a
@@ -980,6 +984,9 @@
     /// the x and y inputs: a number input would otherwise step by its own
     /// amount and lose the label's bounds.
     function nudge(event, field, x_input, y_input) {
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return false;
+      // Repeated arrows are one undo step, like typing.
+      record(field);
       const step = event.shiftKey ? 10 : 1;
       const before = { x: field.x, y: field.y };
       switch (event.key) {
@@ -1166,7 +1173,7 @@
         field.size = sizeOf({ size: size.value });
         size.value = String(field.size);
         field.x = Math.round(Number(x.value) || 0);
-        field.y = Math.max(0, Number(y.value) || 0);
+        field.y = Math.max(0, Math.round(Number(y.value) || 0));
         field.rotation = normalizeDegrees(rotation.value);
         rotation.value = String(field.rotation);
         scheduleRefresh();
@@ -1177,11 +1184,10 @@
         if (event.key !== "Enter") return;
         if (event.ctrlKey || event.metaKey) {
           event.preventDefault();
-          document.querySelector("#label").requestSubmit();
+          printLabel();
           return;
         }
-        // The default already inserts the newline; this keeps the key from
-        // reaching the form and submitting it.
+        // The default already inserts the newline.
         event.stopPropagation();
       });
       for (const control of [font, size, x, y, rotation]) control.addEventListener("change", () => sync());
@@ -1195,8 +1201,12 @@
         // Wrap into the space from the field's anchor to the roll's edge, so a
         // field placed right of centre does not grow under the one beside it.
         // `rollSize` is printer coordinates, which is what x and the preview use.
+        // A field turned to run along the roll wraps into the roll's length.
         const roll = rollSize();
-        const limit = Math.max(1, roll.width - Math.min(field.x, roll.width));
+        const turn = (field.rotation || 0) * Math.PI / 180;
+        const limit = Math.abs(Math.sin(turn)) > Math.abs(Math.cos(turn))
+          ? Math.max(1, printableHeight())
+          : Math.max(1, roll.width - Math.min(field.x, roll.width));
         const wrapped = wrapText(text.value, (line) => textWidth(line, size, field.font) <= limit).join("\n");
         if (wrapped === text.value) return;
         record();
@@ -1208,14 +1218,19 @@
       centre.addEventListener("click", () => centreOnLabel(field, { x, y, rotation }));
       copy.addEventListener("click", () => {
         record();
+        // Below the original's last line as the field reads, turned with it:
+        // the renderer turns a block about its centre, so moving the anchor
+        // along the turned down direction moves the whole block.
+        const below = blockHeight(field.text, sizeOf(field));
+        const turn = (field.rotation || 0) * Math.PI / 180;
         const made = addRow({
           text: field.text,
           font: field.font,
           size: field.size,
           align_mode: field.align_mode,
-          x: field.x,
-          // Below the original's last line.
-          y: field.y + blockHeight(field.text, sizeOf(field)),
+          rotation: field.rotation || 0,
+          x: field.x - Math.round(below * Math.sin(turn)),
+          y: Math.max(0, field.y + Math.round(below * Math.cos(turn))),
         });
         // The copy lands directly under the row it came from.
         row.after(made.row);
@@ -1367,8 +1382,9 @@
     }
 
     /// The part of the page that Undo restores. `label` is the size preset id,
-    /// which Save layout also writes.
-    function snapshot() {
+    /// which Save layout also writes. `over` replaces values a control has
+    /// already changed by the time its event fires.
+    function snapshot(over = {}) {
       return JSON.stringify({
         width: Number(document.querySelector("#width").value),
         height: Number(document.querySelector("#height").value),
@@ -1383,21 +1399,28 @@
         })),
         ...printerFields(),
         label: document.querySelector("#label-size").value,
+        rotate: pageTurn(),
+        ...over,
       });
+    }
+
+    /// The menus as the last refresh drew them, for a menu's `change`.
+    function drawnMenus() {
+      return drawnModel ? { model: drawnModel, label: drawnLabel } : {};
     }
 
     /// Remember the state before a change. Called from the event that is about
     /// to change something, so the stack is "the state before each edit".
     /// `typing` is the control a keystroke landed in; the keystrokes after the
     /// first in a burst add nothing, so the burst undoes as one edit.
-    function record(typing) {
+    function record(typing, over) {
       if (deep > 0) return;
       const at = window.performance.now();
       const burst = typing !== undefined && typing === typingIn && at - typedAt < typingPauseMs;
       typingIn = typing === undefined ? null : typing;
       typedAt = at;
       if (burst) return;
-      const now = snapshot();
+      const now = snapshot(over);
       // Two calls for one edit push it once. The comparison is with the top
       // of the stack, not with the last state pushed: after an Undo that one
       // is the page itself, and the next edit must still be undoable.
@@ -1417,10 +1440,17 @@
 
     /// Put a snapshot back on the page. Every control it writes is guarded by
     /// the `deep` counter so restoring does not itself become an edit.
-    function restore(json) {
+    function restore(json, whole = false) {
+      // Undo walks the label, not the printer: the density, connection and
+      // address stay as they are. A self-check puts the whole page back.
+      const layout = JSON.parse(json);
+      if (!whole) {
+        const { density, conn, addr } = printerFields();
+        Object.assign(layout, { density, conn, addr });
+      }
       deep += 1;
       try {
-        applyLayout(JSON.parse(json));
+        applyLayout(layout);
       } finally {
         deep -= 1;
       }
@@ -2170,6 +2200,8 @@
     }
 
     async function refresh() {
+      drawnModel = document.querySelector("#model").value;
+      drawnLabel = document.querySelector("#label-size").value;
       // Every change of model ends here: picked by hand, from a found
       // printer, or by a loaded layout.
       limitToModel();
@@ -2191,10 +2223,11 @@
       const response = await post("/api/render", body);
       const payload = await readJson(response);
       if (!response.ok || !payload.pixels_b64) {
-        // The server answers a failed render with the label size, so the page
-        // can still show an empty label of the size the user asked for.
+        // An empty label of the size the page asked for. The page keeps its
+        // own Width and Height: taking the answer's would turn one bad field
+        // into a new label size.
         boxes = [];
-        usePage(payload.width || body.width, payload.height || body.height);
+        blankPreview();
         markRows();
         status.textContent = payload.error || "render failed";
         return;
@@ -2466,6 +2499,8 @@
       // the box instead re-anchors the field as soon as it is grabbed — the box
       // starts at the block's aligned edge, not at the anchor — which reads as
       // the text leaping on the first pixel of a drag.
+      // Undo covers a move or a turn as one entry, from the press.
+      record();
       const grabbed = labelPoint(event);
       drag = spinning
         ? { mode: "rotate", box, controls: box.row.controls, field: box.field, ...liftInk(box) }
@@ -2585,7 +2620,9 @@
       // the field to NaN — a box that vanishes, and reports that it did.
       if (!drag || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
       field.x = Math.round(point.x - drag.offset_x);
-      field.y = Math.round(point.y - drag.offset_y);
+      // A field's y is a dot row, which the server takes as a whole number
+      // from 0 up, as resizing and the arrow keys already keep it.
+      field.y = Math.max(0, Math.round(point.y - drag.offset_y));
       if (!Number.isFinite(field.x) || !Number.isFinite(field.y)) return;
       // The row's numbers follow the box. A box keeps its row's controls on
       // `row`; reading `box.controls` found nothing and the inputs stood still.
@@ -2633,10 +2670,6 @@
       }
       refresh();
     }
-    canvas.addEventListener("pointerdown", (event) => {
-      // Undo covers a drag as one entry, from the press rather than the drop.
-      if (hit(screenPoint(labelPoint(event)))) record();
-    });
     canvas.addEventListener("pointerup", endDrag);
     window.addEventListener("resize", fitCanvas);
     // The panel can change size without the window doing so.
@@ -2737,12 +2770,17 @@
       picked = index;
       renderDevices();
       document.querySelector("#conn").value = device.conn;
-      document.querySelector("#addr").value = device.addr;
       const model = document.querySelector("#model");
       if (device.model && model.value !== device.model) {
+        // Changed before the address is in, so the change fills the menu
+        // with this model's rolls and leaves the roll to the read below.
+        // With the address already set it read the roll too, and the
+        // printer was opened twice.
+        document.querySelector("#addr").value = "";
         model.value = device.model;
         model.dispatchEvent(new Event("change"));
       }
+      document.querySelector("#addr").value = device.addr;
       // Set from code, so no control fires its own change: say so here.
       refreshPrinterStatus();
       status.textContent = device.model
@@ -2828,7 +2866,8 @@
         // The server answers the whole label, 96x320 for a 12x40 roll; a print
         // leaves the model's margin off its end, and the preview hatches it.
         if (payload.width && payload.height) usePage(payload.width, payload.height);
-        refresh();
+        // After the redraw, whose own status would replace the roll's.
+        await refresh();
         status.textContent = payload.width_mm + "\u00d7" + payload.height_mm + " mm roll"
           + (payload.source === "cloud" ? " (cloud)" : "");
       } catch (error) {
@@ -3106,8 +3145,14 @@
       img.src = url;
     }
 
-    document.querySelector("#label").addEventListener("submit", async (event) => {
-      event.preventDefault();
+    // Print is a plain button, not the form's submit: a form submits when
+    // Enter is pressed in any of its boxes, which printed a label each time
+    // someone confirmed a number, and a submit first checks every box's
+    // range, which held a print back for a Scale % above the box's own max.
+    // The form still never submits, so nothing can reload the page.
+    document.querySelector("#label").addEventListener("submit", (event) => event.preventDefault());
+    document.querySelector("#print").addEventListener("click", printLabel);
+    async function printLabel() {
       const button = document.querySelector("#print");
       // A job takes as long as the printer does. While it runs the button is
       // disabled, so a second click or a second Ctrl+Enter cannot send the same
@@ -3135,15 +3180,16 @@
         refreshPrinterStatus();
         button.disabled = false;
       }
-    });
+    }
 
     // The server stops when no page has talked to it for its idle time, 30
-    // minutes unless started otherwise. An open page checks in once a minute,
-    // so only a closed one lets it stop. A hidden tab's timer still fires
-    // about once a minute.
+    // minutes unless started otherwise. An open page checks in every half
+    // minute, so only a closed one lets it stop, even at `--idle-minutes 1`,
+    // where a once-a-minute check could land just after the server looked.
+    // A hidden tab's timer still fires about once a minute.
     window.setInterval(() => {
       api("/api/health").catch(() => {});
-    }, 60000);
+    }, 30000);
 
     // The app menu closes on a click anywhere else, on one of its items, or
     // on Escape.
@@ -3264,15 +3310,16 @@
     }
 
     document.querySelector("#model").addEventListener("change", () => {
-      record();
+      record(undefined, drawnMenus());
       // The printer's own roll is the authority on the canvas, so a model
       // change asks the printer again. Only a machine with no printer falls
       // back to filling the menu with the model's presets.
       if (document.querySelector("#addr").value) {
         // The roll answer sets the page when it comes; until then, and when it
-        // never does, the page is already no wider than this head.
-        refresh();
-        readRoll();
+        // never does, the page is already no wider than this head and the
+        // menu offers this model's rolls.
+        fillSizeSelect(document.querySelector("#label-size").value);
+        refresh().finally(readRoll);
         return;
       }
       const previous = document.querySelector("#label-size").value;
@@ -3299,7 +3346,7 @@
     });
 
     document.querySelector("#label-size").addEventListener("change", () => {
-      record();
+      record(undefined, drawnMenus());
       const size = sizeById(document.querySelector("#model").value, document.querySelector("#label-size").value);
       if (size) useSize(size);
       refresh();
@@ -3353,6 +3400,11 @@
       if (layout.fields.length > 64) {
         throw new Error("layout has " + layout.fields.length + " fields; 64 is the limit");
       }
+      // Every field is checked before anything changes, so a bad one leaves
+      // the page as it was.
+      if (layout.fields.some((field) => !field || typeof field !== "object")) {
+        throw new Error("layout field is not an object");
+      }
       clearRows();
       const set = (id, value) => {
         if (value === undefined || value === null) return;
@@ -3367,14 +3419,13 @@
       set("conn", layout.conn);
       set("addr", layout.addr);
       // A loaded layout carries its own printer, so no row stays highlighted
-      // for a device that the layout just replaced.
-      picked = -1;
-      renderDevices();
+      // for a device that the layout just replaced. Undo keeps the printer.
+      if (deep === 0) {
+        picked = -1;
+        renderDevices();
+      }
       refreshPrinterStatus();
       for (const field of layout.fields) {
-        if (!field || typeof field !== "object") {
-          throw new Error("layout field is not an object");
-        }
         addRow({
           text: field.text || "",
           x: Number(field.x) || 0,
@@ -3391,9 +3442,15 @@
       // Save layout writes the chosen size preset, so a load has to put it
       // back. Deriving it from width and height alone would drop the id and
       // leave the select showing the previous label's preset.
+      // The menu is the loaded model's: one still holding another model's
+      // rolls is refilled first. A roll read from the printer stays the only
+      // choice, since it is one of the model's own.
+      const menu = document.querySelector("#label-size");
+      const loadedModel = document.querySelector("#model").value;
+      if (![...menu.options].every((option) => !option.value || sizeById(loadedModel, option.value))) fillSizeSelect("");
       if (layout.label !== undefined && layout.label !== null
-          && [...document.querySelector("#label-size").options].some((option) => option.value === layout.label)) {
-        document.querySelector("#label-size").value = layout.label;
+          && [...menu.options].some((option) => option.value === layout.label)) {
+        menu.value = layout.label;
       } else {
         selectSizeForCanvas();
       }
@@ -3538,6 +3595,11 @@
         const size = sizeThatFits("niimbench");
         const origin = centeredOrigins(["niimbench"], size)[0];
         addRow({ ...origin, text: "niimbench" });
+        // The page as it opens is the baseline. A printer the scan picked
+        // changed the model on the way here, which is not an edit to undo.
+        history.length = 0;
+        future.length = 0;
+        updateHistoryButtons();
         return refresh();
       })
       .catch((error) => {
@@ -3945,7 +4007,7 @@
       const verdict = { model: pick[0], range: pick[1].max_density, max: density.max, value: density.value, hint: hint.textContent };
       verdict.ok = density.max === String(pick[1].max_density) &&
         Number(density.value) === pick[1].max_density && hint.textContent.includes(String(pick[1].max_density));
-      restore(was);
+      restore(was, true);
       await refresh();
       return verdict;
     }
@@ -4002,7 +4064,7 @@
       const centred = { ...judge(), kept_size: field.size === before };
       document.querySelector('.orient button[data-rotate="0"]').click();
       upright.checked = checked;
-      restore(was);
+      restore(was, true);
       await refresh();
       const good = (seen) => seen.centred && seen.inside && seen.largest;
       return {
@@ -4284,7 +4346,7 @@
       const button = document.querySelector("#print");
       document.querySelector("#conn").value = "usb";
       document.querySelector("#addr").value = "/nonexistent/niimbench-check";
-      document.querySelector("#label").requestSubmit();
+      button.click();
       for (let i = 0; i < 300 && button.disabled; i++) await new Promise((resolve) => setTimeout(resolve, 10));
       const verdict = { after_print: { state: state(), last: last ? last.textContent : null } };
       const narrow = Object.entries((sizeCatalog && sizeCatalog.models) || {})
@@ -4309,7 +4371,7 @@
       devices = [];
       picked = -1;
       renderDevices();
-      restore(was);
+      restore(was, true);
       await refresh();
       return verdict;
     }

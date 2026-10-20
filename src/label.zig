@@ -139,8 +139,27 @@ pub fn lineWidth(face: *const Face, text: []const u8, size: usize) usize {
 pub fn blockWidth(face: *const Face, text: []const u8, size: usize) usize {
     var widest: usize = 0;
     var lines = std.mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |line| widest = @max(widest, lineWidth(face, line, size));
+    while (lines.next()) |line| widest = @max(widest, lineWidth(face, lineText(line), size));
     return widest;
+}
+
+/// A line without the `\r` of a CRLF line end, which text from a source
+/// record or a hand-written layout can carry. Drawn, it was a missing-glyph
+/// box, and measured, it widened the line and moved an aligned one.
+fn lineText(line: []const u8) []const u8 {
+    return if (line.len > 0 and line[line.len - 1] == '\r') line[0 .. line.len - 1] else line;
+}
+
+/// The field with its anchor brought within reach of any label. Ink from
+/// farther off could not land on one, and the arithmetic that places it
+/// overflowed at the far ends of the numbers a body may carry, which stopped
+/// the server.
+fn withinReach(field: Field) Field {
+    const far: isize = 1 << 40;
+    var near = field;
+    near.x = std.math.clamp(field.x, -far, far);
+    near.y = @min(field.y, @as(usize, @intCast(far)));
+    return near;
 }
 
 /// Height of every line in `text`. Lines stack `size` dots apart, so a block
@@ -159,7 +178,7 @@ pub fn textFits(face: *const Face, text: []const u8, size: usize, x: usize, y: u
 pub fn alignedX(gpa: std.mem.Allocator, field: Field, source_json: []const u8) !isize {
     const text = try resolve(gpa, field, source_json);
     defer gpa.free(text);
-    return field.align_mode.place(field.x, blockWidth(try faceOf(field), text, field.size));
+    return field.align_mode.place(withinReach(field).x, blockWidth(try faceOf(field), text, field.size));
 }
 
 fn resolve(gpa: std.mem.Allocator, field: Field, source_json: []const u8) ![]u8 {
@@ -183,7 +202,8 @@ fn resolve(gpa: std.mem.Allocator, field: Field, source_json: []const u8) ![]u8 
 /// The upright block is drawn into a grid of its own, then put on the label
 /// through the field's turn. The grid is wider than the block by `margin` on
 /// every side, because a glyph's ink may overhang its advance box.
-fn drawText(gpa: std.mem.Allocator, pixels: []u8, width: usize, height: usize, field: Field, text: []const u8) !void {
+fn drawText(gpa: std.mem.Allocator, pixels: []u8, width: usize, height: usize, asked: Field, text: []const u8) !void {
+    const field = withinReach(asked);
     const size = dots(field.size);
     const face = try faceOf(field);
     const bw = blockWidth(face, text, size);
@@ -213,6 +233,10 @@ fn drawText(gpa: std.mem.Allocator, pixels: []u8, width: usize, height: usize, f
     const pad_y = if (turned) (diagonal - @min(diagonal, upright_h)) / 2 + 1 else 0;
     const gw = upright_w + 2 * pad_x;
     const gh = upright_h + 2 * pad_y;
+    // Turned, the grid is as tall as the block is long, so it grows with the
+    // square of a line's length: a few thousand letters turned 90 degrees
+    // asked for gigabytes. A line this long cannot fit on any label.
+    if (gw * gh > 2 * 4096 * 4096) return error.TextTooLarge;
     const grid = try gpa.alloc(u8, gw * gh);
     defer gpa.free(grid);
     @memset(grid, 0);
@@ -227,7 +251,8 @@ fn drawText(gpa: std.mem.Allocator, pixels: []u8, width: usize, height: usize, f
     };
     var top: usize = margin + pad_y;
     var lines = std.mem.splitScalar(u8, text, '\n');
-    while (lines.next()) |line| {
+    while (lines.next()) |raw| {
+        const line = lineText(raw);
         const line_left = field.align_mode.place(field.x, lineWidth(face, line, size));
         const at: f32 = @floatFromInt(line_left - left + @as(isize, @intCast(margin + pad_x)));
         try font.drawLine(gpa, face, grid, gw, at, @floatFromInt(top), size, line, turn);
@@ -682,4 +707,36 @@ test "turned letters keep their strokes and counters, in every font" {
     }
     if (failures > 0) std.debug.print("  {d} broken\n", .{failures});
     try std.testing.expectEqual(@as(usize, 0), failures);
+}
+
+test "a field at the far ends of its numbers draws nothing and does not stop" {
+    const gpa = std.testing.allocator;
+    const far = [_]Field{
+        .{ .text = "A", .x = std.math.maxInt(isize) },
+        .{ .text = "A", .x = std.math.minInt(isize), .align_mode = .right },
+        .{ .text = "A", .y = std.math.maxInt(usize) },
+        .{ .text = "A", .y = std.math.maxInt(isize) },
+    };
+    for (far) |field| {
+        const gray = try render(gpa, 32, 32, &.{field}, "");
+        defer gpa.free(gray.pixels);
+        try std.testing.expect(std.mem.allEqual(u8, gray.pixels, 255));
+        _ = try alignedX(gpa, field, "");
+    }
+}
+
+test "a CRLF line end is not drawn or measured" {
+    try std.testing.expectEqual(blockWidth(sans, "A", 24), blockWidth(sans, "A\r", 24));
+    const gpa = std.testing.allocator;
+    const plain = try render(gpa, 64, 32, &.{.{ .text = "A", .size = 24 }}, "");
+    defer gpa.free(plain.pixels);
+    const crlf = try render(gpa, 64, 32, &.{.{ .text = "A\r", .size = 24 }}, "");
+    defer gpa.free(crlf.pixels);
+    try std.testing.expectEqualSlices(u8, plain.pixels, crlf.pixels);
+}
+
+test "a turned line longer than any label is refused, not drawn into gigabytes" {
+    const gpa = std.testing.allocator;
+    const long: [4000]u8 = @splat('W');
+    try std.testing.expectError(error.TextTooLarge, render(gpa, 96, 96, &.{.{ .text = &long, .rotation = 90 }}, ""));
 }

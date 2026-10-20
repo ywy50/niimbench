@@ -136,6 +136,9 @@ async function main() {
   console.error("--- end of trace ---");
 
   check("the trace is not empty", trace.trim().length > 0);
+  // Every step is looked for in the trace without the page's own protocol
+  // line, which names every step and so made each one look recorded.
+  const recorded = trace.split("\n").filter((line) => !/ protocol: /.test(line)).join("\n");
   // The protocol the run used, as the page reported it. The list is built by
   // tracing, so a run that traced a step is a run whose protocol contains it:
   // requiring the reported list is requiring the run, not the source.
@@ -143,16 +146,16 @@ async function main() {
   if (protocol) {
     const steps = protocol[1].split("|").map((step) => step.trim()).filter(Boolean);
     for (const step of steps) {
-      check(`the trace records the step ${JSON.stringify(step)}`, trace.indexOf(step) >= 0,
+      check(`the trace records the step ${JSON.stringify(step)}`, recorded.indexOf(step) >= 0,
         "the page put this step in its protocol and the trace has no line for it");
     }
   }
   // The server's own first line. It is the one fact the page cannot report,
   // because the page is not running yet when it is written.
-  check("the trace plugin recorded that it opened", /\bopened\b/.test(trace));
+  check("the trace plugin recorded that it opened", /\bopened\b/.test(recorded));
   const required = requiredSteps(pageHtml);
   for (const step of required) {
-    const present = trace.indexOf(step) >= 0;
+    const present = recorded.indexOf(step) >= 0;
     check(`the trace records ${JSON.stringify(step)}`, present,
       "the trace has no such line. " +
       "Either the step did not run, or it ran without saying so: add a traceLine call " +
