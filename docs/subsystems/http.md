@@ -40,7 +40,7 @@ http://127.0.0.1:<port>/?token=<32 hex chars>
 
 `GET /?token=` answers `302` with `Set-Cookie: niimbench-<port>=<token>; HttpOnly; Path=/; SameSite=Strict` and `Location: /`, so the address bar no longer shows the token. The cookie's name carries the port because a browser keeps one cookie per name for `127.0.0.1` whatever the port, and two servers running at once would otherwise each sign the other's page out. The next request sends that cookie and receives the page, with the token written into it, and the page's own API calls carry it as `?token=`. A cookie named plain `niimbench` is still read. A request with neither a matching query token nor such a cookie is `401`.
 
-The server stops on its own in two cases. `POST /api/quit` sets a flag, and `serve` returns after that request. `serve` also returns when no request has arrived for `--idle-minutes`, 30 by default; `0` never stops. An open page calls `GET /api/health` once a minute, so only a server with no page left stops. What a second start from the same directory does is in [../development.md](../development.md#process-lifetime).
+The server stops on its own in two cases. `POST /api/quit` sets a flag, and `serve` returns after that request. `serve` also returns when no request has arrived for `--idle-minutes`, 30 by default; `0` never stops. An open page calls `GET /api/health` every half minute, so only a server with no page left stops. What a second start from the same directory does is in [../development.md](../development.md#process-lifetime).
 
 ## Devices
 

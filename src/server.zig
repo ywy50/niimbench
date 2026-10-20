@@ -1315,7 +1315,7 @@ pub const Stop = enum {
     idle,
 };
 
-/// An open page checks in once a minute, so a server that has heard nothing
+/// An open page checks in every half minute, so a server that has heard nothing
 /// for `idle_minutes` has no page left. 0 never stops.
 fn idleExpired(quiet_ms: i64, idle_minutes: u32) bool {
     return idle_minutes != 0 and quiet_ms >= @as(i64, idle_minutes) * std.time.ms_per_min;
@@ -2864,7 +2864,7 @@ test "Quit sets the flag serve stops on, and the idle rule waits for its minutes
     try std.testing.expectEqual(std.http.Status.ok, response.status);
     try std.testing.expect(http.quit_requested);
 
-    // An open page checks in once a minute; 30 quiet minutes means none is.
+    // An open page checks in every half minute; 30 quiet minutes means none is.
     try std.testing.expect(!idleExpired(29 * std.time.ms_per_min, 30));
     try std.testing.expect(idleExpired(30 * std.time.ms_per_min, 30));
     // 0 never stops.
