@@ -37,6 +37,21 @@ curl -fsSL https://github.com/ywy50/niimbench/releases/latest/download/niimbench
 ./niimbench-aarch64-linux/niimbench
 ```
 
+On Debian or Ubuntu, install the package instead, which also puts niimbench in the desktop menu:
+
+```bash
+curl -fsSLO https://github.com/ywy50/niimbench/releases/latest/download/niimbench-x86_64-linux.deb
+sudo apt install ./niimbench-x86_64-linux.deb
+```
+
+On Fedora:
+
+```bash
+sudo dnf install https://github.com/ywy50/niimbench/releases/latest/download/niimbench-x86_64-linux.rpm
+```
+
+On a 64-bit ARM machine, the package names say `aarch64` where these say `x86_64`.
+
 On a Mac with macOS 13 or later, Apple silicon or Intel, install the app and open it:
 
 ```bash
@@ -97,6 +112,8 @@ The documentation index is [docs/README.md](docs/README.md).
 ## Running it
 
 `make` listens on `127.0.0.1` with an ephemeral port, prints a URL that carries the session token, and opens it with `xdg-open` (`open` on macOS). It stops when you pick **Quit niimbench…** in the menu on the **niimbench** name, or by itself once no page has been open for 30 minutes, and running `make` again while it runs opens the running one instead of a second server ([docs/user/guide/index.md](docs/user/guide/index.md#stop-and-start-again)). `make serve` leaves the URL for a browser you already have. `PORT=8080` picks the port. `make help` lists the targets and variables.
+
+The `.deb` and `.rpm` install `niimbench` in `/usr/bin` and a **niimbench** entry in the desktop menu, which runs `niimbench --app`: the editor opens in your browser, picking the entry again while it runs opens the running one, and the lock and token file live in `~/.local/state/niimbench` rather than in whatever folder the menu starts it in. Each tarball carries the same entry and its icons under `share/`; with the binary on your `PATH`, copy that folder into `~/.local/share` for a menu entry of your own.
 
 `label.pgm` is a binary P5 file: `P5`, width, height, maxval `255`, then one byte per pixel. `0` is black and `255` is white.
 
@@ -165,7 +182,8 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 | `src/labels_catalogue.zig`, `src/catalogue.json` | The label roll catalogue compiled into the binary |
 | `src/trace.zig` | The in-memory log, published as the `trace` service |
 | `src/example_source.zig` | The example JSON source, a plugin |
-| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness (`with-server.sh`, `drive.js`, `trace.sh`, `harness.patch.yml`), the label catalogue fetcher, and the Mac app's build and check (`macos-app.sh`, `macos-app-check.sh`) |
+| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness (`with-server.sh`, `drive.js`, `trace.sh`, `harness.patch.yml`), the label catalogue fetcher, the Linux release and package builds and checks (`linux-dist.sh`, `linux-package-check.sh`, `get-nfpm.sh`), and the Mac app's build and check (`macos-app.sh`, `macos-app-check.sh`) |
+| `packaging/linux/` | The desktop menu entry, and the nfpm config the `.deb` and `.rpm` are made from |
 | `packaging/macos/` | The Mac app's two `Info.plist` files, its launcher, and its icon on the macOS grid |
 | `docs/assets/` | The logo kit, and the README's screenshot with the steps that take it ([docs/assets/README.md](docs/assets/README.md)) |
 | `Makefile` | `make`, `make serve`, `make trace`, `make test`, `make drive`, `make print`, `make labels`, `make macos-app`; `make help` lists every target |
@@ -189,9 +207,9 @@ On Windows, the Linux build runs inside WSL 2. Start it there and open the addre
 
 ## Releases
 
-Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has a tarball for x86_64 and one for arm64 Linux, and `niimbench-macos.zip`, the Mac app. Each tarball holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, and the licences of the fonts compiled into the binary. The Mac app carries one binary for both kinds of Mac. Every download comes with a `.sha256` and a build provenance attestation signed by the release workflow.
+Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has, for x86_64 and for arm64 Linux, a tarball, a `.deb` and an `.rpm`, and `niimbench-macos.zip`, the Mac app. Each tarball holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, the licences of the fonts compiled into the binary, and a desktop menu entry with its icons under `share/`. The `.deb` and `.rpm` install the same files where the system looks for them; they recommend BlueZ and `xdg-utils` and depend on nothing. The Mac app carries one binary for both kinds of Mac. Every download comes with a `.sha256` and a build provenance attestation signed by the release workflow.
 
-Check a Linux download before you run it:
+Check a Linux download before you run it, the same way for the `.deb` and the `.rpm`:
 
 ```bash
 sha256sum -c niimbench-x86_64-linux.tar.gz.sha256
