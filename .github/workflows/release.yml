@@ -6,9 +6,9 @@ name: release
 # the suite on the tagged tree, builds a static ReleaseSafe binary, checks it
 # reports the tag, and uploads a tarball, a .deb and an .rpm, their checksums
 # and a signed build provenance attestation. A Mac builds the Mac app and
-# uploads its zip the same way. Last, the AUR package is written from the
-# published tarballs, checked on Arch, and published when the repository has
-# an AUR key. The procedure is docs/cookbook/releasing.md.
+# uploads its zip the same way. Last, the Arch package's PKGBUILD is written
+# from the published tarballs, checked on Arch, put on the release, and
+# published to the AUR when the repository has an AUR key. The procedure is docs/cookbook/releasing.md.
 
 on:
   push:
@@ -204,15 +204,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${GITHUB_REF_NAME}" dist/niimbench-macos.zip dist/niimbench-macos.zip.sha256 --clobber
 
-  # The AUR package niimbench-bin, written from the tarballs just published
+  # The Arch package niimbench-bin, written from the tarballs just published
   # and their checksums, then built, installed and checked on Arch as CI does.
-  # tools/aur-push.sh publishes it when the AUR_SSH_PRIVATE_KEY secret is set
-  # and says it did not otherwise; the files are kept on the run either way,
-  # for publishing by hand (docs/cookbook/releasing.md#the-aur-package).
+  # Its PKGBUILD goes on the release, where `makepkg -si` installs it without
+  # the AUR. tools/aur-push.sh also publishes it to the AUR when the
+  # AUR_SSH_PRIVATE_KEY secret is set, and says it did not otherwise; the
+  # .SRCINFO the AUR needs is kept on the run either way, for publishing by
+  # hand (docs/cookbook/releasing.md#the-aur-package).
   aur:
     needs: publish
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -221,6 +227,17 @@ jobs:
         run: tools/aur.sh "${GITHUB_REF_NAME#v}" "$RUNNER_TEMP/aur"
       - name: Build, install and check it on Arch
         run: tools/aur-check.sh "$RUNNER_TEMP/aur"
+      - name: Checksum the PKGBUILD
+        run: (cd "$RUNNER_TEMP/aur" && sha256sum PKGBUILD > PKGBUILD.sha256 && cat PKGBUILD.sha256)
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/aur/PKGBUILD
+      - name: Upload the PKGBUILD to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" "$RUNNER_TEMP/aur/PKGBUILD" "$RUNNER_TEMP/aur/PKGBUILD.sha256" --clobber
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: niimbench-bin-aur
