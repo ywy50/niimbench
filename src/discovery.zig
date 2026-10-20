@@ -115,7 +115,8 @@ pub fn modelForId(id: u16) ?raster.Model {
         4096, 4098 => .b1,
         3584, 3585 => .b18,
         512, 513, 514 => .d11,
-        2304, 2305, 2320 => .d110,
+        2304, 2305 => .d110,
+        2320 => .d110_m,
         else => null,
     };
 }
@@ -144,7 +145,9 @@ pub fn modelForName(name: []const u8) ?raster.Model {
         } else if (std.mem.eql(u8, token, "d11")) {
             model = .d11;
         } else if (std.mem.eql(u8, token, "d110")) {
-            model = .d110;
+            // A D110_M names itself `D110_M-` and its serial.
+            const next = it.peek() orelse "";
+            model = if (std.ascii.eqlIgnoreCase(next, "m")) .d110_m else .d110;
         }
     }
     return model;
@@ -206,6 +209,7 @@ test "a printer model id is the head this bench prints to" {
     try std.testing.expectEqual(raster.Model.b21, modelForId(768).?);
     try std.testing.expectEqual(raster.Model.d11, modelForId(512).?);
     try std.testing.expectEqual(raster.Model.d110, modelForId(2304).?);
+    try std.testing.expectEqual(raster.Model.d110_m, modelForId(2320).?);
     try std.testing.expectEqual(raster.Model.b1, modelForId(4096).?);
     try std.testing.expectEqual(raster.Model.b18, modelForId(3584).?);
     // A 300 dpi Pro head is not one of the five.
@@ -216,6 +220,7 @@ test "a printer model id is the head this bench prints to" {
 test "a device name resolves whole model words only" {
     try std.testing.expectEqual(raster.Model.b21, modelForName("NIIMBOT B21").?);
     try std.testing.expectEqual(raster.Model.d110, modelForName("NIIMBOT-D110").?);
+    try std.testing.expectEqual(raster.Model.d110_m, modelForName("D110_M-I704252064").?);
     try std.testing.expectEqual(raster.Model.b18, modelForName("niimbot_b18").?);
     try std.testing.expectEqual(raster.Model.d11, modelForName("NIIMBOT D11S").?);
     try std.testing.expectEqual(raster.Model.b21, modelForName("B21S_C2B").?);

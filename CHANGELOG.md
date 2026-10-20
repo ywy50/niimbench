@@ -13,17 +13,20 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ### Added
 
+- A **d110_m** model, for the D110_M: the same head, rolls and print sequence as the D110, with density 1 to 5 where the D110 takes 1 to 3. A scan names it by its model id, 2320, or by its Bluetooth name, `D110_M-…`; it used to be found as a d110 and held to 3.
 - **Quit niimbench…**, in a menu on the **niimbench** name at the top left, stops the server after asking. **Reset panels** moved into the same menu, so the header's right side holds only what printing needs.
 - The server stops by itself when no page has been open for 30 minutes. `--idle-minutes N` changes the time, and 0 keeps it running.
 
 ### Changed
 
+- **Undo** takes back a typed word at once. Typing in one box, **Width** and **Height** included, is one change until you pause for a second or go to another control; it used to be one change per letter.
 - Starting niimbench while it already runs from the same folder opens the running one in the browser and exits, instead of refusing. With `--no-open` it still refuses and names the running process.
 - The **Sync clock** tooltip says it sets the printer to this computer's local date and time, which is what the date button prints.
 - `make help` lists `BROWSER`, the Chromium-family browser the browser checks use.
 
 ### Fixed
 
+- The edit right after an **Undo** could not be undone on its own: the next **Undo** jumped past it, or did nothing. Undo now compares a new state with the top of its history, not with the last state it restored.
 - **Undo** and **Redo** were enabled on a page just opened, with nothing to undo. They now start disabled.
 - Loading a layout whose background image could not be restored said so for a moment, then the refresh after the load replaced the warning with a plain "loaded". The warning now stays.
 - A picture you have not moved or scaled is fitted to the label again when the **Label** menu, the model, **Width** or **Height** changes the label's size. It used to keep the old fit and could hang off the new label.

@@ -161,6 +161,10 @@ function judge(report) {
   // A click selects a field or the picture, and Delete removes what is selected.
   check("a click selects a box on the canvas and Delete removes it",
     Boolean(report.select) && report.select.ok === true, JSON.stringify(report.select));
+  // A word typed in one burst undoes in one step, and so does the edit right
+  // after an Undo.
+  check("typing undoes a word at a time, and the edit after an Undo undoes too",
+    Boolean(report.undo) && report.undo.ok === true, JSON.stringify(report.undo));
   // A failed job keeps its own line; picking a printer updates the status and
   // narrows the label to the head.
   check("the status follows the picked printer and the last job keeps its own line",
