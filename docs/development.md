@@ -105,7 +105,7 @@ tools/aur.sh 0.7.0 /tmp/aur file:///tmp/dist
 tools/aur-check.sh /tmp/aur file:///tmp/dist
 ```
 
-[../tools/aur-check.sh](../tools/aur-check.sh) builds the package with makepkg and installs it with pacman in a clean archlinux container, lints the `PKGBUILD` and the package with namcap, and starts it as the menu entry does. namcap's findings fail it, except four it expects: a `-bin` package names `x86_64` in its sources, and the binary is the attested release build, so it is left unstripped, and static, so it has no dynamic loader for RELRO or PIE to harden. The AUR wants `hicolor-icon-theme` as a dependency for the icons. Publishing is [cookbook/releasing.md](cookbook/releasing.md#the-aur-package).
+[../tools/aur-check.sh](../tools/aur-check.sh) builds the package with makepkg and installs it with pacman in a clean archlinux container, lints the `PKGBUILD` and the package with namcap, and starts it as the menu entry does. namcap's findings fail it, except four it expects: a `-bin` package names `x86_64` in its sources, and the binary is the attested release build, so it is left unstripped, and static, so it has no dynamic loader for RELRO or PIE to harden. The AUR wants `hicolor-icon-theme` as a dependency for the icons. Each release puts the `PKGBUILD` on its release page, where `makepkg -si` installs the package without the AUR. Publishing to the AUR is [cookbook/releasing.md](cookbook/releasing.md#the-aur-package).
 
 ## The Mac app
 

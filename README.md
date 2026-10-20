@@ -52,11 +52,12 @@ sudo dnf install https://github.com/ywy50/niimbench/releases/latest/download/nii
 
 On a 64-bit ARM machine, the package names say `aarch64` where these say `x86_64`.
 
-On Arch Linux, build and install the AUR package `niimbench-bin`, the same release build and menu entry, with your AUR helper or by hand:
+On Arch Linux, build and install the package `niimbench-bin`, the same release build and menu entry, from the `PKGBUILD` on the release:
 
 ```bash
-git clone https://aur.archlinux.org/niimbench-bin.git
+mkdir niimbench-bin
 cd niimbench-bin
+curl -fsSLo PKGBUILD https://github.com/ywy50/niimbench/releases/latest/download/PKGBUILD
 makepkg -si
 ```
 
@@ -216,7 +217,7 @@ On Windows, the Linux build runs inside WSL 2. Start it there and open the addre
 
 ## Releases
 
-Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has, for x86_64 and for arm64 Linux, a tarball, a `.deb` and an `.rpm`, and `niimbench-macos.zip`, the Mac app. Each tarball holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, the licences of the fonts compiled into the binary, and a desktop menu entry with its icons under `share/`. The `.deb` and `.rpm` install the same files where the system looks for them; they recommend BlueZ and `xdg-utils` and depend on nothing. Each release also writes the AUR package `niimbench-bin` from the tarballs' checksums. The Mac app carries one binary for both kinds of Mac. Every download comes with a `.sha256` and a build provenance attestation signed by the release workflow.
+Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has, for x86_64 and for arm64 Linux, a tarball, a `.deb` and an `.rpm`, and `niimbench-macos.zip`, the Mac app. Each tarball holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, the licences of the fonts compiled into the binary, and a desktop menu entry with its icons under `share/`. The `.deb` and `.rpm` install the same files where the system looks for them; they recommend BlueZ and `xdg-utils` and depend on nothing. Each release also carries `PKGBUILD`, the Arch package `niimbench-bin`, written from the tarballs' checksums. The Mac app carries one binary for both kinds of Mac. Every download comes with a `.sha256` and a build provenance attestation signed by the release workflow.
 
 Check a Linux download before you run it, the same way for the `.deb` and the `.rpm`:
 

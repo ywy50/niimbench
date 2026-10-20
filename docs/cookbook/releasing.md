@@ -21,7 +21,7 @@ Releases are tag-driven. The version is written once, in `build.zig.zon`, and pu
    git push origin "v$version"
    ```
 
-7. Watch the release workflow. It fails, publishing nothing, if the tag is not on `main`, if it disagrees with `build.zig.zon`, or if `CHANGELOG.md` has no section for it. Otherwise it creates the release, then on an x86_64 and an arm64 runner re-runs `make test` (on arm64 without the browser checks, which need stable Chrome and run on x86_64), runs `tools/linux-dist.sh` for the static `ReleaseSafe` binary, its tarball, `.deb` and `.rpm`, installs each package in a Debian and a Fedora container with `tools/linux-package-check.sh`, and uploads them with their checksums and build provenance. A Mac runner re-runs `zig build test`, builds the Mac app with `tools/macos-app.sh`, opens it with `tools/macos-app-check.sh`, and uploads `niimbench-macos.zip` the same way. Once the Linux files are up, an `aur` job writes the AUR package `niimbench-bin` from their checksums, builds and installs it on Arch, keeps its `PKGBUILD` and `.SRCINFO` on the run, and publishes them to the AUR when the repository has the key ([the AUR package](#the-aur-package)).
+7. Watch the release workflow. It fails, publishing nothing, if the tag is not on `main`, if it disagrees with `build.zig.zon`, or if `CHANGELOG.md` has no section for it. Otherwise it creates the release, then on an x86_64 and an arm64 runner re-runs `make test` (on arm64 without the browser checks, which need stable Chrome and run on x86_64), runs `tools/linux-dist.sh` for the static `ReleaseSafe` binary, its tarball, `.deb` and `.rpm`, installs each package in a Debian and a Fedora container with `tools/linux-package-check.sh`, and uploads them with their checksums and build provenance. A Mac runner re-runs `zig build test`, builds the Mac app with `tools/macos-app.sh`, opens it with `tools/macos-app-check.sh`, and uploads `niimbench-macos.zip` the same way. Once the Linux files are up, an `aur` job writes the Arch package `niimbench-bin` from their checksums, builds and installs it on Arch, uploads its `PKGBUILD` with a `.sha256` and build provenance to the release, keeps the `PKGBUILD` and `.SRCINFO` on the run, and publishes them to the AUR when the repository has the key ([the AUR package](#the-aur-package)).
 
    A failed tag is deleted, fixed on `main` through a pull request, and pushed again. Deleting it takes:
 
@@ -31,6 +31,10 @@ Releases are tag-driven. The version is written once, in `build.zig.zon`, and pu
    ```
 
 ## The AUR package
+
+Every release puts the `PKGBUILD` on its release page, where `makepkg -si` installs `niimbench-bin` without the AUR, and the README tells Arch users to do that.
+
+AUR registration has been closed since at least 2026-10-20: [aur.archlinux.org/register](https://aur.archlinux.org/register) answers that it is paused while the AUR deals with automated sign-ups, and that reopening will be announced on the aur-general list and the Arch news feed. So there is no account to set up the steps below with yet, and `niimbench-bin` is not on the AUR. Once there is one, the README's Arch section can name the AUR as well.
 
 The release's `aur` job publishes `niimbench-bin` to the AUR with `tools/aur-push.sh`, which signs in with the SSH key in the repository secret `AUR_SSH_PRIVATE_KEY`. Until that secret exists the job says so and the release goes ahead without it. Setting it up is done once, by whoever will own the package on the AUR:
 
@@ -61,7 +65,7 @@ git push origin HEAD:master
 
 ## Check
 
-The release page lists `niimbench-x86_64-linux` and `niimbench-aarch64-linux` as `.tar.gz`, `.deb` and `.rpm`, and `niimbench-macos.zip`, each with its `.sha256`. The newest Linux one verifies and reports its own version:
+The release page lists `niimbench-x86_64-linux` and `niimbench-aarch64-linux` as `.tar.gz`, `.deb` and `.rpm`, `niimbench-macos.zip`, and `PKGBUILD`, each with its `.sha256`. The newest Linux one verifies and reports its own version:
 
 ```sh
 gh release download --repo ywy50/niimbench --pattern 'niimbench-x86_64-linux.tar.gz*'
