@@ -37,7 +37,7 @@ A page describes its own subject. It names a child by purpose and links the chil
 
 - Document current behavior. History stays in commits.
 - Use relative links to files in this repository.
-- Update the owning subsystem page in the same change that changes that subsystem's contract.
+- Update the owning subsystem page in the same change that changes that subsystem's contract, and every other page that mentions what changed: the user guide, the README, the manuals, testing. A stale sentence anywhere is a bug, so grep for the names you touched before the PR.
 - Do not restate a route table, model table, or glyph number that already has a home.
 - Do not mark sections "implemented" or "future". The tree is the status.
 - A new reference page starts from [templates/reference.md](templates/reference.md) and is added to [README.md](README.md) and, when it is a subsystem, to [subsystems/README.md](subsystems/README.md).
