@@ -15,11 +15,11 @@
   <a href="https://github.com/ywy50/niimbench/releases/latest"><img alt="latest release" src="https://img.shields.io/github/v/release/ywy50/niimbench?color=0b62d4"></a>
   <img alt="Zig 0.17" src="https://img.shields.io/badge/zig-0.17-f7a41d?logo=zig&logoColor=white">
   <img alt="platform: Linux, macOS" src="https://img.shields.io/badge/platform-linux%20%7C%20macOS-lightgrey">
-  <img alt="printers: B1, B18, B21, D11, D110" src="https://img.shields.io/badge/printers-B1%20%7C%20B18%20%7C%20B21%20%7C%20D11%20%7C%20D110-0b62d4">
+  <img alt="printers: B1, B18, B21, D11, D110, D110_M" src="https://img.shields.io/badge/printers-B1%20%7C%20B18%20%7C%20B21%20%7C%20D11%20%7C%20D110%20%7C%20D110__M-0b62d4">
   <a href="LICENSE"><img alt="license: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
-niimbench designs and prints labels on Niimbot label printers, the D110, D11, B21, B1 and B18, from Linux or a Raspberry Pi over USB or Bluetooth, or from a Mac over Bluetooth, with no phone app or account. It is a single binary written in Zig, and it is inspired by [niimprint](https://github.com/AndBondStyle/niimprint).
+niimbench designs and prints labels on Niimbot label printers, the D110, D110_M, D11, B21, B1 and B18, from Linux or a Raspberry Pi over USB or Bluetooth, or from a Mac over Bluetooth, with no phone app or account. It is a single binary written in Zig, and it is inspired by [niimprint](https://github.com/AndBondStyle/niimprint).
 
 ## Quick start
 
@@ -111,6 +111,7 @@ The editor draws literal text. The HTTP routes also take a JSON `source` and a f
 | B21 | 384 dots | 1 to 5 |
 | D11 | 96 dots | 1 to 3 |
 | D110 | 96 dots | 1 to 3 |
+| D110_M | 96 dots | 1 to 5 |
 
 B18, D11, and D110 densities above 3 are clamped to 3. Head width, density, and the raster live in [docs/subsystems/printer.md](docs/subsystems/printer.md).
 

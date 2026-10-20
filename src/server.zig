@@ -2335,6 +2335,7 @@ test "label sizes for a model omit the other series" {
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"b21\":{\"max_width\":384,\"max_density\":5,\"default\":\"50x30\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"id\":\"50x30\",\"width_mm\":50,\"height_mm\":30,\"round\":false,\"width\":384,\"height\":240") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"d11\":{\"max_width\":96,\"max_density\":3,\"default\":\"12x40\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, response.body, "\"d110_m\":{\"max_width\":96,\"max_density\":5,\"default\":\"12x40\",\"page_margin\":16,\"sizes\":[{\"id\":\"12x22\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"id\":\"15x30\",\"width_mm\":15,\"height_mm\":30,\"round\":false,\"width\":96,\"height\":240") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"b18\":{\"max_width\":384,\"max_density\":3,\"default\":\"b18-14x50\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, response.body, "\"id\":\"b18-14x50\",\"width_mm\":14,\"height_mm\":50,\"round\":false,\"width\":112,\"height\":400") != null);

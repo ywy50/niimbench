@@ -70,11 +70,13 @@ pub const Model = enum {
     b21,
     d11,
     d110,
+    /// A D110 head that burns at density 1 to 5, where a D110 stops at 3.
+    d110_m,
 
     pub fn maxWidth(self: Model) usize {
         return switch (self) {
             .b1, .b18, .b21 => 384,
-            .d11, .d110 => 96,
+            .d11, .d110, .d110_m => 96,
         };
     }
 
@@ -93,7 +95,7 @@ pub const Model = enum {
     /// prints and a 308-dot page over-feeds. The wider heads do not need it.
     pub fn pageMargin(self: Model) usize {
         return switch (self) {
-            .d11, .d110 => 2 * dots_per_mm,
+            .d11, .d110, .d110_m => 2 * dots_per_mm,
             else => 0,
         };
     }
@@ -104,7 +106,7 @@ pub const Model = enum {
     /// it printed one page twice. The B-series sequences send neither.
     pub fn setsCopies(self: Model) bool {
         return switch (self) {
-            .d11, .d110 => true,
+            .d11, .d110, .d110_m => true,
             else => false,
         };
     }
@@ -132,17 +134,17 @@ pub const LabelSize = struct {
 };
 
 pub const label_sizes = [_]LabelSize{
-    .{ .id = "12x22", .width_mm = 12, .height_mm = 22, .models = "d11 d110" },
-    .{ .id = "12x30", .width_mm = 12, .height_mm = 30, .models = "d11 d110" },
-    .{ .id = "12x40", .width_mm = 12, .height_mm = 40, .models = "d11 d110" },
-    .{ .id = "14x30", .width_mm = 14, .height_mm = 30, .models = "d11 d110" },
-    .{ .id = "14x40", .width_mm = 14, .height_mm = 40, .models = "d11 d110" },
-    .{ .id = "14x50", .width_mm = 14, .height_mm = 50, .models = "d11 d110" },
-    .{ .id = "14x60", .width_mm = 14, .height_mm = 60, .models = "d11 d110" },
-    .{ .id = "15x26", .width_mm = 15, .height_mm = 26, .models = "d11 d110" },
-    .{ .id = "15x30", .width_mm = 15, .height_mm = 30, .models = "d11 d110" },
-    .{ .id = "15x40", .width_mm = 15, .height_mm = 40, .models = "d11 d110" },
-    .{ .id = "15x50", .width_mm = 15, .height_mm = 50, .models = "d11 d110" },
+    .{ .id = "12x22", .width_mm = 12, .height_mm = 22, .models = "d11 d110 d110_m" },
+    .{ .id = "12x30", .width_mm = 12, .height_mm = 30, .models = "d11 d110 d110_m" },
+    .{ .id = "12x40", .width_mm = 12, .height_mm = 40, .models = "d11 d110 d110_m" },
+    .{ .id = "14x30", .width_mm = 14, .height_mm = 30, .models = "d11 d110 d110_m" },
+    .{ .id = "14x40", .width_mm = 14, .height_mm = 40, .models = "d11 d110 d110_m" },
+    .{ .id = "14x50", .width_mm = 14, .height_mm = 50, .models = "d11 d110 d110_m" },
+    .{ .id = "14x60", .width_mm = 14, .height_mm = 60, .models = "d11 d110 d110_m" },
+    .{ .id = "15x26", .width_mm = 15, .height_mm = 26, .models = "d11 d110 d110_m" },
+    .{ .id = "15x30", .width_mm = 15, .height_mm = 30, .models = "d11 d110 d110_m" },
+    .{ .id = "15x40", .width_mm = 15, .height_mm = 40, .models = "d11 d110 d110_m" },
+    .{ .id = "15x50", .width_mm = 15, .height_mm = 50, .models = "d11 d110 d110_m" },
     .{ .id = "b18-10x25", .width_mm = 10, .height_mm = 25, .models = "b18" },
     .{ .id = "b18-12x30", .width_mm = 12, .height_mm = 30, .models = "b18" },
     .{ .id = "b18-14x30", .width_mm = 14, .height_mm = 30, .models = "b18" },
@@ -188,12 +190,12 @@ pub fn sizePixels(size: LabelSize, model: Model) struct { width: usize, height: 
     };
 }
 
-/// The roll shipped with that model: D11 12×40, D110 15×30, B18 14×50, B1 and B21 50×30.
+/// The roll shipped with that model: D11 and D110_M 12×40, D110 15×30, B18 14×50, B1 and B21 50×30.
 pub fn defaultLabelId(model: Model) []const u8 {
     return switch (model) {
         .b1, .b21 => "50x30",
         .b18 => "b18-14x50",
-        .d11 => "12x40",
+        .d11, .d110_m => "12x40",
         .d110 => "15x30",
     };
 }

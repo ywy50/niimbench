@@ -446,7 +446,7 @@
         <label>Model
           <select id="model">
             <option>b21</option><option>b1</option><option>b18</option>
-            <option>d11</option><option>d110</option>
+            <option>d11</option><option>d110</option><option>d110_m</option>
           </select>
         </label>
         <label>Label
@@ -557,7 +557,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "density", "fit", "rotate", "image", "select", "printer"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "density", "fit", "rotate", "image", "select", "undo", "printer"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -604,7 +604,12 @@
     let history = [];
     let future = [];
     let deep = 0;
-    let lastPushed = null;
+    // Keystrokes in one control are one edit while each comes within a
+    // second of the last, so Undo takes back a word, not a letter. A pause,
+    // another control or any other edit starts the next one.
+    const typingPauseMs = 1000;
+    let typingIn = null;
+    let typedAt = 0;
     let boxes = [];
     /// The roll the fields were last laid out on. Every change of roll — a
     /// model, a size preset, a typed width — ends in `refresh`, so this is
@@ -1154,8 +1159,8 @@
       row.append(text, named("Font", font), numbers, actions, note);
       list.append(row);
 
-      const sync = () => {
-        record();
+      const sync = (typing) => {
+        record(typing);
         field.text = text.value;
         field.font = font.value;
         field.size = sizeOf({ size: size.value });
@@ -1166,7 +1171,7 @@
         rotation.value = String(field.rotation);
         scheduleRefresh();
       };
-      text.addEventListener("input", () => { grow(); sync(); });
+      text.addEventListener("input", () => { grow(); sync(text); });
       // Enter belongs to the label: it starts a new line. Ctrl+Enter prints.
       text.addEventListener("keydown", (event) => {
         if (event.key !== "Enter") return;
@@ -1179,7 +1184,7 @@
         // reaching the form and submitting it.
         event.stopPropagation();
       });
-      for (const control of [font, size, x, y, rotation]) control.addEventListener("change", sync);
+      for (const control of [font, size, x, y, rotation]) control.addEventListener("change", () => sync());
       for (const control of [x, y]) {
         control.addEventListener("keydown", (event) => {
           nudge(event, field, x, y);
@@ -1383,13 +1388,22 @@
 
     /// Remember the state before a change. Called from the event that is about
     /// to change something, so the stack is "the state before each edit".
-    function record() {
+    /// `typing` is the control a keystroke landed in; the keystrokes after the
+    /// first in a burst add nothing, so the burst undoes as one edit.
+    function record(typing) {
       if (deep > 0) return;
+      const at = window.performance.now();
+      const burst = typing !== undefined && typing === typingIn && at - typedAt < typingPauseMs;
+      typingIn = typing === undefined ? null : typing;
+      typedAt = at;
+      if (burst) return;
       const now = snapshot();
-      if (now === lastPushed) return;
+      // Two calls for one edit push it once. The comparison is with the top
+      // of the stack, not with the last state pushed: after an Undo that one
+      // is the page itself, and the next edit must still be undoable.
+      if (now === history[history.length - 1]) return;
       history.push(now);
       if (history.length > 100) history.shift();
-      lastPushed = now;
       future.length = 0;
       updateHistoryButtons();
     }
@@ -1410,7 +1424,7 @@
       } finally {
         deep -= 1;
       }
-      lastPushed = json;
+      typingIn = null;
       updateHistoryButtons();
       refresh();
     }
@@ -1429,7 +1443,6 @@
       const next = future.pop();
       if (next === undefined) return;
       history.push(snapshot());
-      lastPushed = next;
       status.textContent = "redo";
       restore(next);
     }
@@ -3299,9 +3312,9 @@
       // hold the old value. `change` fires after the new value is in place, and
       // `input` may too depending on how the edit was made; `beforeinput` fires
       // while the old value is still readable, which is what makes the first
-      // edit on a control undoable. Typing several digits is one entry, because
-      // `record` skips a state it has already pushed.
-      control.addEventListener("beforeinput", () => record());
+      // edit on a control undoable. Typing several digits is one entry, as
+      // typing in a text box is.
+      control.addEventListener("beforeinput", () => record(control));
       control.addEventListener("change", () => {
         markCustomIfEdited();
         refitIfUntouched();
@@ -3473,7 +3486,6 @@
       syncImageControls();
       history.length = 0;
       future.length = 0;
-      lastPushed = snapshot();
       updateHistoryButtons();
       refresh();
     });
@@ -4230,6 +4242,35 @@
       return verdict;
     }
 
+    /// Type three letters into a row in one burst, the way a person types a
+    /// word, and press Ctrl+Z: the word goes in one step. Then type one more
+    /// and undo that too, since the edit right after an Undo is a step of its
+    /// own. Undo rebuilds the rows, so each step finds rows[0] again.
+    async function selfCheckUndo() {
+      if (!rows[0]) return null;
+      const type = (letters) => {
+        const box = rows[0].controls.text;
+        for (const letter of letters) {
+          box.value += letter;
+          box.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+      };
+      const before = rows[0].model.text;
+      const depth = history.length;
+      type("abc");
+      const verdict = { word_steps: history.length - depth };
+      pressKey("z", { ctrlKey: true });
+      await refresh();
+      verdict.word_undone = rows[0].model.text === before;
+      type("d");
+      verdict.after_undo_steps = history.length - depth;
+      pressKey("z", { ctrlKey: true });
+      await refresh();
+      verdict.letter_undone = rows[0].model.text === before;
+      verdict.ok = verdict.word_steps === 1 && verdict.word_undone && verdict.after_undo_steps === 1 && verdict.letter_undone;
+      return verdict;
+    }
+
     /// Print to an address nothing answers at, the way a person does, then
     /// pick a printer with the narrowest head from the list. The failed job is
     /// reported on its own line and stays there; the status line says what is
@@ -4300,6 +4341,7 @@
         report.rotate = harness ? await selfCheckRotate() : null;
         report.image = harness ? await selfCheckImage() : null;
         report.select = harness ? await selfCheckSelect() : null;
+        report.undo = harness ? await selfCheckUndo() : null;
         report.printer = harness ? await selfCheckPrinter() : null;
       }
       const view = viewSize();
@@ -4347,6 +4389,7 @@
         " rotate " + (report.rotate ? (report.rotate.ok ? "ok" : "BROKEN") : "not exercised") +
         " image " + (report.image ? (report.image.ok ? "ok" : "BROKEN") : "not exercised") +
         " select " + (report.select ? (report.select.ok ? "ok" : "BROKEN") : "not exercised") +
+        " undo " + (report.undo ? (report.undo.ok ? "ok" : "BROKEN") : "not exercised") +
         " printer " + (report.printer ? (report.printer.ok ? "ok" : "BROKEN") : "not exercised"));
     });
   </script>
