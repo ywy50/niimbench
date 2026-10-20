@@ -5,7 +5,8 @@ name: release
 # version's CHANGELOG.md section, then, on each platform with a runner, re-runs
 # the suite on the tagged tree, builds a static ReleaseSafe binary, checks it
 # reports the tag, and uploads a tarball, its checksum and a signed build
-# provenance attestation. The procedure is docs/cookbook/releasing.md.
+# provenance attestation. A Mac builds the Mac app and uploads its zip the
+# same way. The procedure is docs/cookbook/releasing.md.
 
 on:
   push:
@@ -175,3 +176,39 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${GITHUB_REF_NAME}" dist/*.tar.gz dist/*.sha256 --clobber
+
+  # The Mac app, built on a Mac because the bundle tools are Apple's. The
+  # binary inside is both architectures, so one runner makes it; the suite
+  # runs here first, as on the Linux runners.
+  macos-app:
+    needs: release
+    runs-on: macos-15
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - name: Test the tagged tree
+        run: zig build test --summary all
+      # tools/macos-app.sh fails unless the binary reports build.zig.zon's
+      # version, which the release job has already matched to the tag.
+      - name: Build niimbench.app
+        run: tools/macos-app.sh dist
+      - name: Open it as Finder does
+        run: tools/macos-app-check.sh dist/niimbench.app
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/niimbench-macos.zip
+      - name: Upload to the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/niimbench-macos.zip dist/niimbench-macos.zip.sha256 --clobber

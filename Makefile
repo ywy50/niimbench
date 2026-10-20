@@ -12,7 +12,7 @@ SIZE ?= 1600x1000
 DRIVE_OUT ?= zig-out/drive
 
 .DEFAULT_GOAL := run
-.PHONY: help test build run serve trace print labels lint protocol-test view-test box-test panel-test canvas-test trace-test stray-test drive screens-test
+.PHONY: help test build run serve trace print labels lint protocol-test view-test box-test panel-test canvas-test trace-test stray-test drive screens-test macos-app macos-app-check
 
 help:
 	@printf '%s\n' \
@@ -34,6 +34,8 @@ help:
 		'  make stray-test      check no server outlives whoever started it' \
 		'  make screens-test    check the page fits phone to desktop sizes, in headless Chrome' \
 		'  make drive           drive the page in a headless browser (see DRIVE)' \
+		'  make macos-app       build niimbench.app and its zip in zig-out/macos (on a Mac)' \
+		'  make macos-app-check start niimbench.app as Finder does and check it (on a Mac)' \
 		'' \
 		'PRINT' \
 		'  IMAGE=label.pgm      binary P5 file to print (required)' \
@@ -66,6 +68,13 @@ trace:
 
 build:
 	$(ZIG) build $(ARGS)
+
+# The Mac app. Both need macOS: the bundle tools and `open` are Apple's.
+macos-app:
+	tools/macos-app.sh
+
+macos-app-check:
+	tools/macos-app-check.sh
 
 test: lint protocol-test view-test box-test panel-test stray-test trace-test canvas-test drive screens-test
 	$(ZIG) build test $(ARGS)

@@ -70,3 +70,30 @@ jobs:
         run: |
           zig build
           tools/with-server.sh sh -c 'curl -fsSL -b "" -o "$NIIMBENCH_DIR/page.html" "$NIIMBENCH_URL" && grep -q "<title>niimbench" "$NIIMBENCH_DIR/page.html"'
+
+  # The Mac app. tools/macos-app.sh builds niimbench.app, one binary for both
+  # kinds of Mac signed ad hoc, and tools/macos-app-check.sh opens it the way
+  # Finder does: it serves, a second open finds the first, and Quit stops it.
+  # The zip is kept on the run, so a pull request's app can be tried on a Mac
+  # before it is released.
+  macos-app:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
+        with:
+          version: 0.17.0
+      - name: Build niimbench.app
+        run: tools/macos-app.sh
+      - name: Open it as Finder does
+        run: tools/macos-app-check.sh
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: niimbench-macos
+          path: |
+            zig-out/macos/niimbench-macos.zip
+            zig-out/macos/niimbench-macos.zip.sha256
+          if-no-files-found: error
