@@ -25,6 +25,10 @@ pub const Handler = struct {
     /// differs from this is new bytes.
     last: [512]u8 = undefined,
     last_len: usize = 0,
+    /// Set once an answer has come as a signal. From then on the signals carry
+    /// every answer, and the cache, which each of them also updates, could
+    /// only hand one over a second time.
+    saw_signal: bool = false,
 
     fn close(ptr: *anyopaque) void {
         const self: *Handler = @ptrCast(@alignCast(ptr));
@@ -66,6 +70,7 @@ pub const Handler = struct {
     fn takeNotified(self: *Handler) !void {
         try self.buffer.appendSlice(self.allocator, self.conn.notified.items);
         self.conn.notified.clearRetainingCapacity();
+        self.saw_signal = true;
         const latest = self.conn.latest[0..self.conn.latest_len];
         @memcpy(self.last[0..latest.len], latest);
         self.last_len = latest.len;
@@ -88,8 +93,12 @@ pub const Handler = struct {
     /// Ask BlueZ for the characteristic value and append the bytes if this is
     /// a value the transport has not handed over yet.
     fn pull(self: *Handler) !void {
+        if (self.saw_signal) return;
         var scratch: [512]u8 = undefined;
         const n = self.conn.readValue(self.char_path, &scratch) catch return error.BusGone;
+        // A signal that came in during the read is that answer, in order;
+        // taking the cache as well handed it over twice.
+        if (self.conn.notified.items.len != 0) return self.takeNotified();
         if (n == 0) return;
         if (n == self.last_len and std.mem.eql(u8, self.last[0..n], scratch[0..n])) return;
         self.last_len = n;
@@ -115,7 +124,7 @@ pub fn open(allocator: std.mem.Allocator, io: std.Io, address: []const u8) !prin
     try conn.connectDevice(device_path);
     errdefer conn.disconnectDevice(device_path);
 
-    const char_path = (try conn.findCharacteristic(dbus.niimbot_le_characteristic)) orelse
+    const char_path = (try conn.findCharacteristic(device_path, dbus.niimbot_le_characteristic)) orelse
         return error.PrintCharacteristicMissing;
     errdefer allocator.free(char_path);
     try conn.watchValue(char_path);
@@ -127,6 +136,9 @@ pub fn open(allocator: std.mem.Allocator, io: std.Io, address: []const u8) !prin
         .conn = conn,
         .char_path = char_path,
     };
+    // What the cache already holds is the last session's answer, not this
+    // one's: a first answer slower than the wait read it as new.
+    self.last_len = conn.readValue(char_path, &self.last) catch 0;
     return self.transport();
 }
 

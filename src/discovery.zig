@@ -143,6 +143,9 @@ pub fn modelForName(name: []const u8) ?raster.Model {
         } else if (std.mem.eql(u8, token, "b21")) {
             model = .b21;
         } else if (std.mem.eql(u8, token, "d11")) {
+            // A D11_H names itself `D11_H-`: a 300 dpi head, which model id
+            // 528 leaves out as well.
+            if (std.ascii.eqlIgnoreCase(it.peek() orelse "", "h")) return null;
             model = .d11;
         } else if (std.mem.eql(u8, token, "d110")) {
             // A D110_M names itself `D110_M-` and its serial.
@@ -227,6 +230,7 @@ test "a device name resolves whole model words only" {
     // `b18` must not answer for `b1`, and a Pro is a different head.
     try std.testing.expectEqual(raster.Model.b18, modelForName("B18").?);
     try std.testing.expect(modelForName("NIIMBOT B1 PRO") == null);
+    try std.testing.expect(modelForName("D11_H-G116052084") == null);
     try std.testing.expect(modelForName("Speaker") == null);
     try std.testing.expect(modelForName("") == null);
 }

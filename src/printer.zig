@@ -114,6 +114,12 @@ pub const Client = struct {
         // tells it neither, a D110_M printed a label twice, both copies whole,
         // even with PrintQuantity set to 1.
         const v4 = self.d_series and self.protocolVersion() >= 4;
+        // cordis-boundary: from `start_print` on, the job is the printer's.
+        // Whatever fails after it, a refused page size or a row or end_page
+        // left unanswered, still ends with end_print, so the printer is not
+        // left in a job nobody finishes.
+        var closed = false;
+        errdefer if (!closed) self.endPrint(io) catch {};
         if (v4) try self.openPageV4(width, height, density) else try self.openPage(width, height, density);
         const row_len = raster.packedRowBytes(width);
         const payload = try self.allocator.alloc(u8, row_len + 6);
@@ -155,17 +161,20 @@ pub const Client = struct {
             // heads answer 0x00 while the page is still out.
             error.PrinterUnsupported => {
                 self.note("no PrintStatus, polling end_print", .{});
+                closed = true;
                 return self.confirmByEndPrint(io);
             },
             else => {
                 // cordis-boundary: the page is already on the wire. end_print
                 // closes the job, including a page the counter never counted.
+                closed = true;
                 self.endPrint(io) catch {};
                 return err;
             },
         };
         // cordis-boundary: the page is already on the wire. end_print is the
         // compensation that tells the printer the job is finished.
+        closed = true;
         try self.endPrint(io);
         // The V4 sequence ends with a heartbeat nothing waits for: some of
         // those printers drop the first packet after PrintEnd.
@@ -322,7 +331,9 @@ pub const Client = struct {
             };
             if (baseline == null) baseline = status.page;
             if (status.print_pct < 100) saw_motion = true;
-            const advanced = status.page >= (baseline orelse 0) + target;
+            // Wider than the counter, which a printer near 65535 would
+            // otherwise overflow, stopping the server.
+            const advanced = @as(u32, status.page) >= @as(u32, baseline orelse 0) + target;
             const settled = saw_motion and status.page >= target and status.print_pct >= 100 and status.feed_pct >= 100;
             // A counter past the last copy while the head is printing again is
             // a copy the job did not ask for.
@@ -417,9 +428,19 @@ pub const Client = struct {
     fn pop(self: *Client, expect: u8) !?packet.Packet {
         while (self.buffer.items.len - self.start > 4) {
             const available = self.buffer.items[self.start..];
+            // A frame starts `55 55`. A stray byte, or the tail of a frame an
+            // earlier read gave up on, is stepped over one byte at a time;
+            // read as a frame it ended the job or waited out a timeout.
+            if (available[0] != 0x55 or available[1] != 0x55) {
+                self.start += 1;
+                continue;
+            }
             const pkt_len = @as(usize, available[3]) + 7;
             if (available.len < pkt_len) break;
-            const parsed = try packet.Packet.fromBytes(available[0..pkt_len], &self.data_buf);
+            const parsed = packet.Packet.fromBytes(available[0..pkt_len], &self.data_buf) catch {
+                self.start += 1;
+                continue;
+            };
             self.start += pkt_len;
             if (self.start == self.buffer.items.len) {
                 self.buffer.clearRetainingCapacity();
@@ -931,4 +952,65 @@ test "progress that leaves 100 percent and returns counts as printed" {
     defer client.deinit();
     const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
     try client.printGray(null, &pixels, 8, 1, 3);
+}
+
+test "a job refused after start_print still ends with end_print" {
+    // SetPageSize answered with a print error (cover open, no paper): the
+    // printer has started the job, so the client finishes it.
+    const gpa = std.testing.allocator;
+    const ok = [_]u8{1};
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.start_page, 1, &ok);
+    var wire: [packet.Packet.max_wire]u8 = undefined;
+    try script.inbound.appendSlice(gpa, try (packet.Packet{ .packet_type = 0xDB, .data = &.{0x01} }).toBytes(&wire));
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    try std.testing.expectError(error.PrinterRefused, client.printGray(null, &pixels, 8, 1, 3));
+    var frames = try framesWritten(gpa, script.written.items);
+    defer frames.deinit(gpa);
+    try std.testing.expectEqual(@backingInt(packet.Request.end_print), frames.items[frames.items.len - 1][0]);
+}
+
+test "a stray byte ahead of an answer is stepped over" {
+    const gpa = std.testing.allocator;
+    const ok = [_]u8{1};
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    try script.inbound.append(gpa, 0x00);
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.start_page, 1, &ok);
+    try script.push(.set_dimension, 1, &ok);
+    try script.push(.end_page, 1, &ok);
+    try script.pushFinishedPage();
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    try client.printGray(null, &pixels, 8, 1, 3);
+}
+
+test "a page counter at its top does not overflow" {
+    const gpa = std.testing.allocator;
+    const ok = [_]u8{1};
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.start_page, 1, &ok);
+    try script.push(.set_dimension, 1, &ok);
+    try script.push(.end_page, 1, &ok);
+    try script.pushPage(0xFFFF, 100, 100);
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    // The counter never moves past its top here, so the job is not counted;
+    // what matters is that the comparison does not stop the process.
+    try std.testing.expectError(error.PrintSkipped, client.printGray(null, &pixels, 8, 1, 3));
 }

@@ -130,17 +130,20 @@ pub const Conn = struct {
         try walkObjects(&cur, visitor);
     }
 
-    /// The object path of the GATT characteristic with this uuid, or null when
-    /// the device does not carry it. The print characteristic of a BLE Niimbot
-    /// printer is found this way rather than by guessing a path.
-    pub fn findCharacteristic(self: *Conn, uuid: []const u8) !?[]u8 {
+    /// The object path of the GATT characteristic with this uuid under
+    /// `device_path`, or null when the device does not carry it. The print
+    /// characteristic of a BLE Niimbot printer is found this way rather than by
+    /// guessing a path. Only this device's own objects count: a printer used
+    /// earlier stays connected with the same characteristic, and the first
+    /// match on the bus sent the label to it.
+    pub fn findCharacteristic(self: *Conn, device_path: []const u8, uuid: []const u8) !?[]u8 {
         var reply = try self.call("org.bluez", "/", "org.freedesktop.DBus.ObjectManager", "GetManagedObjects");
         defer reply.deinit();
         if (reply.kind != .method_return) return error.MethodFailed;
         var found: ?[]u8 = null;
         errdefer if (found) |path| self.allocator.free(path);
         var cur = Cursor{ .buf = reply.message, .pos = reply.body_offset };
-        try walkGattPaths(&cur, self.allocator, uuid, &found);
+        try walkGattPaths(&cur, self.allocator, device_path, uuid, &found);
         return found;
     }
 
@@ -242,8 +245,10 @@ pub const Conn = struct {
             const ready = std.posix.poll(&fds, bus_timeout_ms) catch return error.BusUnavailable;
             if (ready == 0) return error.BusTimeout;
             const wrote = std.os.linux.write(self.fd(), bytes[off..].ptr, bytes.len - off);
-            if (wrote < 0) return error.BadMessage;
-            const n: usize = @intCast(wrote);
+            // The raw call returns an error as a negative number in a usize.
+            const signed: isize = @bitCast(wrote);
+            if (signed < 0) return error.BadMessage;
+            const n: usize = @intCast(signed);
             if (n == 0) return error.BadMessage;
             off += n;
         }
@@ -702,6 +707,10 @@ const Cursor = struct {
                     var element_index = element;
                     try self.skipValue(signature, &element_index);
                 }
+                // Past the element type, so an array inside a struct or a
+                // dict entry leaves the next member's type next. Left on the
+                // element type, the enclosing loop skipped it again as data.
+                try skipType(signature, index);
             },
             '(', '{' => {
                 self.alignTo(8);
@@ -717,6 +726,23 @@ const Cursor = struct {
         if (self.pos > self.buf.len) return error.BadMessage;
     }
 };
+
+/// Step `index` over one complete type in `signature`, reading no data.
+fn skipType(signature: []const u8, index: *usize) !void {
+    if (index.* >= signature.len) return error.BadSignature;
+    const kind = signature[index.*];
+    index.* += 1;
+    switch (kind) {
+        'a' => try skipType(signature, index),
+        '(', '{' => {
+            const close: u8 = if (kind == '(') ')' else '}';
+            while (index.* < signature.len and signature[index.*] != close) try skipType(signature, index);
+            if (index.* >= signature.len) return error.BadSignature;
+            index.* += 1;
+        },
+        else => {},
+    }
+}
 
 fn walkObjects(cur: *Cursor, visitor: Visitor) !void {
     cur.alignTo(4);
@@ -753,7 +779,7 @@ fn walkObjects(cur: *Cursor, visitor: Visitor) !void {
 
 /// Collect the `org.bluez.GattCharacteristic1` path whose `UUID` is `uuid`.
 /// Every other object is stepped over with `skipValue`.
-fn walkGattPaths(cur: *Cursor, allocator: std.mem.Allocator, uuid: []const u8, found: *?[]u8) !void {
+fn walkGattPaths(cur: *Cursor, allocator: std.mem.Allocator, device_path: []const u8, uuid: []const u8, found: *?[]u8) !void {
     cur.alignTo(4);
     const len = try cur.readU32();
     const end = cur.pos + len;
@@ -790,7 +816,8 @@ fn walkGattPaths(cur: *Cursor, allocator: std.mem.Allocator, uuid: []const u8, f
                 var skip_index: usize = 0;
                 try cur.skipValue("a{sv}", &skip_index);
             }
-            if (matches and found.* == null) found.* = try allocator.dupe(u8, path);
+            const under = path.len > device_path.len and std.mem.startsWith(u8, path, device_path) and path[device_path.len] == '/';
+            if (matches and under and found.* == null) found.* = try allocator.dupe(u8, path);
         }
     }
 }
@@ -1131,4 +1158,68 @@ test "a notification that arrives while a call waits for its reply is kept" {
     try std.testing.expectEqual(Reply.Kind.method_return, answered.kind);
     try std.testing.expect(try conn.awaitNotification(0));
     try std.testing.expectEqualSlices(u8, &test_status, conn.notified.items);
+}
+
+test "an array inside a dict entry is stepped over whole" {
+    // a{sas}: one entry, "k" to ["x"]. The inner array is not the entry's last
+    // member's end of signature, so the skipper must leave the signature past
+    // `as` before the entry closes.
+    const gpa = std.testing.allocator;
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(gpa);
+    const outer_at = buf.items.len;
+    try buf.appendNTimes(gpa, 0, 4);
+    try alignList(&buf, gpa, 8);
+    try writeString(&buf, gpa, "k");
+    try alignList(&buf, gpa, 4);
+    const inner_at = buf.items.len;
+    try buf.appendNTimes(gpa, 0, 4);
+    try writeString(&buf, gpa, "x");
+    try writeArrayLength(&buf, inner_at);
+    try writeArrayLength(&buf, outer_at);
+    const array_end = buf.items.len;
+    try buf.appendNTimes(gpa, 0xAB, 16);
+
+    var cur = Cursor{ .buf = buf.items };
+    var index: usize = 0;
+    try cur.skipValue("a{sas}", &index);
+    try std.testing.expectEqual(array_end, cur.pos);
+    try std.testing.expectEqual(@as(usize, 6), index);
+}
+
+test "the print characteristic is the asked device's own" {
+    // Printer A, still connected from an earlier job, is listed first. A job
+    // for printer B must write to B's characteristic.
+    const gpa = std.testing.allocator;
+    const a = "/org/bluez/hci0/dev_AA_AA_AA_AA_AA_AA/service0020/char0021";
+    const b = "/org/bluez/hci0/dev_BB_BB_BB_BB_BB_BB/service0020/char0021";
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(gpa);
+    const objects_at = buf.items.len;
+    try buf.appendNTimes(gpa, 0, 4);
+    for ([_][]const u8{ a, b }) |path| {
+        try alignList(&buf, gpa, 8);
+        try writeString(&buf, gpa, path);
+        try alignList(&buf, gpa, 4);
+        const interfaces_at = buf.items.len;
+        try buf.appendNTimes(gpa, 0, 4);
+        try alignList(&buf, gpa, 8);
+        try writeString(&buf, gpa, "org.bluez.GattCharacteristic1");
+        try alignList(&buf, gpa, 4);
+        const properties_at = buf.items.len;
+        try buf.appendNTimes(gpa, 0, 4);
+        try alignList(&buf, gpa, 8);
+        try writeString(&buf, gpa, "UUID");
+        try buf.appendSlice(gpa, &.{ 1, 's', 0 });
+        try writeString(&buf, gpa, niimbot_le_characteristic);
+        try writeArrayLength(&buf, properties_at);
+        try writeArrayLength(&buf, interfaces_at);
+    }
+    try writeArrayLength(&buf, objects_at);
+
+    var cur = Cursor{ .buf = buf.items };
+    var found: ?[]u8 = null;
+    defer if (found) |path| gpa.free(path);
+    try walkGattPaths(&cur, gpa, "/org/bluez/hci0/dev_BB_BB_BB_BB_BB_BB", niimbot_le_characteristic, &found);
+    try std.testing.expectEqualStrings(b, found.?);
 }
