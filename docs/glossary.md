@@ -38,4 +38,4 @@
 
 **Scan.** One run of every finder. `POST /api/devices/scan` starts it; `{"discover":true}` adds a Bluetooth inquiry, which is the only part that reaches a printer that was never paired.
 
-**Token.** 16 random bytes, printed as hex, required on every HTTP request for that process. The browser exchanges `?token=` for an `HttpOnly` cookie named `niimbench` and then requests `/` without the query.
+**Token.** 16 random bytes, printed as hex, required on every HTTP request for that process. The browser exchanges `?token=` for an `HttpOnly` cookie named `niimbench-<port>` and then requests `/` without the query.

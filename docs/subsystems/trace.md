@@ -63,11 +63,10 @@ At startup the server writes its URL, token included, to `.niimbench.token` in i
 make trace
 ```
 
-`tools/trace.sh` wraps the two calls a bug report needs: it clears the log, runs whatever command you give it, and prints the lines that appeared, so the output is only about that command. The command gets `NIIMBENCH_URL` and `NIIMBENCH_TOKEN` in its environment. Against the server running from this folder, both come from the token file; this one prints to a USB path that does not exist, which needs no printer and still records the job and its failure:
+`tools/trace.sh` wraps the two calls a bug report needs: it clears the log, runs whatever command you give it, and prints the lines that appeared, so the output is only about that command. The command gets `NIIMBENCH_URL` and `NIIMBENCH_TOKEN` in its environment. Without `--url` and `--token` both come from the `.niimbench.token` file of the server running from this folder, which has to be running already. This one prints to a USB path that does not exist, which needs no printer and still records the job and its failure:
 
 ```sh
-url=$(cat .niimbench.token)
-tools/trace.sh --url "${url%%/?token=*}" --token "${url##*token=}" -- sh -c 'curl -s -H "content-type: application/json" -d "{\"width\":96,\"height\":96,\"fields\":[{\"text\":\"A\"}],\"model\":\"d110\",\"conn\":\"usb\",\"addr\":\"/nonexistent\"}" "$NIIMBENCH_URL/api/print?token=$NIIMBENCH_TOKEN"'
+tools/trace.sh -- sh -c 'curl -s -H "content-type: application/json" -d "{\"width\":96,\"height\":96,\"fields\":[{\"text\":\"A\"}],\"model\":\"d110\",\"conn\":\"usb\",\"addr\":\"/nonexistent\"}" "$NIIMBENCH_URL/api/print?token=$NIIMBENCH_TOKEN"'
 ```
 
 The log is text on purpose. It reads with `curl`, pastes into a report, and diffs between two runs without a viewer.

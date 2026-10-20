@@ -26,6 +26,31 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ### Fixed
 
+- Pressing Enter in any number or text box, a row's **X** or the **Address** among them, printed the label. Enter now only confirms the box; **Print** and Ctrl+Enter in a row's text print.
+- **Print** did nothing, and jumped to the Image panel, after adding a small picture: its fitted **Scale %** passed the box's own maximum, and the box's range check held the print back.
+- A field dragged above the label's top edge, or a **Y** with a fraction, failed to render, and the page then set the label to 384×96. A field now stops at the top edge, **Y** is a whole number, and a failed render leaves the label's size alone. The server's failure answers carry the size the body asked for, not 384×96.
+- **Undo** after picking a model or a roll kept the new model or roll in the menu; it now puts the old one back. **Undo** also put back an old address, connection and density, which it now leaves alone, and did not turn the view back after **Vertical**, which it now does.
+- Turning a field by its round handle, and nudging one with the arrow keys, could not be undone. Each is a step now, repeated nudges as one.
+- **Undo** was enabled when the page opened with a printer it had picked by itself, and emptied the label.
+- Loading a layout with one bad field cleared the label before refusing it. The layout is checked whole first.
+- After loading a layout, or picking a printer whose roll could not be read, the **Label** menu could list another model's rolls.
+- Picking a printer of another model read its roll twice, opening the printer twice, and the roll's message was replaced by the preview's at once.
+- **Copy** of a turned field landed on top of it, and lost its angle. **Wrap** on a field turned to run along the roll wrapped it to the roll's width.
+- A Bluetooth print could go to another printer: the print channel was looked up among every device BlueZ knew, and a printer used earlier stays connected. It is now the opened device's own.
+- A print that failed after it had started, a refused page size or a row left unanswered, left the printer in the job; it now ends with `PrintEnd`. A stray byte ahead of the printer's answer is stepped over instead of failing the job or hiding the printer from a scan, and a one-byte model id reads as the spec says.
+- A Bluetooth answer could be handed over twice, or an earlier session's answer taken for this one's, when it came just as a read gave up waiting.
+- A D11_H, a 300 dpi head, found over Bluetooth was offered as a D11.
+- Scanning a serial port whose carrier was down, with `CLOCAL` off, could hang the server.
+- One request with a field at the far end of its numbers, such as `x` of 9223372036854775807, stopped the server. A long line turned 90 degrees asked for gigabytes of memory; one longer than any label is now `TextTooLarge`. A line ending in `\r` drew a missing-glyph box and moved aligned text.
+- One connection that sent nothing, as a browser's spare one does, held every other request and the idle stop.
+- **Quit** waited for the browser to close when `xdg-open` ran it in the foreground.
+- A request with the cookie and a body larger than 8 KB was refused as a bad token.
+- Two niimbench servers open at once each signed the other's page out; the cookie's name now carries the port.
+- A runtime source whose name needs percent-encoding, such as `my record`, could be installed but not read or deleted.
+- `.niimbench.token` was left behind after the server stopped, and the startup address in a log of stdout and stderr together was overwritten by the lines after it.
+- A boot list whose `http` row could not start crashed with a panic, or a use-after-free when a second `http` row was listed. It now stops with `HttpInactive`.
+- `niimbench print --image` crashed on a PGM with very many comment lines.
+- `tools/trace.sh --token` never cleared the log, and without `--token` could not print one; it now reads `.niimbench.token`. `make trace-test` could not fail on a missing step, `make stray-test` left a folder behind, the doc link check dropped `_` from headings, and `make labels` emptied the catalogue when the download failed.
 - The edit right after an **Undo** could not be undone on its own: the next **Undo** jumped past it, or did nothing. Undo now compares a new state with the top of its history, not with the last state it restored.
 - **Undo** and **Redo** were enabled on a page just opened, with nothing to undo. They now start disabled.
 - Loading a layout whose background image could not be restored said so for a moment, then the refresh after the load replaced the warning with a plain "loaded". The warning now stays.
