@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-20
+
 ### Added
 
 - A **d110_m** model, for the D110_M: the same head, rolls and print sequence as the D110, with density 1 to 5 where the D110 takes 1 to 3. A scan names it by its model id, 2320, or by its Bluetooth name, `D110_M-…`; it used to be found as a d110 and held to 3.
@@ -208,7 +210,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/ywy50/niimbench/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/ywy50/niimbench/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ywy50/niimbench/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/ywy50/niimbench/compare/v0.3.0...v0.4.0
