@@ -21,7 +21,7 @@ Releases are tag-driven. The version is written once, in `build.zig.zon`, and pu
    git push origin "v$version"
    ```
 
-7. Watch the release workflow. It fails, publishing nothing, if the tag is not on `main`, if it disagrees with `build.zig.zon`, or if `CHANGELOG.md` has no section for it. Otherwise it creates the release, then on an x86_64 and an arm64 runner re-runs `make test` (on arm64 without the browser checks, which need stable Chrome and run on x86_64), builds a static `ReleaseSafe` binary, checks that it reports the tag, and uploads its tarball, checksum and build provenance.
+7. Watch the release workflow. It fails, publishing nothing, if the tag is not on `main`, if it disagrees with `build.zig.zon`, or if `CHANGELOG.md` has no section for it. Otherwise it creates the release, then on an x86_64 and an arm64 runner re-runs `make test` (on arm64 without the browser checks, which need stable Chrome and run on x86_64), builds a static `ReleaseSafe` binary, checks that it reports the tag, and uploads its tarball, checksum and build provenance. A Mac runner re-runs `zig build test`, builds the Mac app with `tools/macos-app.sh`, opens it with `tools/macos-app-check.sh`, and uploads `niimbench-macos.zip` the same way.
 
    A failed tag is deleted, fixed on `main` through a pull request, and pushed again. Deleting it takes:
 
@@ -32,7 +32,7 @@ Releases are tag-driven. The version is written once, in `build.zig.zon`, and pu
 
 ## Check
 
-The release page lists `niimbench-x86_64-linux.tar.gz` and `niimbench-aarch64-linux.tar.gz`, each with its `.sha256`. The newest one verifies and reports its own version:
+The release page lists `niimbench-x86_64-linux.tar.gz`, `niimbench-aarch64-linux.tar.gz` and `niimbench-macos.zip`, each with its `.sha256`. The newest Linux one verifies and reports its own version:
 
 ```sh
 gh release download --repo ywy50/niimbench --pattern 'niimbench-x86_64-linux.tar.gz*'
@@ -40,4 +40,14 @@ sha256sum -c niimbench-x86_64-linux.tar.gz.sha256
 gh attestation verify niimbench-x86_64-linux.tar.gz --repo ywy50/niimbench
 tar xzf niimbench-x86_64-linux.tar.gz
 niimbench-x86_64-linux/niimbench --version
+```
+
+On a Mac, the app's zip verifies the same way, and the app inside reports the version:
+
+```sh
+gh release download --repo ywy50/niimbench --pattern 'niimbench-macos.zip*'
+shasum -a 256 -c niimbench-macos.zip.sha256
+gh attestation verify niimbench-macos.zip --repo ywy50/niimbench
+ditto -x -k niimbench-macos.zip .
+niimbench.app/Contents/Helpers/niimbench.app/Contents/MacOS/niimbench --version
 ```

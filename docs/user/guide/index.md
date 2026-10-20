@@ -13,8 +13,8 @@ The page opens with one text field that says `niimbench`, centred on the label i
 ## Stop and start again
 
 - **Quit niimbench…** is in the menu that opens from the **niimbench** name at the top left, below **Reset panels**; in a narrow window, where panels do not move, it is the only item. It asks first, then stops the server, and the page says so.
-- **Closing the tab is enough.** An open page checks in once a minute; when none has for 30 minutes, the server stops by itself. Start it with `--idle-minutes N` for another time, or `--idle-minutes 0` to keep it running.
-- **Starting niimbench again from the same folder while it runs** opens the running one in the browser instead of a second server. With `--no-open` it says what is running and exits instead.
+- **Closing the tab is enough.** An open page checks in every half minute; when none has for 30 minutes, the server stops by itself. Start it with `--idle-minutes N` for another time, or `--idle-minutes 0` to keep it running.
+- **Starting niimbench again from the same folder while it runs** opens the running one in the browser instead of a second server. With `--no-open` it says what is running and exits instead. On a Mac, opening `niimbench.app` again does the same.
 
 ## Arrange the panels
 

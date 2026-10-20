@@ -37,7 +37,15 @@ curl -fsSL https://github.com/ywy50/niimbench/releases/latest/download/niimbench
 ./niimbench-aarch64-linux/niimbench
 ```
 
-On a Mac, build from source as below; there is no macOS release build yet. On Windows, run the x86_64 build inside WSL 2 and open the address it prints in your Windows browser. What works on each is under [Windows and macOS](#windows-and-macos).
+On a Mac with macOS 13 or later, Apple silicon or Intel, install the app and open it:
+
+```bash
+curl -fsSLO https://github.com/ywy50/niimbench/releases/latest/download/niimbench-macos.zip
+ditto -x -k niimbench-macos.zip /Applications
+open /Applications/niimbench.app
+```
+
+On Windows, run the x86_64 build inside WSL 2 and open the address it prints in your Windows browser. What works on each is under [Windows and macOS](#windows-and-macos).
 
 From source you need Zig 0.17. Node and a Chromium-family browser are only needed for `make test`.
 
@@ -157,9 +165,10 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 | `src/labels_catalogue.zig`, `src/catalogue.json` | The label roll catalogue compiled into the binary |
 | `src/trace.zig` | The in-memory log, published as the `trace` service |
 | `src/example_source.zig` | The example JSON source, a plugin |
-| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness (`with-server.sh`, `drive.js`, `trace.sh`, `harness.patch.yml`), and the label catalogue fetcher |
+| `tools/` | The browser and node checks `make test` runs, the page lint, the throwaway-server and browser-driving harness (`with-server.sh`, `drive.js`, `trace.sh`, `harness.patch.yml`), the label catalogue fetcher, and the Mac app's build and check (`macos-app.sh`, `macos-app-check.sh`) |
+| `packaging/macos/` | The Mac app's two `Info.plist` files, its launcher, and its icon on the macOS grid |
 | `docs/assets/` | The logo kit, and the README's screenshot with the steps that take it ([docs/assets/README.md](docs/assets/README.md)) |
-| `Makefile` | `make`, `make serve`, `make trace`, `make test`, `make drive`, `make print`, `make labels`; `make help` lists every target |
+| `Makefile` | `make`, `make serve`, `make trace`, `make test`, `make drive`, `make print`, `make labels`, `make macos-app`; `make help` lists every target |
 | `.github/workflows/` | CI on every push to `main` and every pull request, on Linux and on Intel and Apple Silicon Macs, and the tag-driven release |
 | `CHANGELOG.md` | What each release changed |
 | `docs/` | Index, architecture, subsystems, cookbook, user guide, templates, reviews |
@@ -168,25 +177,32 @@ Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), an
 
 niimbench reaches a printer through the operating system's own interfaces. On Linux those are BlueZ for Bluetooth and the kernel's serial ports for USB. On macOS it is Apple's CoreBluetooth, so a Mac prints over Bluetooth; USB on a Mac is not supported yet.
 
-On a Mac, build from source with Zig 0.17 and serve the editor from the checkout:
+On a Mac, niimbench is an app. `niimbench.app`, in `niimbench-macos.zip` on the releases page, runs on macOS 13 or later, on Apple silicon and on Intel. Opening it opens the editor in your browser. It has no window or Dock icon of its own: the page is the app. **Quit niimbench…** in the page's menu stops it, and it stops by itself 30 minutes after the last page closed. Opening the app again while it runs opens its page. It keeps its lock and token file in `~/Library/Application Support/niimbench`.
 
-```bash
-make
-```
+The app is signed ad hoc, not with an Apple Developer ID, and it is not notarized. Downloaded with a browser, its first open is refused with a message that Apple could not verify niimbench. Allow it once: on macOS 15, under System Settings → Privacy & Security, with **Open Anyway** next to that message; on macOS 13 and 14, Control-click the app and pick **Open**. A copy fetched with `curl`, as in the quick start, is not marked as downloaded and opens without asking.
 
-The first scan asks whether your terminal app may use Bluetooth. Allow it, or later turn it on for that app under System Settings → Privacy & Security → Bluetooth; until then a print answers `BluetoothNotAllowed`. macOS does not show programs a Bluetooth address, so the printer list shows a UUID your Mac made up for the printer, and that UUID is the address to print to. CI checks the macOS code on GitHub's Macs, which have no Bluetooth radio, so printing from a Mac has not yet been tried against a real printer.
+The first scan asks whether niimbench may use Bluetooth. Allow it, or later turn it on under System Settings → Privacy & Security → Bluetooth; until then a print answers `BluetoothNotAllowed`. Run from a checkout with `make`, it is your terminal app that macOS asks about instead. macOS does not show programs a Bluetooth address, so the printer list shows a UUID your Mac made up for the printer, and that UUID is the address to print to. CI checks the macOS code on GitHub's Macs, which have no Bluetooth radio, so printing from a Mac has not yet been tried against a real printer.
+
+From source, Zig 0.17 serves the editor from the checkout with `make`, and `make macos-app` builds the app into `zig-out/macos` ([docs/development.md](docs/development.md#the-mac-app)).
 
 On Windows, the Linux build runs inside WSL 2. Start it there and open the address it prints in your Windows browser, which WSL forwards to it. A printer on USB, such as the B21, is reached once [usbipd-win](https://github.com/dorssel/usbipd-win) attaches it to WSL, where it shows up as `/dev/ttyACM0`. Bluetooth is not available inside WSL, so a Bluetooth-only printer such as the D110 cannot print from there.
 
 ## Releases
 
-Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has a tarball for x86_64 and one for arm64 Linux. Each holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, and the licences of the fonts compiled into the binary. Every tarball comes with a `.sha256` and a build provenance attestation signed by the release workflow.
+Each release on the [releases page](https://github.com/ywy50/niimbench/releases) has a tarball for x86_64 and one for arm64 Linux, and `niimbench-macos.zip`, the Mac app. Each tarball holds a static `niimbench` binary, which needs no libc or other library, with `LICENSE`, this README, `CHANGELOG.md`, and the licences of the fonts compiled into the binary. The Mac app carries one binary for both kinds of Mac. Every download comes with a `.sha256` and a build provenance attestation signed by the release workflow.
 
-Check a download before you run it:
+Check a Linux download before you run it:
 
 ```bash
 sha256sum -c niimbench-x86_64-linux.tar.gz.sha256
 gh attestation verify niimbench-x86_64-linux.tar.gz --repo ywy50/niimbench
+```
+
+Check the Mac app:
+
+```bash
+shasum -a 256 -c niimbench-macos.zip.sha256
+gh attestation verify niimbench-macos.zip --repo ywy50/niimbench
 ```
 
 `niimbench --version` prints the version, and [CHANGELOG.md](CHANGELOG.md) says what each one changed. Cutting a release is [docs/cookbook/releasing.md](docs/cookbook/releasing.md).

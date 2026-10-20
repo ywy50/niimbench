@@ -48,7 +48,7 @@ Every route requires the session token. Startup prints it on `?token=`. A browse
 
 The page draws a dashed box over each field using `/api/label/metrics`, the same numbers `label.zig` renders with, and drags a field by its box or resizes it by a corner. A field whose text would cross an edge is marked clipped, which is what the renderer does with it. `/api/label/track` tells the page where each field's line starts and what text it will draw. The printer row comes from `/api/devices/scan`: the page lists what was found and writes the connection, address, and model of the one that is picked. Save layout writes the label body and printer fields as JSON, and Load layout reads one back. The walkthrough is [user/guide/index.md](user/guide/index.md). A file in that shape is [templates/example-label.json](templates/example-label.json). The documentation index is [README.md](README.md).
 
-Besides drawing and printing, the page reads the roll from a picked printer (`/api/label/roll`), syncs the printer's clock (`/api/printer/clock`), stops the server from its menu (`/api/quit`), checks in once a minute (`/api/health`) so an open page keeps the server running, and posts its own steps to the [trace](subsystems/trace.md).
+Besides drawing and printing, the page reads the roll from a picked printer (`/api/label/roll`), syncs the printer's clock (`/api/printer/clock`), stops the server from its menu (`/api/quit`), checks in every half minute (`/api/health`) so an open page keeps the server running, and posts its own steps to the [trace](subsystems/trace.md).
 
 ## Boot
 

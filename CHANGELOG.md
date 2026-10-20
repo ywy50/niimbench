@@ -11,6 +11,11 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- **A Mac app.** `niimbench-macos.zip` holds `niimbench.app`, for macOS 13 or later on Apple silicon and Intel. Opening it opens the editor in the browser, opening it again while it runs opens its page, and the page's **Quit niimbench…** stops it. It is signed ad hoc and not notarized, so its first open needs your say-so; the README says how.
+- `--app` serves from a per-user folder, `~/Library/Application Support/niimbench` on a Mac and `~/.local/state/niimbench` elsewhere, for a start from an app or a desktop menu that has no folder of its own.
+
 ## [0.7.0] - 2026-10-20
 
 ### Added

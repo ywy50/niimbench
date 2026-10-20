@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="niimbench">
+  <title>niimbench</title>
+  <desc>The niimbench icon on the macOS app icon grid: docs/assets/icon.svg, scaled to the grid's 824-unit tile and centred, so it sits in Finder and Launchpad at the size of the icons around it.</desc>
+  <g transform="translate(100 100) scale(6.4375)">
+    <rect width="128" height="128" rx="28" fill="#0b62d4"/>
+    <g fill="#ffffff">
+      <rect x="25.25" y="25.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="57.25" y="25.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="73.25" y="25.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="25.25" y="41.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="41.25" y="41.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="89.25" y="41.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="25.25" y="57.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="89.25" y="57.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="25.25" y="73.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="89.25" y="73.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="25.25" y="89.25" width="13.5" height="13.5" rx="2"/>
+      <rect x="89.25" y="89.25" width="13.5" height="13.5" rx="2"/>
+    </g>
+  </g>
+</svg>

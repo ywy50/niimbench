@@ -56,6 +56,8 @@ const help_text =
     \\    --port 8080
     \\    --no-open
     \\    --idle-minutes 30   stop when no page has talked to it this long; 0 never stops
+    \\    --app               started by the Mac app or a desktop menu: keep the lock
+    \\                        and token file in the per-user folder, not this one
     \\    --parent PID        die with PID, which must be this process's parent
     \\  print a PGM image
     \\    print --image label.pgm --addr /dev/ttyACM0 [--model b21] [--conn usb|bluetooth]
@@ -134,8 +136,45 @@ fn watchParent(io: std.Io, pid: std.posix.pid_t) void {
     std.process.exit(137);
 }
 
+/// The folder `--app` serves from. A launcher has no folder of its own to
+/// give: Finder starts an app in `/`, which nobody may write the lock and
+/// the token file to, and a desktop menu starts it in the home folder, which
+/// they would litter. The Mac keeps an app's files under Application Support;
+/// elsewhere they are state, under `$XDG_STATE_HOME`, `~/.local/state` when it
+/// is not set to an absolute path.
+fn appFolder(buf: []u8, env: *const std.process.Environ.Map, os: std.Target.Os.Tag) ![]const u8 {
+    const home = env.get("HOME") orelse return error.NoHome;
+    if (os == .macos) return std.fmt.bufPrint(buf, "{s}/Library/Application Support/niimbench", .{home});
+    if (env.get("XDG_STATE_HOME")) |state| {
+        if (state.len > 0 and state[0] == '/') return std.fmt.bufPrint(buf, "{s}/niimbench", .{state});
+    }
+    return std.fmt.bufPrint(buf, "{s}/.local/state/niimbench", .{home});
+}
+
+fn enterAppFolder(init: std.process.Init) !void {
+    var buf: [4096]u8 = undefined;
+    const path = try appFolder(&buf, init.environ_map, builtin.os.tag);
+    var dir = try std.Io.Dir.cwd().createDirPathOpen(init.io, path, .{});
+    defer dir.close(init.io);
+    try std.process.setCurrentDir(init.io, dir);
+}
+
+test "the app folder is Application Support on a Mac and state elsewhere" {
+    var env = std.process.Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put("HOME", "/home/u");
+    var buf: [256]u8 = undefined;
+    try std.testing.expectEqualStrings("/home/u/Library/Application Support/niimbench", try appFolder(&buf, &env, .macos));
+    try std.testing.expectEqualStrings("/home/u/.local/state/niimbench", try appFolder(&buf, &env, .linux));
+    try env.put("XDG_STATE_HOME", "relative");
+    try std.testing.expectEqualStrings("/home/u/.local/state/niimbench", try appFolder(&buf, &env, .linux));
+    try env.put("XDG_STATE_HOME", "/var/state");
+    try std.testing.expectEqualStrings("/var/state/niimbench", try appFolder(&buf, &env, .linux));
+}
+
 fn runServe(init: std.process.Init, args: []const []const u8) !void {
     var open_browser = true;
+    var app = false;
     var port: u16 = 0;
     var parent: ?std.posix.pid_t = null;
     var idle_minutes: u32 = 30;
@@ -143,6 +182,10 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
     while (i < args.len) : (i += 1) {
         if (std.mem.eql(u8, args[i], "--no-open")) {
             open_browser = false;
+        } else if (std.mem.eql(u8, args[i], "--app")) {
+            app = true;
+        } else if (std.mem.startsWith(u8, args[i], "-psn_")) {
+            // A process serial number, which macOS may pass an app it starts.
         } else if (std.mem.eql(u8, args[i], "--port")) {
             i += 1;
             if (i >= args.len) return error.MissingPort;
@@ -161,6 +204,7 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
     }
 
     if (parent) |pid| try dieWithParent(init.io, pid);
+    if (app) try enterAppFolder(init);
 
     // Claim the single-server slot before the listener exists, so a second
     // start cannot get as far as binding. Being told the server is already

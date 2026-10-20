@@ -43,6 +43,8 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 | [../tools/screens.drive.js](../tools/screens.drive.js) | Resizes the page from a phone to a wide desktop, and with the text panel dragged narrow, and fails when anything is cut off or overlaps (`make screens-test`) |
 | [../tools/stray-test.sh](../tools/stray-test.sh) | Checks no server outlives its launcher, even one killed with SIGKILL (`make stray-test`) |
 | [../tools/fetch-labels.py](../tools/fetch-labels.py) | Refreshes the label catalogue from the vendor cloud (`make labels`); standard library only, run through `uv` |
+| [../tools/macos-app.sh](../tools/macos-app.sh) | Builds `niimbench.app` and its zip on a Mac (`make macos-app`) |
+| [../tools/macos-app-check.sh](../tools/macos-app-check.sh) | Starts `niimbench.app` as Finder does and checks it serves, reopens and quits (`make macos-app-check`) |
 
 `make test` runs every check in this table that has a target, then `zig build test`. The browser checks skip themselves, saying so, when no Chromium-family browser is found; `BROWSER=` names one.
 
@@ -53,6 +55,8 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 ## Process lifetime
 
 `main` builds a context on the general-purpose allocator, loads the patch, and either serves HTTP or prints one image. `ctx.deinit` disposes fibers from last to first. A server stops when the page's **Quit** posts `/api/quit`, or when no request has arrived for `--idle-minutes`, 30 by default and 0 for never; `serve` wakes once a minute to check, returns, and the process prints which of the two it was.
+
+`--app` serves from a per-user folder instead of the working directory, for a start from a launcher, which has no folder of its own to give: Finder starts an app in `/`, which no one may write to, and a desktop menu starts it in the home folder. The folder is `~/Library/Application Support/niimbench` on macOS, and `$XDG_STATE_HOME/niimbench` elsewhere, `~/.local/state/niimbench` when that is unset or not absolute. Everything below that says working directory means that folder then. An argument that starts with `-psn_`, a process serial number macOS may hand an app it starts, is ignored.
 
 Serving runs one at a time. `runServe` takes an exclusive `flock` on `.niimbench.lock` in the working directory before the listener exists, so a second start never binds a second port. A second start that may open a browser, which is the default, opens the running server's page from the address in `.niimbench.token` and exits 0: that is what a second click on a launcher means. A second start with `--no-open`, or one that finds no `.niimbench.token` to read, prints the pid that holds the lock and exits 1, as a script expects. The kernel releases the lock when the process ends however it ends, so there is no stale lock to clear. Stray servers are worth preventing: each has its own port and its own session token, and a page left open on an old one looks like the page just built.
 
@@ -66,9 +70,28 @@ The server cannot outlive the script. `with-server.sh` passes its own pid as `--
 
 `make drive` loads the page in a headless browser and drives it with real mouse input. `STEPS=` names a steps file, whose API is at the top of [../tools/drive.js](../tools/drive.js); without one it opens the page, screenshots it into `zig-out/drive/`, and fails if the page threw. When `setpriv` is installed, the browser runs under `setpriv --pdeathsig KILL`, so it dies with the driver.
 
+## The Mac app
+
+`make macos-app` runs [../tools/macos-app.sh](../tools/macos-app.sh) on a Mac and leaves `niimbench.app`, `niimbench-macos.zip` and its `.sha256` in `zig-out/macos`. It builds niimbench for `aarch64-macos.13.0` and `x86_64-macos.13.0`, joins them with `lipo`, makes the icon from [../packaging/macos/icon-1024.png](../packaging/macos/icon-1024.png) with `sips` and `iconutil`, signs ad hoc with `codesign --sign -`, and zips with `ditto`, which keeps the signature. It fails if the binary is not both architectures or does not report `build.zig.zon`'s version.
+
+The bundle is two apps:
+
+| Path in the bundle | What it is |
+|---|---|
+| `Contents/MacOS/niimbench` | [../packaging/macos/launcher.sh](../packaging/macos/launcher.sh), what Finder starts: `open -n` on the server app with `--app`, then it exits |
+| `Contents/Helpers/niimbench.app` | The server: the universal binary, with an `Info.plist` that names Bluetooth's use |
+
+One app would not do. macOS only brings an app that is still running forward when it is opened again, so a server that was the app itself would turn every later double-click into nothing. The launcher is gone a moment after it starts, so each double-click runs it anew, and `open -n` starts a new server, which finds the running one's lock, opens its page and exits. The server is an app of its own so that macOS asks about Bluetooth by its name and finds its usage description; both have `LSUIElement`, so neither shows in the Dock.
+
+`make macos-app-check` runs [../tools/macos-app-check.sh](../tools/macos-app-check.sh): it opens the app, waits for the token file in Application Support, asks the server for `/api/health`, opens the app a second time and checks one server still runs, then quits it and checks the token file went with it. It refuses to run while an app server already runs. [../packaging/macos/icon.svg](../packaging/macos/icon.svg) is [assets/icon.svg](assets/icon.svg) on the macOS icon grid, and the PNG is rendered from it:
+
+```sh
+rsvg-convert -w 1024 -h 1024 packaging/macos/icon.svg -o packaging/macos/icon-1024.png
+```
+
 ## CI and releases
 
-[../.github/workflows/ci.yml](../.github/workflows/ci.yml) runs `zig fmt --check` and `make test` on every push to `main` and every pull request, on Ubuntu with the runner's own Chrome, so the browser checks run there rather than skip. A `macos` job runs `zig build test` and serves the page once on an arm64 and an Intel Mac, where the CoreBluetooth checks run instead of skipping. [../.github/workflows/release.yml](../.github/workflows/release.yml) publishes a `vX.Y.Z` tag. The version is written once, in `build.zig.zon`, which `build.zig` passes to the code as `build_options.version` and `niimbench --version` prints. Cutting a release is [cookbook/releasing.md](cookbook/releasing.md).
+[../.github/workflows/ci.yml](../.github/workflows/ci.yml) runs `zig fmt --check` and `make test` on every push to `main` and every pull request, on Ubuntu with the runner's own Chrome, so the browser checks run there rather than skip. A `macos` job runs `zig build test` and serves the page once on an arm64 and an Intel Mac, where the CoreBluetooth checks run instead of skipping. A `macos-app` job builds the Mac app, starts it as Finder does, and keeps its zip as a download on the run. [../.github/workflows/release.yml](../.github/workflows/release.yml) publishes a `vX.Y.Z` tag. The version is written once, in `build.zig.zon`, which `build.zig` passes to the code as `build_options.version` and `niimbench --version` prints. Cutting a release is [cookbook/releasing.md](cookbook/releasing.md).
 
 ## Docs map
 
