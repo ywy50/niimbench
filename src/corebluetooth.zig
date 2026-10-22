@@ -196,6 +196,19 @@ fn withUuid(list: Id, want: []const u8) Id {
     return null;
 }
 
+/// Whether `list`, an array of CBUUIDs such as the services an advertisement
+/// names, holds `want`. A CBUUID is the UUID itself. Asked for `UUID`, as
+/// `withUuid` asks a service, it does not know the message, and the exception
+/// that raises on CoreBluetooth's queue, where nothing catches it, ends the
+/// process: a scan that heard any device naming its services took the server
+/// down, and the page could only say `scan failed`.
+fn listsUuid(list: Id, want: []const u8) bool {
+    for (0..count(list)) |i| {
+        if (std.ascii.eqlIgnoreCase(utf8(send(Id, at(list, i), "UUIDString", .{})), want)) return true;
+    }
+    return false;
+}
+
 /// One of CoreBluetooth's exported `NSString *const` keys.
 fn constant(name: [*:0]const u8) Id {
     const slot: *const Id = @ptrCast(@alignCast(std.c.dlsym(objc.framework, name) orelse return null));
@@ -339,7 +352,7 @@ fn onDiscover(self: Id, _: Sel, _: Id, peripheral: Id, advertisement: Id, _: Id)
     if (name.len == 0) name = utf8(send(Id, peripheral, "name", .{}));
     const address = utf8(send(Id, send(Id, peripheral, "identifier", .{}), "UUIDString", .{}));
     const services = send(Id, advertisement, "objectForKey:", .{constant("CBAdvertisementDataServiceUUIDsKey")});
-    const le = withUuid(services, dbus.niimbot_le_service) != null;
+    const le = listsUuid(services, dbus.niimbot_le_service);
     link.hold();
     defer link.release();
     if (link.found) |out| out.addNamed(address, name, .{ .le = le });
@@ -572,6 +585,54 @@ test "a notification reaches read, in order, and a frame split in two is one ans
     try std.testing.expectEqualSlices(u8, &.{ 0x55, 0x55, 0x48, 0x02, 0x09, 0x00, 0x43, 0xaa, 0xaa }, buf[0..n]);
     // Nothing more arrived, so the next read waits its half second and says so.
     try std.testing.expectEqual(@as(usize, 0), try read(&link, &buf));
+}
+
+fn fakePeripheralName(_: Id, _: Sel) callconv(.c) Id {
+    return string("D110_M-I704252064");
+}
+
+fn fakePeripheralIdentifier(_: Id, _: Sel) callconv(.c) Id {
+    const id = send(Id, send(Id, class("NSUUID"), "alloc", .{}), "initWithUUIDString:", .{string("0A2C1B3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D")});
+    return send(Id, id, "autorelease", .{});
+}
+
+test "an advertisement a scan hears names the printer, its model and its print service" {
+    if (builtin.os.tag != .macos) return error.SkipZigTest;
+    try load();
+    const pool = objc.poolPush();
+    defer objc.poolPop(pool);
+    // CoreBluetooth makes no peripheral a program can, and CI's Macs have no
+    // radio to hear a real one, so an object that answers the two messages
+    // the delegate sends a peripheral stands in for it.
+    const fake = class("NiimbenchFakePeripheral") orelse made: {
+        const made = objc.allocateClassPair(class("NSObject"), "NiimbenchFakePeripheral", 0) orelse return error.SkipZigTest;
+        _ = objc.addMethod(made, sel("name"), @ptrCast(&fakePeripheralName), "@@:");
+        _ = objc.addMethod(made, sel("identifier"), @ptrCast(&fakePeripheralIdentifier), "@@:");
+        objc.registerClassPair(made);
+        break :made made;
+    };
+    const peripheral = send(Id, send(Id, fake, "alloc", .{}), "init", .{});
+    defer send(void, peripheral, "release", .{});
+    // The advertisement as CoreBluetooth hands it over: the local name, and
+    // the services as a list of CBUUIDs.
+    var keys = [_]Id{ constant("CBAdvertisementDataLocalNameKey"), constant("CBAdvertisementDataServiceUUIDsKey") };
+    var values = [_]Id{ string("D110_M-I704252064"), one(uuid(dbus.niimbot_le_service)) };
+    const advertisement = send(Id, class("NSDictionary"), "dictionaryWithObjects:forKeys:count:", .{ @as([*]Id, &values), @as([*]Id, &keys), @as(usize, 2) });
+
+    var found = discovery.Found{};
+    var link = Link{ .allocator = std.testing.allocator, .queue = null, .signal = dispatch_semaphore_create(0), .found = &found };
+    defer dispatch_release(link.signal);
+    const delegate = send(Id, send(Id, objc.delegate, "alloc", .{}), "init", .{});
+    defer send(void, delegate, "release", .{});
+    objc.setIvar(delegate, objc.link_ivar, &link);
+
+    send(void, delegate, "centralManager:didDiscoverPeripheral:advertisementData:RSSI:", .{ @as(Id, null), peripheral, advertisement, @as(Id, null) });
+    try std.testing.expectEqual(@as(usize, 1), found.len);
+    const device = found.slice()[0];
+    try std.testing.expectEqualStrings("0A2C1B3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D", device.addr());
+    try std.testing.expectEqualStrings("D110_M-I704252064", device.name());
+    try std.testing.expectEqual(@import("raster.zig").Model.d110_m, device.model.?);
+    try std.testing.expect(device.le);
 }
 
 test "a scan answers, with the printers it heard or with why the radio cannot be used" {
