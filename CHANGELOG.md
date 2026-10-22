@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-22
+
 ### Added
 
 - **A Mac app.** `niimbench-macos.zip` holds `niimbench.app`, for macOS 13 or later on Apple silicon and Intel. Opening it opens the editor in the browser, opening it again while it runs opens its page, and the page's **Quit niimbench…** stops it. It is signed ad hoc and not notarized, so its first open needs your say-so; the README says how.
@@ -217,7 +219,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/ywy50/niimbench/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ywy50/niimbench/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/ywy50/niimbench/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/ywy50/niimbench/compare/v0.4.0...v0.5.0
