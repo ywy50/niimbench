@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-22
+
 ### Fixed
 
 - On a Mac, **Find nearby** stopped niimbench as soon as it heard a Bluetooth device that names its services, which most do, and the page said only `scan failed`. The services an advertisement names are a list of UUIDs, and niimbench asked each for a UUID of its own, a message a UUID does not answer; the exception that raised on CoreBluetooth's thread ended the process. GitHub's Macs, which run the checks, have no Bluetooth radio and never hear one, so a check now hands the scan an advertisement as CoreBluetooth does.
@@ -223,7 +225,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/ywy50/niimbench/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/ywy50/niimbench/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ywy50/niimbench/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/ywy50/niimbench/compare/v0.5.0...v0.6.0
