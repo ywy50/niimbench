@@ -26,5 +26,7 @@
 	<string>13.0</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>niimbench finds Niimbot label printers over Bluetooth and prints to them.</string>
 </dict>
 </plist>
