@@ -11,6 +11,13 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-10-22
+
+### Fixed
+
+- The Mac app's launcher, and not only the server app inside it, now says in its `Info.plist` why niimbench uses Bluetooth. macOS ends a process that reaches for Bluetooth when the app it counts that process under leaves this out. On a Mac, the server was gone after the page's first printer scan: the page said `scan failed`, and a reload found nothing listening.
+- CI now scans from the running Mac app, both the page's quick scan and **Find nearby**. It checks the server is still there after each, and prints the crash report macOS wrote when it is not.
+
 ## [0.8.1] - 2026-10-22
 
 ### Fixed
@@ -225,7 +232,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/ywy50/niimbench/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/ywy50/niimbench/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/ywy50/niimbench/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/ywy50/niimbench/compare/v0.6.0...v0.7.0
