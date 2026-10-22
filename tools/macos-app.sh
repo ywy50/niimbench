@@ -45,11 +45,16 @@ sed "s/@VERSION@/$version/g" packaging/macos/Info.plist > "$app/Contents/Info.pl
 sed "s/@VERSION@/$version/g" packaging/macos/Server-Info.plist > "$server/Contents/Info.plist"
 plutil -lint "$app/Contents/Info.plist" "$server/Contents/Info.plist"
 # What CI's Macs cannot catch by running the app, checked by reading it: macOS
-# ends an app that reaches for Bluetooth without saying why in its Info.plist,
-# and either app without LSUIElement would sit in the Dock answering nothing.
+# ends a process that reaches for Bluetooth when the app it counts that process
+# as part of does not say why in its Info.plist, and either app without
+# LSUIElement would sit in the Dock answering nothing. Both apps say why: the
+# server is its own app, but the launcher starts it, and saying it twice costs
+# nothing next to a server that dies on its first scan.
 plist_has() { [ "$(plutil -extract "$2" raw -o - "$1" 2>/dev/null)" = "$3" ] || { echo "macos-app: $1 has no $2 = $3" >&2; exit 1; }; }
-plutil -extract NSBluetoothAlwaysUsageDescription raw -o - "$server/Contents/Info.plist" >/dev/null ||
-  { echo "macos-app: the server's Info.plist does not say why it uses Bluetooth" >&2; exit 1; }
+for plist in "$app/Contents/Info.plist" "$server/Contents/Info.plist"; do
+  plutil -extract NSBluetoothAlwaysUsageDescription raw -o - "$plist" >/dev/null ||
+    { echo "macos-app: $plist does not say why it uses Bluetooth" >&2; exit 1; }
+done
 plist_has "$app/Contents/Info.plist" LSUIElement true
 plist_has "$server/Contents/Info.plist" LSUIElement true
 
