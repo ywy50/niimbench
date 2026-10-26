@@ -426,6 +426,7 @@
           </p>
           <button type="button" id="sync-clock" title="set the printer's clock to this computer's local date and time, which its date button prints">Sync clock</button>
         </div>
+        <p id="printer-roll" class="last" hidden></p>
         <p id="printer-last" class="last" aria-live="polite" hidden></p>
       </div>
       <div class="printers span">
@@ -2815,7 +2816,7 @@
     function statusFor(addr, model, conn) {
       if (!addr) return { state: "idle", text: "No address yet" };
       const where = conn === "bluetooth" ? "Bluetooth" : "USB";
-      return { state: "ready", text: where + " · " + model + " · ready" + labelsLeft(addr) };
+      return { state: "ready", text: where + " · " + model + " · ready" };
     }
 
     // What the roll's tag said when it was last read, for the printer it was
@@ -2825,7 +2826,16 @@
 
     function labelsLeft(addr) {
       if (!rollCount || rollCount.addr !== addr) return "";
-      return " · " + Math.max(0, rollCount.total - rollCount.used) + " of " + rollCount.total + " labels left";
+      return Math.max(0, rollCount.total - rollCount.used) + " of " + rollCount.total + " labels left";
+    }
+
+    /// The roll's count on a line of its own under the printer's, for the
+    /// printer picked now; none when its roll has not been read.
+    function showRollLine(addr) {
+      const line = document.querySelector("#printer-roll");
+      const left = labelsLeft(addr);
+      line.hidden = !left;
+      line.textContent = left ? "Roll: " + left : "";
     }
 
     /// Derive that state from the controls, for the moments nothing is running.
@@ -2836,6 +2846,7 @@
         document.querySelector("#conn").value,
       );
       updatePrinterStatus(state, text);
+      showRollLine(document.querySelector("#addr").value.trim());
     }
 
     /// The last job's outcome, kept on its own line until the next job.
@@ -2893,7 +2904,7 @@
           : null;
         refreshPrinterStatus();
         status.textContent = payload.width_mm + "\u00d7" + payload.height_mm + " mm roll"
-          + (payload.source === "cloud" ? " (cloud)" : "") + labelsLeft(addr);
+          + (payload.source === "cloud" ? " (cloud)" : "") + (labelsLeft(addr) ? " · " + labelsLeft(addr) : "");
       } catch (error) {
         status.textContent = "roll unread";
       }
