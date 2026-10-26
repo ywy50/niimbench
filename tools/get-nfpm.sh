@@ -18,7 +18,9 @@ esac
 
 mkdir -p "$dir"
 archive="$dir/nfpm_${version}_Linux_$arch.tar.gz"
-curl -fsSLo "$archive" "https://github.com/goreleaser/nfpm/releases/download/v$version/nfpm_${version}_Linux_$arch.tar.gz"
+# Retried, because one gateway timeout from GitHub's download host failed
+# the x86_64 leg of the 0.10.0 release; the checksum below still decides.
+curl -fsSL --retry 5 --retry-all-errors --retry-delay 3 -o "$archive" "https://github.com/goreleaser/nfpm/releases/download/v$version/nfpm_${version}_Linux_$arch.tar.gz"
 echo "$sum  $archive" | sha256sum -c - >/dev/null
 tar -xzf "$archive" -C "$dir" nfpm
 rm -f "$archive"
