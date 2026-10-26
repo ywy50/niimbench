@@ -772,6 +772,9 @@ const RollBody = struct {
     /// answers for every roll the vendor lists, so the cloud is only needed for
     /// a barcode outside that copy, and reaching it is the caller's choice.
     allow_cloud: bool = false,
+    /// Ask the cloud first, even for a roll the catalogue holds: the fallback
+    /// when the catalogue's copy of a roll is wrong. Asking is consent.
+    from_cloud: bool = false,
 };
 
 const InfoBody = struct {
@@ -912,7 +915,7 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
     };
     defer service.allocator.free(barcode);
 
-    const mm = switch (rollSource(&service.catalogue, barcode, parsed.value.allow_cloud)) {
+    const listed = switch (rollSource(&service.catalogue, barcode, parsed.value.allow_cloud, parsed.value.from_cloud)) {
         .catalogue => |known| known,
         .cloud => lookupLabelMm(req.io, service.allocator, barcode) catch |err| {
             if (tracer(service)) |t| t.failure("roll", "{s} cloud lookup: {s}", .{ barcode, @errorName(err) });
@@ -920,6 +923,10 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
         },
         .unknown => return .{ .status = .bad_request, .body = "{\"error\":\"unknown roll\"}" },
     };
+    const mm = facingTheHead(model, listed);
+    if (mm.width_mm != listed.width_mm) {
+        if (tracer(service)) |t| t.info("roll", "{s} is listed {d}x{d} mm, turned to {d}x{d}", .{ barcode, listed.width_mm, listed.height_mm, mm.width_mm, mm.height_mm });
+    }
 
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(service.allocator);
@@ -973,7 +980,8 @@ const RollSource = union(enum) {
     unknown,
 };
 
-fn rollSource(catalogue: *const labels.Catalogue, barcode: []const u8, allow_cloud: bool) RollSource {
+fn rollSource(catalogue: *const labels.Catalogue, barcode: []const u8, allow_cloud: bool, from_cloud: bool) RollSource {
+    if (from_cloud) return .cloud;
     if (catalogue.find(barcode)) |known| {
         return .{ .catalogue = .{
             .width_mm = known.width_mm,
@@ -1056,6 +1064,28 @@ fn jsonUint(body: []const u8, key: []const u8) ?u16 {
 }
 
 const labelLookup = struct { width_mm: u16, height_mm: u16, source: []const u8 };
+
+/// The roll with its width across the head. The vendor lists some rolls the
+/// other way round, length first: `041025002`, a 12 mm roll of 40 mm labels,
+/// is listed 40x12, which a 12 mm head clamped to 96x96 dots. No roll is
+/// wider than the widest this model takes, so a width past that whose length
+/// would fit is the two read the wrong way, and they are swapped. A 50x30
+/// roll on a B21, whose widest is 50, is left alone.
+fn facingTheHead(model: raster.Model, listed: labelLookup) labelLookup {
+    const widest = raster.widestRollMm(model);
+    if (listed.width_mm <= widest or listed.height_mm > widest) return listed;
+    return .{ .width_mm = listed.height_mm, .height_mm = listed.width_mm, .source = listed.source };
+}
+
+test "a roll listed length first is turned to face the head" {
+    const turned = facingTheHead(.d110_m, .{ .width_mm = 40, .height_mm = 12, .source = "catalogue" });
+    try std.testing.expectEqual(@as(u16, 12), turned.width_mm);
+    try std.testing.expectEqual(@as(u16, 40), turned.height_mm);
+    try std.testing.expectEqualStrings("12x40", labelIdFor(.d110_m, turned.width_mm, turned.height_mm).?);
+    // Already across the head, and a B21's 50 mm roll, which is its widest.
+    try std.testing.expectEqual(@as(u16, 15), facingTheHead(.d110, .{ .width_mm = 15, .height_mm = 30, .source = "" }).width_mm);
+    try std.testing.expectEqual(@as(u16, 50), facingTheHead(.b21, .{ .width_mm = 50, .height_mm = 30, .source = "" }).width_mm);
+}
 
 fn lookupLabelMm(io: std.Io, allocator: std.mem.Allocator, barcode: []const u8) !labelLookup {
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
@@ -2702,7 +2732,7 @@ test "the catalogue answers by default and the cloud needs opting in" {
 
     // A roll the catalogue carries is answered locally whether or not the
     // caller allowed the cloud, so it can never reach the network by accident.
-    switch (rollSource(&catalogue, "01222281", false)) {
+    switch (rollSource(&catalogue, "01222281", false, false)) {
         .catalogue => |mm| {
             try std.testing.expectEqual(@as(u16, 12), mm.width_mm);
             try std.testing.expectEqual(@as(u16, 40), mm.height_mm);
@@ -2710,18 +2740,25 @@ test "the catalogue answers by default and the cloud needs opting in" {
         },
         else => return error.ExpectedCatalogue,
     }
-    switch (rollSource(&catalogue, "01222281", true)) {
+    switch (rollSource(&catalogue, "01222281", true, false)) {
         .catalogue => {},
         else => return error.ExpectedCatalogue,
     }
 
     // A barcode the catalogue does not carry is an error unless the caller
     // asked for the cloud.
-    switch (rollSource(&catalogue, "00000000", false)) {
+    switch (rollSource(&catalogue, "00000000", false, false)) {
         .unknown => {},
         else => return error.ExpectedUnknown,
     }
-    switch (rollSource(&catalogue, "00000000", true)) {
+    switch (rollSource(&catalogue, "00000000", true, false)) {
+        .cloud => {},
+        else => return error.ExpectedCloud,
+    }
+
+    // Fetch from cloud asks the cloud even for a roll the catalogue holds:
+    // the fallback when the catalogue's copy is wrong.
+    switch (rollSource(&catalogue, "01222281", false, true)) {
         .cloud => {},
         else => return error.ExpectedCloud,
     }

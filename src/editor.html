@@ -92,6 +92,10 @@
     .printer-status .status-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
     .printer-status .status-row .state { min-width: 0; }
     #sync-clock { flex: none; padding: 0.22rem 0.5rem; font-size: 0.72rem; }
+    /* The cloud checkbox and its Fetch button share a line, the button at its
+       end; a panel too narrow for both puts the button under the text. */
+    .cloud-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+    #cloud-fetch { flex: none; padding: 0.22rem 0.5rem; font-size: 0.72rem; }
     .printer-status .printers-title { color: var(--ink); }
     #status {
       min-height: 0; min-width: 0; margin: 0; max-width: 24rem; padding: 0.18rem 0.7rem;
@@ -437,9 +441,12 @@
           <select id="conn"><option>usb</option><option>bluetooth</option></select>
         </label>
         <label>Address <input id="addr" placeholder="/dev/ttyACM0 or Bluetooth address"></label>
-        <label class="check span" title="The label catalogue is compiled in. Tick this to let a barcode it does not know be looked up in Niimbot's cloud.">
-          <input id="cloud-lookup" type="checkbox"> Ask the cloud for unknown label rolls
-        </label>
+        <div class="cloud-row span">
+          <label class="check" title="The label catalogue is compiled in. Tick this to let a barcode it does not know be looked up in Niimbot's cloud.">
+            <input id="cloud-lookup" type="checkbox"> Ask the cloud for unknown label rolls
+          </label>
+          <button type="button" id="cloud-fetch" title="Read the loaded roll and ask Niimbot's cloud for its size now, even when the built-in catalogue knows it: the fallback for a roll the catalogue lists wrong.">Fetch</button>
+        </div>
       </div>
       <div class="row">
         <label>Model
@@ -2841,7 +2848,9 @@
 
     /// The printer's tag names the roll. The size comes back as millimetres
     /// and selects the matching label, when one is known.
-    async function readRoll() {
+    /// `fromCloud` asks Niimbot's cloud for the size even for a roll the
+    /// catalogue knows, for **Fetch**.
+    async function readRoll(fromCloud = false) {
       const addr = document.querySelector("#addr").value;
       if (!addr) return;
       status.textContent = "reading the roll";
@@ -2851,6 +2860,7 @@
           addr,
           model: document.querySelector("#model").value,
           allow_cloud: document.querySelector("#cloud-lookup").checked,
+          from_cloud: fromCloud,
         });
         const payload = await readJson(response);
         if (!response.ok) {
@@ -2892,6 +2902,13 @@
     // ---- wiring ----------------------------------------------------------
 
     document.querySelector("#scan-devices").addEventListener("click", () => scanDevices(true, true));
+    document.querySelector("#cloud-fetch").addEventListener("click", () => {
+      if (!document.querySelector("#addr").value) {
+        status.textContent = "pick a printer first: Fetch reads its roll";
+        return;
+      }
+      readRoll(true);
+    });
     document.querySelector("#grid").addEventListener("change", () => drawBoxes());
     // Smooth is how this browser likes the preview shown, so it is remembered
     // here and nowhere else: it is not part of the label.

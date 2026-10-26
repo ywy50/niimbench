@@ -16,9 +16,11 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 - The printer line says how many labels the roll's tag has left, such as `151 of 186 labels left`, once the roll is read, and counts down as you print. The printer refuses a roll whose count is used up, even with labels left on it. `POST /api/label/roll` answers `labels_total` and `labels_used`.
 - `POST /api/printer/info` asks the printer for its model id, firmware version and hardware version, read-only: `{"model_id":2320,"model":"d110_m","firmware":"4.30","hardware":"4.01"}` from a D110_M.
 - A refused print says why, in the printer's own words: `PrinterRefused: WriteRfidFail` where it said `PrinterRefused`. `POST /api/print` adds the name as `reason`.
+- **Fetch**, at the end of the **Ask the cloud for unknown label rolls** line, asks Niimbot's cloud for the loaded roll's size even when the built-in catalogue knows it, as a fallback for a roll the catalogue lists wrong. `POST /api/label/roll` takes `"from_cloud": true` for it.
 
 ### Fixed
 
+- A roll the vendor lists length first, such as `041025002`, 12 mm wide with 40 mm labels but listed 40x12, came out 96x96 dots on a D-series printer, and fields shrank to fit. A listed width wider than any roll the model takes, whose length would fit, is now turned to face the head. The catalogue lists 35 D-series rolls this way.
 - A roll whose tag UUID begins with a 0 byte read as no roll.
 - A D110_M's status code at the end of a page was not looked at. A tag it could not write, the first sign of a used-up roll, now shows in the trace.
 
