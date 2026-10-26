@@ -50,6 +50,9 @@ pub const Client = struct {
     /// below it. A B-series sequence has no count, so its caller repeats the
     /// job instead and leaves this at 1.
     copies: u16 = 1,
+    /// The code the printer gave when it last refused, as `PrintError` or in a
+    /// status reading, 0 when it has not; `refusalName` says what it means.
+    refusal: u8 = 0,
 
     pub fn init(allocator: std.mem.Allocator, transport: Transport) Client {
         return .{ .allocator = allocator, .transport = transport };
@@ -67,8 +70,38 @@ pub const Client = struct {
     /// offset is 1. Waiting for `0x1a` reads every answer as a foreign frame
     /// and ends in `NoResponse`.
     pub fn readBarcode(self: *Client) !?[]u8 {
+        const roll = (try self.readRoll()) orelse return null;
+        return roll.barcode;
+    }
+
+    /// The roll's tag: its barcode, which the caller owns, and the counts the
+    /// printer keeps on it.
+    pub fn readRoll(self: *Client) !?Roll {
         const response = try self.transceive(@backingInt(packet.Request.get_rfid), &.{1}, 1);
-        return barcodeFromRfid(self.allocator, response.data);
+        const barcode = (try barcodeFromRfid(self.allocator, response.data)) orelse return null;
+        return .{ .barcode = barcode, .counts = rfidCounts(response.data) };
+    }
+
+    pub const Roll = struct { barcode: []u8, counts: ?Counts };
+
+    /// How many labels the roll's tag says the roll holds, and how many the
+    /// printer has used: it adds one for every label it feeds, test prints
+    /// and labels fed over again included, and it refuses a roll whose count
+    /// has run out, whatever is left on it.
+    pub const Counts = struct { total: u16, used: u16 };
+
+    /// The counts after the tag's barcode and serial: total (u16) then used
+    /// (u16), big-endian. Null when the answer stops short of them.
+    pub fn rfidCounts(data: []const u8) ?Counts {
+        if (data.len < 10) return null;
+        const serial_at = 9 + @as(usize, data[8]);
+        if (data.len <= serial_at) return null;
+        const counts_at = serial_at + 1 + @as(usize, data[serial_at]);
+        if (data.len < counts_at + 4) return null;
+        return .{
+            .total = @as(u16, data[counts_at]) << 8 | data[counts_at + 1],
+            .used = @as(u16, data[counts_at + 2]) << 8 | data[counts_at + 3],
+        };
     }
 
     /// A wall-clock time with no zone: the printer keeps none, so the caller
@@ -302,8 +335,16 @@ pub const Client = struct {
         const response = try self.transceive(@backingInt(packet.Request.get_print_status), &.{1}, 16);
         self.note("status {x}", .{response.data});
         if (response.data.len < 4) return error.ShortResponse;
-        // Ten data bytes carry an error code at byte 6: cover, paper, battery.
-        if (response.data.len >= 10 and response.data[6] != 0) return error.PrinterRefused;
+        // Byte 6 is an error code: cover, paper, battery, the roll's tag.
+        // Ten data bytes with one set mean the printer stopped. A D110_M
+        // answers eight, and sets it after a page it still printed, as when
+        // the tag could not be written; that one is said, not refused, since
+        // the label is out.
+        if (response.data.len >= 7 and response.data[6] != 0) {
+            self.refusal = response.data[6];
+            if (response.data.len >= 10) return error.PrinterRefused;
+            if (self.trace) |t| t.warn("printer", "status reports {s} (0x{x:0>2})", .{ refusalName(self.refusal), self.refusal });
+        }
         return .{
             .page = @as(u16, response.data[0]) << 8 | response.data[1],
             .print_pct = response.data[2],
@@ -382,7 +423,9 @@ pub const Client = struct {
     }
 
     pub fn barcodeFromRfid(allocator: std.mem.Allocator, data: []const u8) !?[]u8 {
-        if (data.len < 10 or data[0] == 0) return null;
+        // One byte is the answer for no tag. The first byte of a real answer
+        // is the tag UUID's, which may be 0.
+        if (data.len < 10) return null;
         const barcode_len: usize = data[8];
         if (barcode_len == 0 or data.len < 9 + barcode_len) return error.BadRfid;
         const barcode = data[9..][0..barcode_len];
@@ -446,7 +489,11 @@ pub const Client = struct {
                 self.buffer.clearRetainingCapacity();
                 self.start = 0;
             }
-            if (parsed.packet_type == print_error_type) return error.PrinterRefused;
+            if (parsed.packet_type == print_error_type) {
+                self.refusal = if (parsed.data.len > 0) parsed.data[0] else 0;
+                if (self.trace) |t| t.warn("printer", "refused: {s} (0x{x:0>2})", .{ refusalName(self.refusal), self.refusal });
+                return error.PrinterRefused;
+            }
             if (parsed.packet_type == unassigned_type) return error.PrinterUnsupported;
             if (parsed.packet_type == expect) {
                 // parsed.data points into data_buf, so the caller must finish
@@ -457,6 +504,24 @@ pub const Client = struct {
         return null;
     }
 };
+
+/// The printer's own name for a refusal code, as the protocol notes list them
+/// (docs/manuals/upstream/interfacing/proto.md, Printer error codes).
+pub fn refusalName(code: u8) []const u8 {
+    const names = [_][]const u8{
+        "CoverOpen",                      "LackPaper",                "LowBattery",             "BatteryException",
+        "UserCancel",                     "DataError",                "Overheat",               "PaperOutException",
+        "PrinterBusy",                    "NoPrinterHead",            "TemperatureLow",         "PrinterHeadLoose",
+        "NoRibbon",                       "WrongRibbon",              "UsedRibbon",             "WrongPaper",
+        "SetPaperFail",                   "SetPrintModeFail",         "SetPrintDensityFail",    "WriteRfidFail",
+        "SetMarginFail",                  "CommunicationException",   "Disconnect",             "CanvasParameterError",
+        "RotationParameterException",     "JsonParameterException",   "B3sAbnormalPaperOutput", "ECheckPaper",
+        "RfidTagNotWritten",              "SetPrintDensityNoSupport", "SetPrintModeNoSupport",  "SetPrintLabelMaterialError",
+        "SetPrintLabelMaterialNoSupport", "NotSupportWrittenRfid",
+    };
+    if (code == 0 or code > names.len) return "Unknown";
+    return names[code - 1];
+}
 
 const Script = struct {
     allocator: std.mem.Allocator,
@@ -530,9 +595,44 @@ test "the roll tag is read through the client" {
 
     var client = Client.init(gpa, scriptTransport(&script));
     defer client.deinit();
-    const barcode = (try client.readBarcode()) orelse return error.NoBarcode;
-    defer gpa.free(barcode);
+    const roll = (try client.readRoll()) orelse return error.NoBarcode;
+    defer gpa.free(roll.barcode);
+    try std.testing.expectEqualStrings("01222281", roll.barcode);
+    // 0x00ba labels on the roll, 0x0023 used when it was captured.
+    try std.testing.expectEqual(Client.Counts{ .total = 186, .used = 35 }, roll.counts.?);
+}
+
+test "a refusal keeps the printer's code, and the code has its name" {
+    const gpa = std.testing.allocator;
+    const ok = [_]u8{1};
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    try script.push(.set_density, 16, &ok);
+    try script.push(.set_label_type, 16, &ok);
+    try script.push(.start_print, 1, &ok);
+    try script.push(.start_page, 1, &ok);
+    var wire: [packet.Packet.max_wire]u8 = undefined;
+    try script.inbound.appendSlice(gpa, try (packet.Packet{ .packet_type = 0xDB, .data = &.{0x14} }).toBytes(&wire));
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    const pixels = [_]u8{ 0, 255, 0, 255, 0, 255, 0, 255 };
+    try std.testing.expectError(error.PrinterRefused, client.printGray(null, &pixels, 8, 1, 3));
+    try std.testing.expectEqual(@as(u8, 0x14), client.refusal);
+    try std.testing.expectEqualStrings("WriteRfidFail", refusalName(client.refusal));
+    try std.testing.expectEqualStrings("CoverOpen", refusalName(1));
+    try std.testing.expectEqualStrings("NotSupportWrittenRfid", refusalName(0x22));
+    try std.testing.expectEqualStrings("Unknown", refusalName(0x23));
+}
+
+test "a tag whose uuid starts with 0 is a tag" {
+    // Only a one-byte answer means no tag; the first byte of a real one is
+    // the tag UUID's, and reading it as a presence flag lost such a roll.
+    const tag = [_]u8{ 0x00, 0x1d, 0x2a, 0x0f, 0x7a, 0x1e, 0x10, 0x80, 0x08, 0x30, 0x31, 0x32, 0x32, 0x32, 0x32, 0x38, 0x31, 0x01, 0x50, 0x00, 0xba, 0x00, 0x23, 0x01 };
+    const barcode = (try Client.barcodeFromRfid(std.testing.allocator, &tag)).?;
+    defer std.testing.allocator.free(barcode);
     try std.testing.expectEqualStrings("01222281", barcode);
+    try std.testing.expectEqual(Client.Counts{ .total = 186, .used = 35 }, Client.rfidCounts(&tag).?);
+    try std.testing.expect((try Client.barcodeFromRfid(std.testing.allocator, &.{0x00})) == null);
 }
 
 test "rfid barcode is the digits after the uuid" {

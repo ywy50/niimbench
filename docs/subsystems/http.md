@@ -116,8 +116,10 @@ The editor's **Orientation** buttons are not this either. They turn the picture 
 The body is `{"conn": "usb"|"bluetooth", "addr": "...", "model": "b21"}`; `model` defaults to `b21`, and `allow_cloud` is below. The answer:
 
 ```json
-{"barcode":"01222281","width_mm":12,"height_mm":40,"source":"catalogue","width":96,"height":320,"id":"12x40"}
+{"barcode":"01222281","width_mm":12,"height_mm":40,"source":"catalogue","width":96,"height":320,"id":"12x40","labels_total":186,"labels_used":35}
 ```
+
+`labels_total` and `labels_used` are what the roll's tag says: how many labels the roll holds, and how many the printer has used. The printer adds one to the tag for every label it feeds, test prints and labels fed again included, and refuses a roll whose count is used up, whatever is left on it. They are left out when the tag's answer stops short of them.
 
 `id` is the size's entry in `/api/label/sizes`, or null when this bench has no row for it. An empty `addr` is `no address`, an unknown model is `unknown model`, a printer with no tag on its roll is `no roll`, a barcode the catalogue does not hold is `unknown roll`, and a failed cloud lookup is `roll lookup failed`; a printer that cannot be opened or read answers with the error'''s name.
 
@@ -130,6 +132,8 @@ The barcode is resolved from the catalogue compiled into the binary, which holds
 ```json
 { "error": "UnknownSource", "width": 384, "height": 96 }
 ```
+
+A print the printer refused is `PrinterRefused`, with a `reason` in the printer's own words when it gave one, such as `{"error":"PrinterRefused","reason":"WriteRfidFail",…}`; the names are [printer.md](printer.md#refusals).
 
 `NothingToPrint` is a `render` body with no fields, no background, and no `pixels_b64`. `UnknownSource` is a 404. Everything else is 400. The `sources` routes answer `{"error":"..."}` only.
 

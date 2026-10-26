@@ -153,6 +153,9 @@ pub fn rotated(allocator: std.mem.Allocator, gray: raster.Gray, degrees: u16) !r
 
 pub const PrinterService = struct {
     allocator: std.mem.Allocator,
+    /// The code the printer gave when the last job was refused, 0 when it
+    /// was not: the answer names it, so a refusal says why.
+    last_refusal: u8 = 0,
 
     pub fn submit(
         self: *PrinterService,
@@ -169,7 +172,7 @@ pub const PrinterService = struct {
         copies: u16,
         trace: ?*trace_mod.Trace,
     ) !void {
-        _ = self;
+        self.last_refusal = 0;
         // The page is printed as composed. A page is never turned here: the
         // only turn is a field's own `rotation`, which the renderer has already
         // applied, and turning again would turn the label itself.
@@ -192,7 +195,10 @@ pub const PrinterService = struct {
             client.d_series = model.setsCopies();
             if (client.d_series) client.copies = copies;
             defer client.deinit();
-            try client.printGray(io, pixels, width, height, level);
+            client.printGray(io, pixels, width, height, level) catch |err| {
+                self.last_refusal = client.refusal;
+                return err;
+            };
         }
     }
 };
@@ -454,6 +460,14 @@ pub fn printJob(service: *HttpService, req: RequestView) !Response {
         // The answer says only the error name; the line says what was asked of
         // which printer, the way the compose failure beside it does.
         if (tracer(service)) |t| t.failure("print", "{s} {s} model={s} failed: {s}", .{ job.conn, job.addr, job.model, @errorName(err) });
+        // A refusal says why, in the printer's own word for it, beside the
+        // error a caller already checks for.
+        if (err == error.PrinterRefused and service.printer.last_refusal != 0) {
+            const body = try std.fmt.allocPrint(service.allocator, "{{\"error\":\"PrinterRefused\",\"reason\":\"{s}\",\"width\":{d},\"height\":{d}}}", .{
+                printer.refusalName(service.printer.last_refusal), gray.width, gray.height,
+            });
+            return .{ .status = .bad_request, .body = body, .owned = true };
+        }
         return errorResponse(service.allocator, .bad_request, @errorName(err), gray.width, gray.height);
     };
     if (tracer(service)) |t| t.info("print", "sent {d}x{d}", .{ gray.width, rows });
@@ -829,11 +843,11 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
     };
     var client = printer.Client.init(service.allocator, transport);
     defer client.deinit();
-    const barcode_owned = client.readBarcode() catch |err| {
+    const roll = client.readRoll() catch |err| {
         if (tracer(service)) |t| t.failure("roll", "{s} {s} barcode: {s}", .{ parsed.value.conn, parsed.value.addr, @errorName(err) });
         return errorResponse(service.allocator, .bad_request, @errorName(err), 0, 0);
     };
-    const barcode = barcode_owned orelse {
+    const barcode = if (roll) |r| r.barcode else {
         if (tracer(service)) |t| t.warn("roll", "no barcode from {s} {s}", .{ parsed.value.conn, parsed.value.addr });
         return .{ .status = .bad_request, .body = "{\"error\":\"no roll\"}" };
     };
@@ -857,6 +871,12 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
         try out.print(service.allocator, "\"{s}\"", .{found});
     } else {
         try out.appendSlice(service.allocator, "null");
+    }
+    // What the tag says the roll holds and the printer has used of it, which
+    // is what the printer goes by when it refuses a roll as finished.
+    if (roll.?.counts) |counts| {
+        try out.print(service.allocator, ",\"labels_total\":{d},\"labels_used\":{d}", .{ counts.total, counts.used });
+        if (tracer(service)) |t| t.info("roll", "{s}: {d} of {d} labels used", .{ barcode, counts.used, counts.total });
     }
     if (tracer(service)) |t| t.info("roll", "{s} -> {d}x{d} mm {d}x{d} dots from the {s}", .{
         barcode, mm.width_mm, mm.height_mm, pxWidth(model, mm), pxHeight(model, mm), mm.source,

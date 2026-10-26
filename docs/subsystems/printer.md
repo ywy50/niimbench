@@ -10,6 +10,14 @@ A D11, D110 or D110_M job first asks the printer's protocol version, the way the
 
 `PrintEnd` goes out after `PrintStatus` (`0xA3`) shows the job printed. The job's target is its copy count on the D-series and 1 on the B-series, which is sent once per copy. The page counter has to move by the target from the value read after `PageEnd`, or the print progress has to leave 100 and come back with the counter at the target and print and feed both at 100. The polls allowed are 25 times the target, 200 ms apart. A ten-byte `PrintStatus` answer whose byte 6 is not 0, a cover, paper or battery fault, is `error.PrinterRefused`. A counter that stays put while progress stays at 100 is `error.PrintSkipped`. Progress that leaves 100 and does not come back finished is `error.PrintDidNotFinish`. `PrintEnd` is still sent either way, because the image is already on the wire, and so is a job that fails anywhere after `PrintStart`, a refused page size or a row left unanswered included. The answer reader steps over any byte that does not start a `55 55` frame, so a stray byte ahead of an answer is not read as a broken one. A `PrinterInfo` model id of one byte `VV` is `VV 00`. A printer that answers `PrintStatus` with packet type `0` is finished by polling `PrintEnd` instead.
 
+## Refusals
+
+A printer that will not print says why with a code: in a `PrintError` frame (`0xDB`) as its first data byte, or in byte 6 of a `PrintStatus` answer. niimbench keeps the code, names it with `printer.refusalName` from the table in [../manuals/upstream/interfacing/proto.md](../manuals/upstream/interfacing/proto.md#printer-error-codes), writes it to the trace, and answers a refused print as `PrinterRefused` with that name as its `reason`. A ten-byte status with the code set ends the job. A D110_M answers eight bytes and sets the code after a page it still printed, so there the code is only traced.
+
+The code a used-up roll draws is `WriteRfidFail` (`0x14`). A roll's tag, an NFC tag the printer reads through the roll, carries how many labels the roll holds and how many have been used, two big-endian u16 after its barcode and serial in the `RfidInfo` (`0x1A`) answer. The printer adds one for every label it feeds and writes it back, and once the count reaches the total it refuses the roll, whatever is left on it. A one-byte `RfidInfo` answer means no tag; the first byte of a real one is the tag UUID's and may be 0.
+
+niimbench reads the count and does not change it. The printer offers no command that writes it, and the tag is written by the printer's firmware alone: an NTAG21x, its pages behind a password, the count encrypted and bound to the tag's UID. Resetting it takes an NFC writer held to the roll, which niimbench does not drive.
+
 ## Raster
 
 Input is grayscale, row-major, `0` black, `255` white. A pixel below 128 becomes bit 1, a burned dot, most significant bit first.
