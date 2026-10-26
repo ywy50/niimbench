@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-27
+
 ### Added
 
 - A `Roll:` line under the printer line says how many labels the roll's tag has left, such as `Roll: 151 of 186 labels left`, once the roll is read, and counts down as you print. The printer refuses a roll whose count is used up, even with labels left on it. `POST /api/label/roll` answers `labels_total` and `labels_used`.
@@ -251,7 +253,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/ywy50/niimbench/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ywy50/niimbench/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/ywy50/niimbench/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/ywy50/niimbench/compare/v0.8.0...v0.8.1
