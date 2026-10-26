@@ -174,6 +174,16 @@ pub const label_sizes = [_]LabelSize{
     .{ .id = "50x80", .width_mm = 50, .height_mm = 80, .models = "b1 b21" },
 };
 
+/// The widest roll this model takes, in millimetres: 15 on the D-series, 50
+/// on a B1 or B21.
+pub fn widestRollMm(model: Model) u16 {
+    var widest: u16 = 0;
+    for (label_sizes) |size| {
+        if (sizeFits(size, model)) widest = @max(widest, size.width_mm);
+    }
+    return widest;
+}
+
 pub fn sizeFits(size: LabelSize, model: Model) bool {
     var it = std.mem.tokenizeScalar(u8, size.models, ' ');
     const name = @tagName(model);
