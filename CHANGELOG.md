@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-27
+
 ### Changed
 
 - **Copies** goes back to 1 after a print that worked, so a count meant for one job is not printed again by the next. After a print that failed it keeps its number, for a retry.
@@ -236,7 +238,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/ywy50/niimbench/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/ywy50/niimbench/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/ywy50/niimbench/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/ywy50/niimbench/compare/v0.7.0...v0.8.0
