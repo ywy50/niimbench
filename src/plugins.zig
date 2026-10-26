@@ -483,6 +483,29 @@ fn mountCaptured(ctx: *cordis.Context) !*server.HttpService {
     return http;
 }
 
+test "printer info answers what a D110_M says it is" {
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    const http = try mountCaptured(&ctx);
+    var capture = Capture{ .allocator = gpa };
+    defer capture.deinit();
+    capture_for_open = &capture;
+    defer capture_for_open = null;
+    const query = try std.fmt.allocPrint(gpa, "token={s}", .{&http.token_hex});
+    defer gpa.free(query);
+    try capture.push(.get_info, 0x08, &.{ 0x09, 0x10 });
+    try capture.push(.get_info, 0x09, &.{ 0x04, 0x1e });
+    try capture.push(.get_info, 0x0c, &.{ 0x04, 0x01 });
+    const response = try http.dispatch(.{ .io = std.testing.io, .method = .POST, .path = "/api/printer/info", .query = query, .body = "{\"conn\":\"usb\",\"addr\":\"capture\"}" });
+    defer if (response.owned) gpa.free(response.body);
+    try std.testing.expectEqual(std.http.Status.ok, response.status);
+    try std.testing.expectEqualStrings("{\"model_id\":2320,\"model\":\"d110_m\",\"firmware\":\"4.30\",\"hardware\":\"4.01\"}", response.body);
+    // Three requests, PrinterInfo with keys 8, 9 and 12, and nothing else.
+    const sent = [_]u8{ 0x55, 0x55, 0x40, 1, 0x08, 0x49, 0xAA, 0xAA, 0x55, 0x55, 0x40, 1, 0x09, 0x48, 0xAA, 0xAA, 0x55, 0x55, 0x40, 1, 0x0c, 0x4d, 0xAA, 0xAA };
+    try std.testing.expectEqualSlices(u8, &sent, capture.written.items);
+}
+
 test "Set printer clock sends the page's local time in the form a D110_M takes" {
     // PrinterConfig2 as the protocol notes draw it: 1 (set), year 2026 as
     // 07 EA, then October 20, 00:12:05. A D110_M answers 01 01: the first

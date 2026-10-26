@@ -774,6 +774,65 @@ const RollBody = struct {
     allow_cloud: bool = false,
 };
 
+const InfoBody = struct {
+    conn: []const u8,
+    addr: []const u8,
+};
+
+/// What the printer says it is: model id and the model it names, and its
+/// firmware and hardware versions. Read-only: three `PrinterInfo` requests.
+pub fn printerInfo(service: *HttpService, req: RequestView) !Response {
+    const parsed = std.json.parseFromSlice(InfoBody, service.allocator, req.body, .{ .ignore_unknown_fields = true }) catch {
+        return .{ .status = .bad_request, .body = "{\"error\":\"bad json\"}" };
+    };
+    defer parsed.deinit();
+    const body = parsed.value;
+    if (body.addr.len == 0) return .{ .status = .bad_request, .body = "{\"error\":\"no address\"}" };
+    const transport = service.transports.open(body.conn, service.allocator, req.io, body.addr) catch |err| {
+        if (tracer(service)) |t| t.failure("info", "{s} {s}: {s}", .{ body.conn, body.addr, @errorName(err) });
+        return errorResponse(service.allocator, .bad_request, @errorName(err), 0, 0);
+    };
+    var client = printer.Client.init(service.allocator, transport);
+    client.trace = tracer(service);
+    defer client.deinit();
+    const info = client.readInfo() catch |err| {
+        if (tracer(service)) |t| t.failure("info", "{s} {s}: {s}", .{ body.conn, body.addr, @errorName(err) });
+        return errorResponse(service.allocator, .bad_request, @errorName(err), 0, 0);
+    };
+
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(service.allocator);
+    if (info.model_id) |id| {
+        const model = discovery.modelForId(id);
+        try out.print(service.allocator, "{{\"model_id\":{d},\"model\":", .{id});
+        if (model) |m| try out.print(service.allocator, "\"{s}\"", .{@tagName(m)}) else try out.appendSlice(service.allocator, "null");
+    } else {
+        try out.appendSlice(service.allocator, "{\"model_id\":null,\"model\":null");
+    }
+    var firmware_buf: [8]u8 = undefined;
+    var hardware_buf: [8]u8 = undefined;
+    const firmware = versionText(&firmware_buf, info.firmware);
+    const hardware = versionText(&hardware_buf, info.hardware);
+    inline for (.{ .{ "firmware", firmware }, .{ "hardware", hardware } }) |pair| {
+        if (pair[1]) |text| {
+            try out.print(service.allocator, ",\"{s}\":\"{s}\"", .{ pair[0], text });
+        } else {
+            try out.print(service.allocator, ",\"{s}\":null", .{pair[0]});
+        }
+    }
+    try out.append(service.allocator, '}');
+    if (tracer(service)) |t| t.info("info", "{s} {s}: model id {?d}, firmware {s}, hardware {s}", .{
+        body.conn, body.addr, info.model_id, firmware orelse "?", hardware orelse "?",
+    });
+    return .{ .body = try out.toOwnedSlice(service.allocator), .owned = true };
+}
+
+/// `4.30`: the minor part as two digits, as the vendor writes it.
+fn versionText(buf: *[8]u8, version: ?printer.Client.Version) ?[]const u8 {
+    const v = version orelse return null;
+    return std.fmt.bufPrint(buf, "{d}.{d:0>2}", .{ v.major, v.minor }) catch null;
+}
+
 const ClockBody = struct {
     conn: []const u8,
     addr: []const u8,
@@ -1679,6 +1738,7 @@ pub fn applyHttp(ctx: *cordis.Context) !void {
     try addRoute(service, .POST, "/api/print", printJob);
     try addRoute(service, .POST, "/api/label/roll", readRoll);
     try addRoute(service, .POST, "/api/printer/clock", setPrinterClock);
+    try addRoute(service, .POST, "/api/printer/info", printerInfo);
     try addRoute(service, .POST, "/api/quit", quitServer);
     try addRoute(service, .GET, "/api/trace", traceText);
     try addRoute(service, .POST, "/api/trace", tracePost);

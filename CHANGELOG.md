@@ -14,6 +14,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 ### Added
 
 - The printer line says how many labels the roll's tag has left, such as `151 of 186 labels left`, once the roll is read, and counts down as you print. The printer refuses a roll whose count is used up, even with labels left on it. `POST /api/label/roll` answers `labels_total` and `labels_used`.
+- `POST /api/printer/info` asks the printer for its model id, firmware version and hardware version, read-only: `{"model_id":2320,"model":"d110_m","firmware":"4.30","hardware":"4.01"}` from a D110_M.
 - A refused print says why, in the printer's own words: `PrinterRefused: WriteRfidFail` where it said `PrinterRefused`. `POST /api/print` adds the name as `reason`.
 
 ### Fixed
