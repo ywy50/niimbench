@@ -11,6 +11,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Changed
+
+- **Copies** goes back to 1 after a print that worked, so a count meant for one job is not printed again by the next. After a print that failed it keeps its number, for a retry.
+
 ## [0.8.2] - 2026-10-22
 
 ### Fixed
