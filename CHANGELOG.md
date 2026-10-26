@@ -11,6 +11,16 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- The printer line says how many labels the roll's tag has left, such as `151 of 186 labels left`, once the roll is read, and counts down as you print. The printer refuses a roll whose count is used up, even with labels left on it. `POST /api/label/roll` answers `labels_total` and `labels_used`.
+- A refused print says why, in the printer's own words: `PrinterRefused: WriteRfidFail` where it said `PrinterRefused`. `POST /api/print` adds the name as `reason`.
+
+### Fixed
+
+- A roll whose tag UUID begins with a 0 byte read as no roll.
+- A D110_M's status code at the end of a page was not looked at. A tag it could not write, the first sign of a used-up roll, now shows in the trace.
+
 ## [0.9.0] - 2026-10-27
 
 ### Changed

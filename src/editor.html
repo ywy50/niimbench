@@ -2808,7 +2808,17 @@
     function statusFor(addr, model, conn) {
       if (!addr) return { state: "idle", text: "No address yet" };
       const where = conn === "bluetooth" ? "Bluetooth" : "USB";
-      return { state: "ready", text: where + " · " + model + " · ready" };
+      return { state: "ready", text: where + " · " + model + " · ready" + labelsLeft(addr) };
+    }
+
+    // What the roll's tag said when it was last read, for the printer it was
+    // read from. The printer counts every label it feeds on the tag and
+    // refuses the roll once the count is used up, whatever is left on it.
+    let rollCount = null;
+
+    function labelsLeft(addr) {
+      if (!rollCount || rollCount.addr !== addr) return "";
+      return " · " + Math.max(0, rollCount.total - rollCount.used) + " of " + rollCount.total + " labels left";
     }
 
     /// Derive that state from the controls, for the moments nothing is running.
@@ -2868,8 +2878,12 @@
         if (payload.width && payload.height) usePage(payload.width, payload.height);
         // After the redraw, whose own status would replace the roll's.
         await refresh();
+        rollCount = Number.isInteger(payload.labels_total) && Number.isInteger(payload.labels_used)
+          ? { addr, total: payload.labels_total, used: payload.labels_used }
+          : null;
+        refreshPrinterStatus();
         status.textContent = payload.width_mm + "\u00d7" + payload.height_mm + " mm roll"
-          + (payload.source === "cloud" ? " (cloud)" : "");
+          + (payload.source === "cloud" ? " (cloud)" : "") + labelsLeft(addr);
       } catch (error) {
         status.textContent = "roll unread";
       }
@@ -3171,8 +3185,14 @@
         const response = await post("/api/print", body);
         const payload = await readJson(response);
         const done = copies === 1 ? "printed" : "printed " + copies + " copies";
-        status.textContent = payload.error || done;
-        showLastJob(payload.error || done, Boolean(payload.error));
+        // A refusal carries the printer's own word for why, such as
+        // WriteRfidFail when the roll's tag count has run out.
+        const failed = payload.error && (payload.reason ? payload.error + ": " + payload.reason : payload.error);
+        status.textContent = failed || done;
+        showLastJob(failed || done, Boolean(failed));
+        // The printer counted these on the roll's tag; the shown count
+        // follows until the roll is read again.
+        if (!failed && rollCount && rollCount.addr === body.addr) rollCount.used += copies;
         // A count is for one job: once it printed, the next print is one
         // label again. A failed job keeps it, so Print again retries it.
         if (!payload.error) input.value = "1";
