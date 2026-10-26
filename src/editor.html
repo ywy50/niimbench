@@ -3173,6 +3173,9 @@
         const done = copies === 1 ? "printed" : "printed " + copies + " copies";
         status.textContent = payload.error || done;
         showLastJob(payload.error || done, Boolean(payload.error));
+        // A count is for one job: once it printed, the next print is one
+        // label again. A failed job keeps it, so Print again retries it.
+        if (!payload.error) input.value = "1";
       } catch (error) {
         status.textContent = "print failed: " + error.message;
         showLastJob("print failed, " + error.message, true);
