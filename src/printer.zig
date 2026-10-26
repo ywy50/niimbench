@@ -104,6 +104,50 @@ pub const Client = struct {
         };
     }
 
+    /// What the printer says it is: its model id, and its firmware and
+    /// hardware versions, from `PrinterInfo` (`0x40`) keys 8, 9 and 12, each
+    /// answered `0x40` plus the key. A key the printer does not answer is null,
+    /// so one it never learned does not hide the others.
+    pub fn readInfo(self: *Client) !Info {
+        var out: Info = .{};
+        if (try self.infoKey(0x08)) |data| out.model_id = modelIdOf(data);
+        if (try self.infoKey(0x09)) |data| out.firmware = Version.of(data);
+        if (try self.infoKey(0x0c)) |data| out.hardware = Version.of(data);
+        return out;
+    }
+
+    pub const Info = struct { model_id: ?u16 = null, firmware: ?Version = null, hardware: ?Version = null };
+
+    /// Two bytes, major then minor: a D110_M's `04 1e` is firmware 4.30.
+    pub const Version = struct {
+        major: u8,
+        minor: u8,
+
+        fn of(data: []const u8) ?Version {
+            if (data.len < 2) return null;
+            return .{ .major = data[0], .minor = data[1] };
+        }
+    };
+
+    /// The id in two bytes, big-endian; one byte `VV` is `VV 00`.
+    fn modelIdOf(data: []const u8) ?u16 {
+        return switch (data.len) {
+            0 => null,
+            1 => @as(u16, data[0]) << 8,
+            else => @as(u16, data[0]) << 8 | data[1],
+        };
+    }
+
+    /// One key's answer, valid until the next request, or null when the
+    /// printer gives none.
+    fn infoKey(self: *Client, key: u8) !?[]const u8 {
+        const response = self.transceive(@backingInt(packet.Request.get_info), &.{key}, key) catch |err| switch (err) {
+            error.NoResponse, error.PrinterUnsupported => return null,
+            else => return err,
+        };
+        return response.data;
+    }
+
     /// A wall-clock time with no zone: the printer keeps none, so the caller
     /// sends its own local time.
     pub const Clock = struct { year: u16, month: u8, day: u8, hour: u8, minute: u8, second: u8 };
@@ -521,6 +565,27 @@ pub fn refusalName(code: u8) []const u8 {
     };
     if (code == 0 or code > names.len) return "Unknown";
     return names[code - 1];
+}
+
+test "a printer says its model id, firmware and hardware" {
+    // What a D110_M answered: model 0x0910 (2320), firmware 04 1e, hardware
+    // 04 01. A printer that leaves a key unanswered gets null for it.
+    const gpa = std.testing.allocator;
+    var script = Script{ .allocator = gpa };
+    defer script.deinit();
+    try script.push(.get_info, 0x08, &.{ 0x09, 0x10 });
+    try script.push(.get_info, 0x09, &.{ 0x04, 0x1e });
+    try script.push(.get_info, 0x0c, &.{ 0x04, 0x01 });
+    var client = Client.init(gpa, scriptTransport(&script));
+    defer client.deinit();
+    const info = try client.readInfo();
+    try std.testing.expectEqual(@as(u16, 2320), info.model_id.?);
+    try std.testing.expectEqual(Client.Version{ .major = 4, .minor = 30 }, info.firmware.?);
+    try std.testing.expectEqual(Client.Version{ .major = 4, .minor = 1 }, info.hardware.?);
+    var frames = try framesWritten(gpa, script.written.items);
+    defer frames.deinit(gpa);
+    try std.testing.expectEqual(@as(usize, 3), frames.items.len);
+    try std.testing.expectEqualSlices(u8, &.{ 0x40, 1, 0x09 }, frames.items[1][0..3]);
 }
 
 const Script = struct {

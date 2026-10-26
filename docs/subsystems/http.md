@@ -20,6 +20,7 @@ The `editor` plugin injects `http` and registers `GET /`. Disposing that fiber r
 | POST | `/api/label/track` | What each field draws, and where it came from |
 | POST | `/api/label/roll` | The roll in the printer, sized for the model |
 | POST | `/api/printer/clock` | Set the printer's clock to the time the page sends |
+| POST | `/api/printer/info` | Ask the printer for its model id, firmware version and hardware version |
 | POST | `/api/quit` | Stop the server, from the menu on the page's niimbench name |
 | GET | `/api/trace` | What has happened so far, one line per event |
 | POST | `/api/trace` | A line from the page |
@@ -104,6 +105,14 @@ A body with no `fields` and no background still prints raw `pixels_b64`, which i
 A print body may carry `copies`, 1 to 99, default 1. 0 or a count above 99 is `BadCopies`; a value that is not a whole number from 0 to 65535 is `bad json`. A D11, D110 or D110_M prints the copies itself: on protocol 4 the job has that many pages and the page that many copies, and below it `PrintQuantity` is set to the count. A B-series sequence has no count, so the job is sent once per copy. The `print` trace line names the count.
 
 `POST /api/printer/clock` takes `{"conn", "addr", "year", "month", "day", "hour", "minute", "second"}` and sets the printer's clock, which its date button prints and which counts from 1970 until something sets it. The page sends its own local time, because the browser knows the time zone of the machine it runs on and the printer keeps none. The packet is `PrinterConfig2` (`0x07`) as the protocol notes draw it: `01` (set), the year as two bytes, then month, day, hour, minute and second. The answer echoes the first byte and then gives the result: a D110_M answers `01 01`, done. Upstream's library puts an item byte `08` in front, which a D110_M refuses with `08 00`, so that form is only tried when the first is refused. All eight fields are required, and a missing one is `bad json`. An empty `addr` is `no address`, a year outside 2000 to 2099 or another field out of range is `BadTime`, a printer that cannot be opened answers with the transport's error name, and a printer that refuses both forms is `ClockRefused`. Success is `{"ok":true}`. The `clock` trace line says what was set and what the printer answered.
+
+`POST /api/printer/info` takes `{"conn", "addr"}` and asks the printer what it is, reading and changing nothing: `PrinterInfo` (`0x40`) for the model id, the firmware version and the hardware version ([printer.md](printer.md#wire)). The answer, from a D110_M:
+
+```json
+{"model_id":2320,"model":"d110_m","firmware":"4.30","hardware":"4.01"}
+```
+
+`model` is the model the id names, null for one this bench does not print to. A field the printer does not answer is null. An empty `addr` is `no address`, and a printer that cannot be opened answers with the transport's error name. The `info` trace line says what the printer answered.
 
 The render answer and the print are always the roll: width across the head, height along the tape. Neither route turns the page. `rotate` is still accepted in a body for older callers and does nothing; the CLI's `--rotate` turns a raw PGM page before sending it, which is a different path and the only place a page is turned.
 
