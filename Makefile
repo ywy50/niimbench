@@ -12,7 +12,7 @@ SIZE ?= 1600x1000
 DRIVE_OUT ?= zig-out/drive
 
 .DEFAULT_GOAL := run
-.PHONY: help test build run serve trace print labels lint protocol-test view-test box-test panel-test canvas-test trace-test stray-test drive screens-test macos-app macos-app-check
+.PHONY: help test build run serve trace print labels lint protocol-test view-test box-test panel-test dither-test canvas-test trace-test stray-test drive screens-test macos-app macos-app-check
 
 help:
 	@printf '%s\n' \
@@ -27,6 +27,7 @@ help:
 		'  make lint            lint the editor script, check references and doc links' \
 		'  make protocol-test   check the page records every boot step, with node' \
 		'  make view-test       check the editor preview geometry with node' \
+		'  make dither-test     check how pictures become dots with node' \
 		'  make box-test        check the field box geometry with node' \
 		'  make panel-test      check the editor'\''s panel layout with node' \
 		'  make canvas-test     check the drawn canvas in headless Chrome' \
@@ -76,7 +77,7 @@ macos-app:
 macos-app-check:
 	tools/macos-app-check.sh
 
-test: lint protocol-test view-test box-test panel-test stray-test trace-test canvas-test drive screens-test
+test: lint protocol-test view-test box-test panel-test dither-test stray-test trace-test canvas-test drive screens-test
 	$(ZIG) build test $(ARGS)
 
 # The page script runs only in a browser, so nothing else would notice a name
@@ -93,6 +94,10 @@ lint:
 view-test:
 	@command -v node >/dev/null 2>&1 || { echo "node is needed for make view-test"; exit 1; }
 	node tools/view-geometry.test.js
+
+dither-test:
+	@command -v node >/dev/null 2>&1 || { echo "node is needed for make dither-test"; exit 1; }
+	node tools/dither.test.js
 
 box-test:
 	@command -v node >/dev/null 2>&1 || { echo "node is needed for make box-test"; exit 1; }

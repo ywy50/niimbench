@@ -48,13 +48,25 @@ The frame drawn round a picture is what you grab: drag inside it to move, drag a
 
 Click a field's box or the picture to select it: its outline turns solid and thicker, and a field's row is shaded. The click also takes the keyboard from a text box you were typing in. **Delete** (or **Backspace**) removes what is selected, the same as the row's **Remove** or **Remove image**, as long as you are not typing in a box. **Undo** brings a removed field back; it does not cover the picture.
 
-A label has one ink, so a picture is reduced to dots that print and dots that do not. **Ink** chooses how:
+A label has one ink, and the printer burns every dot at the one heat **Density** sets for the whole label, so it has no greys of its own: a picture is reduced to dots that print and dots that do not. **Ink** chooses how:
 
-- **Threshold**, the default: everything darker than **Image threshold** prints and everything lighter does not. Right for logos, text and line art.
-- **Dither (Floyd–Steinberg)**: the greys come out as a share of dots, so a photo or a gradient keeps its tones.
-- **Dither (Atkinson)**: dithered too, crisper, with the darkest and lightest parts solid and the mid-greys lighter.
+| Ink | What it does | Good for |
+|---|---|---|
+| **Threshold**, the default | Everything darker than **Image threshold** prints, everything lighter does not | Logos, text, line art |
+| **Dither: Floyd–Steinberg** | Greys come out as a share of dots, each dot's error handed on to its neighbours | Photos, gradients: the most faithful tones |
+| **Dither: Atkinson** | The same, passing on only part of the error | Crisp edges; the darkest and lightest parts go solid |
+| **Dither: Jarvis–Judice–Ninke**, **Stucki**, **Sierra** | The error spread wider | Smoother, softer gradients |
+| **Pattern: Bayer** | A fixed fine pattern of dots, the same for the same grey everywhere | Flat areas, a crosshatched look |
+| **Halftone dots** | Round dots that grow with the grey, like a newspaper photo | The most even print on a thermal head |
 
-Dithered, **Image threshold** still works: it makes the whole picture lighter or darker.
+Then, for every Ink:
+
+- **Brightness** and **Contrast** make the picture lighter or darker, and its tones further apart or closer.
+- **Gamma** moves the midtones: above 1.00 lightens them, which makes up for a thermal head's dots printing a little larger than they are, so a dithered photo is often best a little above 1.
+- **Sharpen** keeps edges crisp when a photo shrinks to a label's few dozen dots.
+- **Reset ink** puts all of it back: Threshold at 160, no adjustments.
+
+Only the pictures are changed: the label around them stays blank whatever the settings. **Image threshold** shows for Threshold only. These settings are remembered in this browser, and are not part of a saved layout.
 
 **Grid** draws faint guides on the preview every 16 dots (2 mm), so a field can be placed by eye against something. The guides are drawn over the page only; they never reach the printer.
 
