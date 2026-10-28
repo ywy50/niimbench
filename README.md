@@ -134,7 +134,7 @@ One process serves the editor page on `127.0.0.1`, renders labels, and prints th
 - **What you see is what prints.** The preview is the grayscale the printer will get: preview and print share one drawing path on the server.
 - **It finds the printer.** A scan of the serial ports and of Bluetooth fills in the connection, the address and the model, and the roll the printer reports.
 - **Text in real fonts.** Fifteen free fonts are embedded and drawn by niimbench's own TrueType rasteriser, so a print never depends on what is installed.
-- **Pictures in one ink.** An imported picture is reduced to black and white at a threshold you choose, then moved, scaled and turned on the label.
+- **Pictures in one ink.** An imported picture is reduced to black and white at a threshold you choose, or dithered so a photo keeps its greys as dots, then moved, scaled and turned on the label.
 - **A board, not a form.** Preview, printer, text and image are panels you drag by their titles and resize from a corner. This browser remembers where you put them.
 - **Checked by driving it.** `make test` drives the page in a headless browser, and no server a test starts can outlive the run.
 
