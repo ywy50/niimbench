@@ -499,9 +499,18 @@
     <h2 class="panel-head">Image</h2>
     <div class="panel-body">
     <label>Add images <input id="file" type="file" accept="image/*" multiple></label>
-    <label>Image threshold
-    <input id="image-threshold" type="range" min="0" max="255" value="160">
-    </label>
+    <div class="row">
+      <label title="Where light turns to ink: a picture darker than this prints. Dithered, it makes the whole picture lighter or darker.">Image threshold
+      <input id="image-threshold" type="range" min="0" max="255" value="160">
+      </label>
+      <label title="Threshold prints every dot past the cut and nothing else. Dithering spreads the in-between greys as dots, for photos and gradients: Floyd–Steinberg keeps the tones, Atkinson is crisper and lighter.">Ink
+        <select id="image-ink">
+          <option value="threshold">Threshold</option>
+          <option value="floyd-steinberg">Dither (Floyd–Steinberg)</option>
+          <option value="atkinson">Dither (Atkinson)</option>
+        </select>
+      </label>
+    </div>
     <span class="printers-title">Image <span id="image-readout" class="hint">no image</span></span>
         <div class="tools">
           <button type="button" id="image-fit">Fit</button>
@@ -564,7 +573,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "density", "fit", "rotate", "image", "select", "undo", "printer"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "density", "fit", "rotate", "image", "dither", "select", "undo", "printer"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -1656,6 +1665,38 @@
       syncImageControls();
     }
 
+    /// Which dots of a picture print, 1 for ink, from its luma. `threshold`
+    /// inks everything darker than the cut. A dither inks the same way dot by
+    /// dot, then hands what that dot got wrong, the grey it rounded away, on
+    /// to the dots not yet decided, so a grey comes out as a share of dots:
+    /// Floyd–Steinberg passes all of it to four neighbours; Atkinson passes
+    /// six eighths to six, which keeps edges crisp and lightens mid-greys.
+    /// The cut stays the threshold, so the slider still darkens or lightens.
+    const diffusion = {
+      "floyd-steinberg": [[1, 0, 7 / 16], [-1, 1, 3 / 16], [0, 1, 5 / 16], [1, 1, 1 / 16]],
+      "atkinson": [[1, 0, 1 / 8], [2, 0, 1 / 8], [-1, 1, 1 / 8], [0, 1, 1 / 8], [1, 1, 1 / 8], [0, 2, 1 / 8]],
+    };
+    function inkDots(luma, width, height, threshold, mode) {
+      const ink = new Uint8Array(width * height);
+      const spread = diffusion[mode];
+      const grey = spread ? Float32Array.from(luma) : luma;
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const p = y * width + x;
+          const dark = grey[p] < threshold;
+          ink[p] = dark ? 1 : 0;
+          if (!spread) continue;
+          const error = grey[p] - (dark ? 0 : 255);
+          for (const [dx, dy, share] of spread) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if (nx >= 0 && nx < width && ny < height) grey[ny * width + nx] += error * share;
+          }
+        }
+      }
+      return ink;
+    }
+
     function backgroundPixels() {
       if (!pictures.length) return null;
       const roll = rollSize();
@@ -1665,9 +1706,8 @@
       scratch.width = width;
       scratch.height = height;
       const ctx = scratch.getContext("2d");
-      // A label has one ink, so the image is reduced to two tones by a
-      // threshold rather than dithered: the printer would otherwise turn a
-      // grey wash into noise.
+      // A label has one ink, so the picture is reduced to two tones: by the
+      // threshold alone, or dithered, the greys spread out as dots.
       ctx.fillStyle = "white";
       ctx.fillRect(0, 0, width, height);
       // The same transform the preview draws, so what is sent is what is seen.
@@ -1681,6 +1721,12 @@
       }
       const data = ctx.getImageData(0, 0, width, height).data;
       const threshold = Number(document.querySelector("#image-threshold").value);
+      // Rec. 601 luma, so a red and a green of the same brightness agree.
+      const luma = new Float32Array(width * height);
+      for (let p = 0; p < luma.length; p++) {
+        luma[p] = 0.299 * data[p * 4] + 0.587 * data[p * 4 + 1] + 0.114 * data[p * 4 + 2];
+      }
+      const ink = inkDots(luma, width, height, threshold, document.querySelector("#image-ink").value);
       // One bit per pixel, MSB first, in the byte order `raster.packRow` uses.
       // The label has one ink, so a byte per pixel spends seven bits saying
       // nothing: packing cuts a full-width label from 92 KB to 12 KB, and the
@@ -1689,12 +1735,7 @@
       const bits = new Uint8Array(rowBytes * height);
       for (let y = 0; y < height; y++) {
         for (let x = 0; x < width; x++) {
-          const i = (y * width + x) * 4;
-          // Rec. 601 luma, so a red and a green of the same brightness agree.
-          const luma = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          if (luma < threshold) {
-            bits[y * rowBytes + (x >> 3)] |= 1 << (7 - (x & 7));
-          }
+          if (ink[y * width + x]) bits[y * rowBytes + (x >> 3)] |= 1 << (7 - (x & 7));
         }
       }
       // Chunked, because a per-pixel string concat is quadratic on a big label.
@@ -2466,6 +2507,11 @@
       // Only the primary button drags. A right-click's menu takes the release,
       // and a drag started by it never ended.
       if (event.button !== 0) return;
+      // The keyboard follows the press: a row's text box or number kept the
+      // focus, since a drag stops the browser moving it, and Delete or Ctrl+Z
+      // then went to that box, which the page leaves to the browser.
+      const focused = document.activeElement;
+      if (focused && focused !== document.body && typeof focused.blur === "function") focused.blur();
       const point = screenPoint(labelPoint(event));
       const resizing = hitCorner(point);
       // What the press lands on is selected: a field's box, corner or anchor,
@@ -3077,6 +3123,7 @@
     placePanels();
 
     document.querySelector("#image-threshold").addEventListener("input", () => scheduleRefresh());
+    document.querySelector("#image-ink").addEventListener("change", () => scheduleRefresh());
 
     // One place that turns a control or a drag into the stored transform.
     function setImage(patch) {
@@ -4215,17 +4262,17 @@
 
     /// Import a picture through the file input, the way a person does, with
     /// the view's own shape so it covers the label.
-    async function importPicture() {
+    async function importPicture(grey) {
       const count = pictures.length;
       const view = viewSize();
       const art = document.createElement("canvas");
       art.width = view.width;
       art.height = view.height;
       const ctx = art.getContext("2d");
-      ctx.fillStyle = "#fff";
+      ctx.fillStyle = grey === undefined ? "#fff" : `rgb(${grey}, ${grey}, ${grey})`;
       ctx.fillRect(0, 0, art.width, art.height);
       ctx.fillStyle = "#000";
-      ctx.fillRect(2, 2, 12, 12);
+      if (grey === undefined) ctx.fillRect(2, 2, 12, 12);
       const blob = await new Promise((resolve) => art.toBlob(resolve, "image/png"));
       const input = document.querySelector("#file");
       const files = new DataTransfer();
@@ -4323,6 +4370,44 @@
     /// Click the picture and press Delete, then click a field's box and press
     /// Delete, the way a person does. Each click highlights what it picked,
     /// Delete removes it, and Ctrl+Z brings the field back.
+    /// A flat mid-grey picture across the label inks every dot at the default
+    /// threshold, since all of it is darker than the cut, and about half of
+    /// them dithered either way, since a dither's share of ink follows the
+    /// grey. The page's own pictures and settings are put back after.
+    async function selfCheckDither() {
+      const inkMenu = document.querySelector("#image-ink");
+      const slider = document.querySelector("#image-threshold");
+      const kept = { ink: inkMenu.value, threshold: slider.value, pictures: pictures.slice(), picture };
+      pictures.length = 0;
+      picture = null;
+      await importPicture(128);
+      slider.value = "160";
+      const share = () => {
+        const bytes = atob(backgroundPixels() || "");
+        let dots = 0;
+        for (let i = 0; i < bytes.length; i++) {
+          for (let b = bytes.charCodeAt(i); b; b &= b - 1) dots++;
+        }
+        const roll = rollSize();
+        return Math.round(100 * dots / (roll.width * roll.height));
+      };
+      const verdict = {};
+      for (const mode of ["threshold", "floyd-steinberg", "atkinson"]) {
+        inkMenu.value = mode;
+        verdict[mode] = share();
+      }
+      verdict.ok = verdict.threshold === 100 &&
+        verdict["floyd-steinberg"] >= 40 && verdict["floyd-steinberg"] <= 60 &&
+        verdict.atkinson >= 25 && verdict.atkinson <= 60;
+      inkMenu.value = kept.ink;
+      slider.value = kept.threshold;
+      pictures.splice(0, pictures.length, ...kept.pictures);
+      picture = kept.picture;
+      syncImageControls();
+      await refresh();
+      return verdict;
+    }
+
     async function selfCheckSelect() {
       await importPicture();
       const verdict = { imported: Boolean(picture) };
@@ -4342,7 +4427,11 @@
       verdict.image_deleted = pictures.length === 0;
       const count = rows.length;
       const row = boxes[0].row;
+      // Typed into first: the press must take the keyboard from the text box,
+      // or Delete goes to the text and the field stays.
+      row.controls.text.focus();
       pressAt(boxes[0].screen_centre);
+      verdict.focus_left_text = document.activeElement !== row.controls.text;
       verdict.field_selected = Boolean(selected) && selected.row === row && row.row.classList.contains("selected");
       pressKey("Delete");
       await refresh();
@@ -4351,7 +4440,7 @@
       await refresh();
       verdict.undone = rows.length === count;
       verdict.ok = verdict.imported && verdict.clear_of_fields && verdict.image_selected && verdict.image_deleted &&
-        verdict.field_selected && verdict.field_deleted && verdict.undone;
+        verdict.focus_left_text && verdict.field_selected && verdict.field_deleted && verdict.undone;
       return verdict;
     }
 
@@ -4453,6 +4542,7 @@
         report.fit = harness ? await selfCheckFit() : null;
         report.rotate = harness ? await selfCheckRotate() : null;
         report.image = harness ? await selfCheckImage() : null;
+        report.dither = harness ? await selfCheckDither() : null;
         report.select = harness ? await selfCheckSelect() : null;
         report.undo = harness ? await selfCheckUndo() : null;
         report.printer = harness ? await selfCheckPrinter() : null;
@@ -4501,6 +4591,7 @@
         " fit " + (report.fit ? (report.fit.ok ? "ok" : "BROKEN") : "not exercised") +
         " rotate " + (report.rotate ? (report.rotate.ok ? "ok" : "BROKEN") : "not exercised") +
         " image " + (report.image ? (report.image.ok ? "ok" : "BROKEN") : "not exercised") +
+        " dither " + (report.dither ? (report.dither.ok ? "ok" : "BROKEN") : "not exercised") +
         " select " + (report.select ? (report.select.ok ? "ok" : "BROKEN") : "not exercised") +
         " undo " + (report.undo ? (report.undo.ok ? "ok" : "BROKEN") : "not exercised") +
         " printer " + (report.printer ? (report.printer.ok ? "ok" : "BROKEN") : "not exercised"));

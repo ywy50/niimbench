@@ -158,8 +158,13 @@ function judge(report) {
   // second picture goes on top.
   check("pictures land on the label upright, turn by their handle, reset, and stack",
     Boolean(report.image) && report.image.ok === true, JSON.stringify(report.image));
-  // A click selects a field or the picture, and Delete removes what is selected.
-  check("a click selects a box on the canvas and Delete removes it",
+  // A flat grey prints solid by threshold and as about half its dots
+  // dithered, either way.
+  check("dithering spreads a grey picture as dots, the threshold inks it solid",
+    Boolean(report.dither) && report.dither.ok === true, JSON.stringify(report.dither));
+  // A click selects a field or the picture, takes the keyboard from a text
+  // box, and Delete removes what is selected.
+  check("a click selects a box on the canvas and Delete removes it, even after typing in its text",
     Boolean(report.select) && report.select.ok === true, JSON.stringify(report.select));
   // A word typed in one burst undoes in one step, and so does the edit right
   // after an Undo.

@@ -46,9 +46,15 @@ A roll wider than the print head uses the head width. A 50 mm B21 roll is 384 do
 
 The frame drawn round a picture is what you grab: drag inside it to move, drag a corner to scale up or down, and drag the round grip above it to turn it. The grip stays on the label, inside the top edge when the picture fills the label. Where pictures overlap, a press takes the one on top. Scaling always re-samples the picture you imported, so enlarging it does not magnify a reduced copy. The **Scale %**, **Rotation**, **Left** and **Top** boxes do the same thing by number, **Left** and **Top** being where the picture's centre sits, in dots, **Fit** and **Fill** re-place it, **Turn 180°** flips it, **Reset image** puts it back centred, fitted and upright, where an import puts it, and **Remove image** takes it off the label. They act on the picture you last clicked or added, and the line above them says which one it is when there are several.
 
-Click a field's box or the picture to select it: its outline turns solid and thicker, and a field's row is shaded. **Delete** (or **Backspace**) removes what is selected, the same as the row's **Remove** or **Remove image**, as long as you are not typing in a box. **Undo** brings a removed field back; it does not cover the picture.
+Click a field's box or the picture to select it: its outline turns solid and thicker, and a field's row is shaded. The click also takes the keyboard from a text box you were typing in. **Delete** (or **Backspace**) removes what is selected, the same as the row's **Remove** or **Remove image**, as long as you are not typing in a box. **Undo** brings a removed field back; it does not cover the picture.
 
-**Image threshold** chooses which part of the picture becomes ink: everything darker than the slider prints black and everything lighter prints white. A label has one ink, so a photograph is reduced to two tones rather than dithered, and the slider is how you pick what survives.
+A label has one ink, so a picture is reduced to dots that print and dots that do not. **Ink** chooses how:
+
+- **Threshold**, the default: everything darker than **Image threshold** prints and everything lighter does not. Right for logos, text and line art.
+- **Dither (Floyd–Steinberg)**: the greys come out as a share of dots, so a photo or a gradient keeps its tones.
+- **Dither (Atkinson)**: dithered too, crisper, with the darkest and lightest parts solid and the mid-greys lighter.
+
+Dithered, **Image threshold** still works: it makes the whole picture lighter or darker.
 
 **Grid** draws faint guides on the preview every 16 dots (2 mm), so a field can be placed by eye against something. The guides are drawn over the page only; they never reach the printer.
 

@@ -11,6 +11,14 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- **Dithering for pictures.** **Ink**, in the Image panel, picks **Threshold**, as before, or **Dither (Floyd–Steinberg)** or **Dither (Atkinson)**, which print a picture's greys as a share of dots, so a photo or a gradient keeps its tones. **Image threshold** still makes a dithered picture lighter or darker.
+
+### Fixed
+
+- **Delete** did nothing to a field selected on the preview after typing in its text box. The box kept the keyboard, and Delete and Ctrl+Z went to the text. A press on the preview now takes the keyboard from it.
+
 ## [0.10.0] - 2026-10-27
 
 ### Added
