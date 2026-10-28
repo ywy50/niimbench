@@ -13,7 +13,7 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ### Added
 
-- **Dithering for pictures.** **Ink**, in the Image panel, picks **Threshold**, as before, or **Dither (Floyd–Steinberg)** or **Dither (Atkinson)**, which print a picture's greys as a share of dots, so a photo or a gradient keeps its tones. **Image threshold** still makes a dithered picture lighter or darker.
+- **Dithering for pictures.** **Ink**, in the Image panel, picks **Threshold**, as before, one of five error diffusions (Floyd–Steinberg, Atkinson, Jarvis–Judice–Ninke, Stucki, Sierra) run back and forth along the rows, a Bayer pattern, or halftone dots, which a thermal head prints most evenly. **Brightness**, **Contrast**, **Gamma** and **Sharpen** adjust a picture first, only the pictures are changed, a large photo is shrunk with the browser's best filter, and the settings are remembered in the browser. The printer has no greys of its own: it takes one bit per dot, and its heat, **Density**, is one setting for the whole label.
 
 ### Fixed
 
