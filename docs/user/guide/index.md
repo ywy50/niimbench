@@ -48,7 +48,7 @@ The frame drawn round a picture is what you grab: drag inside it to move, drag a
 
 Click a field's box or the picture to select it: its outline turns solid and thicker, and a field's row is shaded. The click also takes the keyboard from a text box you were typing in. **Delete** (or **Backspace**) removes what is selected, the same as the row's **Remove** or **Remove image**, as long as you are not typing in a box. **Undo** brings a removed field back; it does not cover the picture.
 
-A label has one ink, and the printer burns every dot at the one heat **Density** sets for the whole label, so it has no greys of its own: a picture is reduced to dots that print and dots that do not. **Ink** chooses how:
+A label has one ink, and the printer burns every dot at the one heat **Density** sets for the whole label, so it has no greys of its own ([why, and what greys would take](../../manuals/d110_m.md#grayscale)): a picture is reduced to dots that print and dots that do not. **Ink** chooses how:
 
 | Ink | What it does | Good for |
 |---|---|---|
