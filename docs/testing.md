@@ -19,7 +19,8 @@ What the tests lock in:
 - A roll's barcode resolves from the compiled-in catalogue whether or not the caller allowed the cloud, and a barcode the catalogue does not carry is `unknown roll` unless the caller opted in, in which case it is the cloud that answers. A roll saved from an earlier cloud answer resolves without the cloud allowed, and Fetch still asks past it.
 - The cloud's roll size is the template's, not the size of the first element laid out on it: a trimmed answer for a 12x22 roll, whose first text box is 17.68x4.03 mm, reads as 22x12. An answer with no `data`, or a zero size, is a failed lookup.
 - A roll saved from the cloud is read back by a second catalogue, as after a restart; saving it again replaces it rather than listing it twice, and a barcode the compiled-in catalogue holds is not saved.
-- `make labels-check`: `docs/labels/catalogue.json` is sorted one row per line, `src/catalogue.json` is a copy of it, `docs/labels/README.md` is what the script writes from it, and every row in `docs/labels/added.json` is in it.
+- `make labels-check`: `docs/labels/catalogue.json` is sorted one row per line, `src/catalogue.json` is what the binary reads of it, `docs/labels/README.md` is what the script writes from it, every row in `docs/labels/added.json` is in it, and no code names two rolls.
+- A roll is found by its barcode and by each of its other codes, and by no code it does not list.
 - A D-Bus call with arguments is byte-compared against a message captured from a client the bus accepts, which pins the header field order, the encoding of the signature field, and the padding an empty option dictionary needs.
 - A binary PGM header parses.
 - A source key draws the same pixels as the literal value of that key, a different key draws a different label, and text sits at the field's y position.

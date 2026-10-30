@@ -42,6 +42,7 @@ pub const Catalogue = struct {
         paper_type: u8 = 1,
         machines: []const []const u8 = &.{},
         ours: []const []const u8 = &.{},
+        codes: []const []const u8 = &.{},
     };
 
     pub fn deinit(self: *Catalogue) void {
@@ -110,7 +111,11 @@ pub const Catalogue = struct {
 /// Parse the embedded catalogue. It is read once, at plugin apply, and a
 /// malformed file is an error there rather than a surprise at the first print.
 pub fn load(allocator: std.mem.Allocator) !Catalogue {
-    const storage = try std.json.parseFromSlice([]const Catalogue.Raw, allocator, catalogue_json, .{
+    return parse(allocator, catalogue_json);
+}
+
+fn parse(allocator: std.mem.Allocator, json: []const u8) !Catalogue {
+    const storage = try std.json.parseFromSlice([]const Catalogue.Raw, allocator, json, .{
         .ignore_unknown_fields = true,
     });
     errdefer storage.deinit();
@@ -121,6 +126,9 @@ pub fn load(allocator: std.mem.Allocator) !Catalogue {
         // not a label.
         if (raw.barcode.len == 0 or raw.width_mm == 0 or raw.height_mm == 0) continue;
         try entries.put(raw.barcode, labelOf(raw));
+        // The other barcodes the vendor gives the same roll, any of which its
+        // tag may carry.
+        for (raw.codes) |code| try entries.put(code, labelOf(raw));
     }
     return .{ .allocator = allocator, .entries = entries, .storage = storage, .arena = .init(allocator) };
 }
@@ -133,6 +141,20 @@ fn labelOf(raw: Catalogue.Raw) Label {
         .paper_type = raw.paper_type,
         .name = if (raw.name.len > 0) raw.name else raw.name_zh,
     };
+}
+
+test "a roll is found by any of its codes" {
+    const gpa = std.testing.allocator;
+    var catalogue = try parse(gpa,
+        \\[{"barcode":"6971501224551","codes":["6972842743558","09132052"],"name":"RP12*22-260","width_mm":22,"height_mm":12,"paper_type":1}]
+    );
+    defer catalogue.deinit();
+    for ([_][]const u8{ "6971501224551", "6972842743558", "09132052" }) |code| {
+        const roll = catalogue.find(code) orelse return error.NoRoll;
+        try std.testing.expectEqual(@as(u16, 22), roll.width_mm);
+        try std.testing.expectEqualStrings("6971501224551", roll.barcode);
+    }
+    try std.testing.expect(catalogue.find("07132101") == null);
 }
 
 test "the embedded catalogue holds the roll this bench prints to" {

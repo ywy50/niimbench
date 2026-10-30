@@ -24,7 +24,9 @@ file is written sorted by size and then barcode, so the same answers write the
 same bytes.
 """
 
+import collections
 import json
+import math
 import pathlib
 import sys
 import time
@@ -106,6 +108,18 @@ def collect():
     return records.values()
 
 
+ALIASES = ("amazonCodeBeijing", "amazonCodeWuhan", "sparedCode", "virtualBarCode")
+
+
+def codes(item):
+    """The other barcodes the vendor gives the same roll, any of which its tag
+    may carry."""
+    extrain = (item.get("profile") or {}).get("extrain") or {}
+    found = {extrain.get(k) for k in ALIASES}
+    found |= {v for k, v in (extrain.get("barcodeCategoryMap") or {}).items() if k != "materialModelSn"}
+    return {c for c in found if isinstance(c, str) and c.isdigit() and c != item.get("barcode")}
+
+
 def row(item):
     names = item.get("names") or []
     profile = item.get("profile") or {}
@@ -128,18 +142,32 @@ def row(item):
 
 
 def whole(mm):
-    """A size in whole millimetres, as the binary reads it."""
-    return round(mm) if isinstance(mm, float) else mm
+    """A size in whole millimetres, as the binary reads it, a half rounded up
+    as the server rounds a cloud answer: a 12.5 mm label is laid out as 13."""
+    return math.floor(mm + 0.5) if isinstance(mm, float) else mm
 
 
 def ordered(rows):
     return sorted(rows, key=lambda r: (r["width_mm"] or 0, r["height_mm"] or 0, r["barcode"]))
 
 
+def held(rows):
+    """Every code the catalogue answers for: each row's barcode and its others."""
+    return {c for r in rows for c in [r["barcode"], *r.get("codes", [])]}
+
+
 def merged(rows, extra):
-    """`rows` and the rows of `extra` whose barcode `rows` lacks."""
-    held = {r["barcode"] for r in rows}
-    return list(rows) + [r for r in extra if r["barcode"] not in held]
+    """`rows` and the rows of `extra` whose barcode `rows` does not answer
+    for, each with only the codes nothing before it claimed."""
+    have = held(rows)
+    out = list(rows)
+    for r in extra:
+        if r["barcode"] in have:
+            continue
+        r = r | {"codes": sorted(set(r.get("codes", [])) - have)}
+        have |= {r["barcode"], *r["codes"]}
+        out.append(r)
+    return out
 
 
 def read(path):
@@ -153,42 +181,66 @@ def lines(rows):
 
 
 def page(rows):
-    sizes = []
-    by_size = {}
+    sizes = {}
     for r in rows:
-        size = (r["width_mm"], r["height_mm"])
-        if size not in by_size:
-            sizes.append(size)
-            by_size[size] = []
-        by_size[size].append(r)
-    bench = sum(1 for size in sizes if any(r["ours"] for r in by_size[size]))
+        sizes.setdefault((r["width_mm"], r["height_mm"]), []).append(r)
+    codes_held = sum(len(r.get("codes", [])) for r in rows)
     added = len(read(ADDED))
+    models = ("b1", "b18", "b21", "d11", "d110")
+    per_model = {m: sum(1 for r in rows if m in r["ours"]) for m in models}
 
     out = [
         "# Label catalogue",
         "",
-        "Every label the vendor cloud offers in the sizes its own template endpoint groups by series, keyed on the barcode an RFID tag carries, and the rolls added from a tag the cloud answered for. The app reads a roll's barcode from the tag and looks it up here to size the canvas, so this page is the reference for what a roll can be, and `catalogue.json` beside it is the same data for code to read.",
+        "Every label the vendor cloud offers in the sizes its own template endpoint groups by series, and the rolls added from a tag the cloud answered for, keyed on the barcodes an RFID tag on the roll can carry. The app reads a roll's barcode from the tag and looks it up here to size the canvas, so this is the reference for what a roll can be. [catalogue.json](catalogue.json) beside this page holds every roll; this page counts them.",
         "",
-        "`catalogue.json` and this page are written by [tools/fetch-labels.py](../../tools/fetch-labels.py); do not edit either by hand. [Regenerating](#regenerating) says how.",
+        "`catalogue.json`, the copy the binary embeds and this page are written by [tools/fetch-labels.py](../../tools/fetch-labels.py); do not edit them by hand. [Regenerating](#regenerating) says how.",
         "",
         "## Coverage",
         "",
-        "| Sizes | Labels | Added from a tag | Sizes a bench model takes |",
+        "| Rolls | Sizes | Other codes a tag may carry | Added from a tag |",
         "|---|---|---|---|",
-        f"| {len(sizes)} | {len(rows)} | {added} | {bench} |",
+        f"| {len(rows)} | {len(sizes)} | {codes_held} | {added} |",
         "",
-        "The printer heads this bench drives take these label widths: 12, 14 and 15 mm on the D-series, 20 to 50 mm on the B-series, and 10 to 14 mm on the B18. A catalogue entry names the machines the vendor ships it for; the `bench` column below only says that one of this bench's heads appears in that list.",
+        "| Model | Rolls listed for it |",
+        "|---|---|",
+        *[f"| {m} | {per_model[m]} |" for m in models],
         "",
-        "## Labels by size",
+        "A roll counts for a model when the vendor lists it for a B1, B18, B21, D11 or D110, its variants included: a D110_M is a D110 here, and a D11S a D11. A roll listed for none of them is kept, and its size may still be printable if a roll measures that way.",
         "",
-        "`paper` is the vendor's paper type for the roll; niimbench does not send it and always tells the printer label type 1, a gap label, and `bench` lists the models here that the vendor lists the label for. A dash in `bench` means no model this bench drives is on the label's machine list, but the size may still be printable if a roll measures that way.",
+        "## A row",
+        "",
+        "One roll per line of `catalogue.json`:",
+        "",
+        "| Field | What it is |",
+        "|---|---|",
+        "| `barcode` | The vendor's barcode for the roll |",
+        "| `codes` | Its other barcodes, any of which the tag may carry instead: the vendor gives one roll several. Each code names one roll |",
+        "| `name`, `name_zh` | The vendor's English and Chinese names |",
+        "| `width_mm`, `height_mm` | The size as the vendor lists it, in whole millimetres, a half rounded up. Some rolls are listed length first, 40x12 for a 12 mm roll of 40 mm labels; the server turns those to face the head |",
+        "| `paper_type` | " + ", ".join(f"{k} {v}" for k, v in PAPER.items()) + "; niimbench does not send it and always tells the printer label type 1, a gap label |",
+        "| `consumable_type` | The vendor's consumable kind |",
+        "| `machines` | The printers the vendor lists the roll for |",
+        "| `ours` | The models this bench drives among them |",
+        "",
+        "`src/catalogue.json`, the copy the binary embeds, keeps `barcode`, `codes`, `name`, the size and `paper_type`, with the Chinese name where there is no English one.",
+        "",
+        "## Looking up a roll",
+        "",
+        "The trace names the barcode a roll's tag answered with. This finds the roll a barcode names, here `6972842743558`; put the trace's barcode in its place:",
+        "",
+        "```sh",
+        "jq -c '.[] | select(.barcode == \"6972842743558\" or (.codes | index(\"6972842743558\")))' docs/labels/catalogue.json",
+        "```",
+        "",
+        "## Sizes",
+        "",
+        "| Size, mm | Rolls | Models |",
+        "|---|---|---|",
     ]
-    for width, height in sizes:
-        out += ["", f"### {width}x{height} mm", "", "| Barcode | Name | Paper | Bench |", "|---|---|---|---|"]
-        for r in by_size[(width, height)]:
-            name = (r["name"] or r["name_zh"]).replace("|", "\\|")
-            paper = PAPER.get(r["paper_type"], str(r["paper_type"]))
-            out.append(f"| `{r['barcode']}` | {name} | {paper} | {', '.join(r['ours']) or '—'} |")
+    for (width, height), held in sizes.items():
+        ours = sorted({m for r in held for m in r["ours"]}, key=models.index)
+        out.append(f"| {width}x{height} | {len(held)} | {', '.join(ours)} |")
     out += [
         "",
         "## Regenerating",
@@ -199,7 +251,7 @@ def page(rows):
         "make labels",
         "```",
         "",
-        "The script walks `industryTemplate/sizes` and then pages through `industryTemplate/page` for each size in both orientations. It needs no key and no account. It also writes `src/catalogue.json`, the copy the binary embeds, and this page, so the table the code reads and this one cannot drift apart. The rows in `added.json` that the listing lacks are kept.",
+        "The script walks `industryTemplate/sizes` and then pages through `industryTemplate/page` for each size in both orientations. It needs no key and no account. It keeps one row per barcode and writes the JSON, the embedded copy and this page. The rows in `added.json` whose barcode the listing does not answer for are kept.",
         "",
         "Add the rolls a server saved from the cloud, from `.niimbench.rolls.json` in the folder it runs from:",
         "",
@@ -207,9 +259,9 @@ def page(rows):
         "make add-rolls",
         "```",
         "",
-        "A roll's tag can carry a barcode the listing does not hold: one roll has several. When the server asks the cloud about one, it saves the answer. This asks the cloud for that barcode's full record, keeps it in `added.json`, and writes it into the catalogue. `ROLLS=` names another saved file, such as the app's under `~/.local/state/niimbench` or `~/Library/Application Support/niimbench`, or a barcode.",
+        "A tag the catalogue does not know, once the server has asked the cloud about it, is saved there. This asks the cloud for that barcode's full record, keeps it in `added.json`, and writes it into the catalogue. `ROLLS=` names another saved file, such as the app's under `~/.local/state/niimbench` or `~/Library/Application Support/niimbench`, or a barcode.",
         "",
-        "Check that the JSON, the embedded copy and this page agree:",
+        "Check that the JSON, the embedded copy and this page agree, and that no code names two rolls:",
         "",
         "```sh",
         "make labels-check",
@@ -218,10 +270,16 @@ def page(rows):
     return "\n".join(out) + "\n"
 
 
+def embedded(rows):
+    """What the binary reads of a row."""
+    keys = ("barcode", "codes", "name", "width_mm", "height_mm", "paper_type")
+    return [{k: r.get(k, []) for k in keys} | {"name": r["name"] or r["name_zh"]} for r in rows]
+
+
 def write(rows):
     rows = ordered(rows)
     CATALOGUE.write_text(lines(rows))
-    EMBEDDED.write_text(lines(rows))
+    EMBEDDED.write_text(lines(embedded(rows)))
     PAGE_MD.write_text(page(rows))
     print(f"{len(rows)} labels", file=sys.stderr)
 
@@ -242,10 +300,10 @@ def barcodes(args):
 
 def add(args):
     rows = read(CATALOGUE)
-    held = {r["barcode"] for r in rows}
+    have = held(rows)
     new = []
     for barcode in dict.fromkeys(barcodes(args)):
-        if barcode in held:
+        if barcode in have:
             print(f"  {barcode}: already in the catalogue", file=sys.stderr)
             continue
         item = post("/api/template/getCloudTemplateByOneCode", {"oneCode": barcode}).get("data")
@@ -255,10 +313,11 @@ def add(args):
             continue
         # The tag's barcode, which the binary looks up; the answer's own
         # `barcode` can be another of the same roll's codes.
-        found = row(item) | {"barcode": barcode}
+        others = (codes(item) | {item.get("barcode") or barcode}) - have - {barcode}
+        found = row(item) | {"barcode": barcode, "codes": sorted(others)}
         print(f"  {barcode}: {found['width_mm']}x{found['height_mm']} {found['name']}", file=sys.stderr)
         new.append(found)
-        held.add(barcode)
+        have |= {barcode, *others}
     if not new:
         return
     ADDED.write_text(lines(ordered(read(ADDED) + new)))
@@ -268,16 +327,20 @@ def add(args):
 def check():
     rows = read(CATALOGUE)
     problems = []
-    if EMBEDDED.read_text() != CATALOGUE.read_text():
-        problems.append(f"{EMBEDDED.relative_to(ROOT)} is not a copy of {CATALOGUE.relative_to(ROOT)}")
+    if EMBEDDED.read_text() != lines(embedded(rows)):
+        problems.append(f"{EMBEDDED.relative_to(ROOT)} is not what the binary reads of {CATALOGUE.relative_to(ROOT)}")
     if CATALOGUE.read_text() != lines(ordered(rows)):
         problems.append(f"{CATALOGUE.relative_to(ROOT)} is not sorted one row per line")
     if PAGE_MD.read_text() != page(rows):
         problems.append(f"{PAGE_MD.relative_to(ROOT)} does not match {CATALOGUE.relative_to(ROOT)}")
-    held = {r["barcode"] for r in rows}
-    missing = [r["barcode"] for r in read(ADDED) if r["barcode"] not in held]
+    have = held(rows)
+    missing = [r["barcode"] for r in read(ADDED) if r["barcode"] not in have]
     if missing:
         problems.append(f"rows in added.json missing from the catalogue: {', '.join(missing)}")
+    claimed = collections.Counter(c for r in rows for c in [r["barcode"], *r.get("codes", [])])
+    twice = sorted(c for c, n in claimed.items() if n > 1)
+    if twice:
+        problems.append(f"codes that name more than one row: {', '.join(twice[:10])}")
     for problem in problems:
         print(problem, file=sys.stderr)
     if problems:

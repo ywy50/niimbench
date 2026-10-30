@@ -14,10 +14,14 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 ### Added
 
 - **Dithering for pictures.** **Ink**, in the Image panel, picks **Threshold**, as before, one of five error diffusions (Floyd–Steinberg, Atkinson, Jarvis–Judice–Ninke, Stucki, Sierra) run back and forth along the rows, a Bayer pattern, or halftone dots, which a thermal head prints most evenly. **Brightness**, **Contrast**, **Gamma** and **Sharpen** adjust a picture first, only the pictures are changed, a large photo is shrunk with the browser's best filter, and the settings are remembered in the browser. The printer has no greys of its own: it takes one bit per dot, and its heat, **Density**, is one setting for the whole label.
-
 - A roll the cloud answers for is saved to `.niimbench.rolls.json` beside the token file, and is known offline from then on, without ticking **Ask the cloud** again; the status says `(saved)`. `POST /api/label/roll` answers `"source":"saved"` for it.
 - `make add-rolls` writes the rolls a server saved into the catalogue itself, with the vendor's names and machines, keyed on the tag's barcode. They are kept in `docs/labels/added.json`, and `make labels` keeps them. `docs/labels/README.md` is now written by the same script, and `make labels-check`, part of `make test`, checks the catalogue, its embedded copy and its page agree.
 - The catalogue holds the 12x22 mm roll whose tag reads `6972842743558`, which the vendor's listing lacks.
+- A catalogue row can list `codes`, the other barcodes the vendor gives the same roll, and a roll is found by any of them. `make add-rolls` records them, and `make labels-check` checks no code names two rolls.
+
+### Changed
+
+- `docs/labels/README.md` counts the rolls by size and model instead of listing each one; `docs/labels/catalogue.json` holds every roll, and the page says how to look one up. `src/catalogue.json`, the copy the binary embeds, keeps only what the binary reads: the barcode and codes, the name, the size and the paper type.
 
 ### Fixed
 
