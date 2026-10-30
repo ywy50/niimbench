@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-31
+
 ### Added
 
 - A roll swapped in the printer is noticed: while the page is in view and nothing is printing, it reads the picked printer's roll every five seconds and sets the label to a new one, saying `roll changed:`; the same roll only updates the labels left. A printer that stops answering is not asked again until it is picked or **Fetch** asks. `POST /api/label/roll` takes `"quiet": true` to keep those reads out of the trace.
@@ -277,7 +279,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/ywy50/niimbench/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/ywy50/niimbench/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/ywy50/niimbench/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ywy50/niimbench/compare/v0.8.2...v0.9.0
