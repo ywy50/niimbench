@@ -915,11 +915,24 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
     };
     defer service.allocator.free(barcode);
 
+    service.catalogue.readSaved(req.io, std.Io.Dir.cwd()) catch |err| {
+        if (tracer(service)) |t| t.warn("roll", "{s}: {s}", .{ labels.saved_path, @errorName(err) });
+    };
     const listed = switch (rollSource(&service.catalogue, barcode, parsed.value.allow_cloud, parsed.value.from_cloud)) {
         .catalogue => |known| known,
-        .cloud => lookupLabelMm(req.io, service.allocator, barcode) catch |err| {
-            if (tracer(service)) |t| t.failure("roll", "{s} cloud lookup: {s}", .{ barcode, @errorName(err) });
-            return .{ .status = .bad_request, .body = "{\"error\":\"roll lookup failed\"}" };
+        .cloud => cloud: {
+            const found = askCloud(req.io, service.allocator, barcode) catch |err| {
+                if (tracer(service)) |t| t.failure("roll", "{s} cloud lookup: {s}", .{ barcode, @errorName(err) });
+                return .{ .status = .bad_request, .body = "{\"error\":\"roll lookup failed\"}" };
+            };
+            defer service.allocator.free(found.name);
+            // Kept, so the roll is known offline from now on.
+            if (service.catalogue.save(req.io, std.Io.Dir.cwd(), found)) |saved| {
+                if (saved) if (tracer(service)) |t| t.info("roll", "{s} saved to {s}", .{ barcode, labels.saved_path });
+            } else |err| {
+                if (tracer(service)) |t| t.warn("roll", "{s} not saved: {s}", .{ barcode, @errorName(err) });
+            }
+            break :cloud labelLookup{ .width_mm = found.width_mm, .height_mm = found.height_mm, .source = "cloud" };
         },
         .unknown => return .{ .status = .bad_request, .body = "{\"error\":\"unknown roll\"}" },
     };
@@ -972,8 +985,9 @@ fn pxHeight(model: raster.Model, mm: labelLookup) usize {
 /// Where a barcode is resolved. The catalogue compiled into the binary is the
 /// default and needs nothing from the caller: it holds every roll the vendor
 /// lists, so a request for one of those never touches the network. Only a
-/// barcode the catalogue does not carry can go further, and only when the
-/// caller has opted in with `allow_cloud`.
+/// barcode the catalogue does not carry can go further: to the rolls saved
+/// from earlier cloud answers, and then to the cloud, only when the caller has
+/// opted in with `allow_cloud`.
 const RollSource = union(enum) {
     catalogue: labelLookup,
     cloud,
@@ -987,6 +1001,13 @@ fn rollSource(catalogue: *const labels.Catalogue, barcode: []const u8, allow_clo
             .width_mm = known.width_mm,
             .height_mm = known.height_mm,
             .source = "catalogue",
+        } };
+    }
+    if (catalogue.findSaved(barcode)) |known| {
+        return .{ .catalogue = .{
+            .width_mm = known.width_mm,
+            .height_mm = known.height_mm,
+            .source = "saved",
         } };
     }
     return if (allow_cloud) .cloud else .unknown;
@@ -1048,21 +1069,6 @@ fn labelIdFor(model: raster.Model, width_mm: u16, height_mm: u16) ?[]const u8 {
     return null;
 }
 
-fn jsonUint(body: []const u8, key: []const u8) ?u16 {
-    const at = std.mem.indexOf(u8, body, key) orelse return null;
-    var i = at + key.len;
-    while (i < body.len and body[i] == ' ') i += 1;
-    var n: u32 = 0;
-    var any = false;
-    while (i < body.len and body[i] >= '0' and body[i] <= '9') : (i += 1) {
-        any = true;
-        n = n * 10 + (body[i] - '0');
-        if (n > 1000) return null;
-    }
-    if (!any) return null;
-    return @intCast(n);
-}
-
 const labelLookup = struct { width_mm: u16, height_mm: u16, source: []const u8 };
 
 /// The roll with its width across the head. The vendor lists some rolls the
@@ -1087,7 +1093,8 @@ test "a roll listed length first is turned to face the head" {
     try std.testing.expectEqual(@as(u16, 50), facingTheHead(.b21, .{ .width_mm = 50, .height_mm = 30, .source = "" }).width_mm);
 }
 
-fn lookupLabelMm(io: std.Io, allocator: std.mem.Allocator, barcode: []const u8) !labelLookup {
+/// Ask the vendor's cloud what roll a barcode is. The caller owns `name`.
+fn askCloud(io: std.Io, allocator: std.mem.Allocator, barcode: []const u8) !labels.Label {
     var client: std.http.Client = .{ .allocator = allocator, .io = io };
     defer client.deinit();
     var sink: std.Io.Writer.Allocating = .init(allocator);
@@ -1105,11 +1112,54 @@ fn lookupLabelMm(io: std.Io, allocator: std.mem.Allocator, barcode: []const u8) 
         .response_writer = &sink.writer,
     });
     if (result.status != .ok) return error.LookupFailed;
-    return .{
-        .width_mm = jsonUint(sink.written(), "\"width\":") orelse return error.LookupFailed,
-        .height_mm = jsonUint(sink.written(), "\"height\":") orelse return error.LookupFailed,
-        .source = "cloud",
+    return cloudLabel(allocator, barcode, sink.written());
+}
+
+/// The roll in the cloud's answer. Its size is the template's own, at the top
+/// of `data`: the elements laid out on the template come first in the answer
+/// and carry their own `width` and `height`, and the first `"width":` in a
+/// 12x22 roll's answer is a 17.68x4.03 mm text box.
+fn cloudLabel(allocator: std.mem.Allocator, barcode: []const u8, body: []const u8) !labels.Label {
+    const Reply = struct {
+        data: ?struct {
+            width: f64 = 0,
+            height: f64 = 0,
+            name: ?[]const u8 = null,
+            paperType: ?u8 = null,
+        } = null,
     };
+    const parsed = std.json.parseFromSlice(Reply, allocator, body, .{ .ignore_unknown_fields = true }) catch return error.LookupFailed;
+    defer parsed.deinit();
+    const data = parsed.value.data orelse return error.LookupFailed;
+    return .{
+        .barcode = barcode,
+        .width_mm = try wholeMm(data.width),
+        .height_mm = try wholeMm(data.height),
+        .paper_type = data.paperType orelse 1,
+        .name = try allocator.dupe(u8, data.name orelse ""),
+    };
+}
+
+fn wholeMm(mm: f64) !u16 {
+    if (!(mm >= 1 and mm <= 1000)) return error.LookupFailed;
+    return @intFromFloat(@round(mm));
+}
+
+test "the cloud's roll size is the template's, not its first element's" {
+    const gpa = std.testing.allocator;
+    // Trimmed from the answer for a 12x22 roll's tag: the elements come first.
+    const body =
+        \\{"code":1,"data":{"elements":[{"type":"text","width":17.682018,"height":4.028509}],
+        \\"name":"RP12*22-260","paperType":1,"height":12,"width":22}}
+    ;
+    const roll = try cloudLabel(gpa, "6972842743558", body);
+    defer gpa.free(roll.name);
+    try std.testing.expectEqual(@as(u16, 22), roll.width_mm);
+    try std.testing.expectEqual(@as(u16, 12), roll.height_mm);
+    try std.testing.expectEqualStrings("RP12*22-260", roll.name);
+    try std.testing.expectEqualStrings("6972842743558", roll.barcode);
+    try std.testing.expectError(error.LookupFailed, cloudLabel(gpa, "0", "{\"code\":0,\"data\":null}"));
+    try std.testing.expectError(error.LookupFailed, cloudLabel(gpa, "0", "{\"data\":{\"width\":0,\"height\":12}}"));
 }
 
 /// A found name and address come from a device and land in JSON, so a quote or
@@ -2759,6 +2809,23 @@ test "the catalogue answers by default and the cloud needs opting in" {
     // Fetch from cloud asks the cloud even for a roll the catalogue holds:
     // the fallback when the catalogue's copy is wrong.
     switch (rollSource(&catalogue, "01222281", false, true)) {
+        .cloud => {},
+        else => return error.ExpectedCloud,
+    }
+
+    // A roll saved from an earlier cloud answer is answered locally, without
+    // the cloud allowed, and Fetch still asks past it.
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+    _ = try catalogue.save(std.testing.io, tmp.dir, .{ .barcode = "00000000", .width_mm = 22, .height_mm = 12, .paper_type = 1, .name = "" });
+    switch (rollSource(&catalogue, "00000000", false, false)) {
+        .catalogue => |mm| {
+            try std.testing.expectEqual(@as(u16, 22), mm.width_mm);
+            try std.testing.expectEqualStrings("saved", mm.source);
+        },
+        else => return error.ExpectedSaved,
+    }
+    switch (rollSource(&catalogue, "00000000", false, true)) {
         .cloud => {},
         else => return error.ExpectedCloud,
     }

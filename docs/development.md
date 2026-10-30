@@ -43,7 +43,7 @@ The [Makefile](../Makefile) calls `zig build`. `make help` lists the targets and
 | [../tools/drive.js](../tools/drive.js) | Drives the page in a headless browser with real input and screenshots (`make drive`) |
 | [../tools/screens.drive.js](../tools/screens.drive.js) | Resizes the page from a phone to a wide desktop, and with the text panel dragged narrow, and fails when anything is cut off or overlaps (`make screens-test`) |
 | [../tools/stray-test.sh](../tools/stray-test.sh) | Checks no server outlives its launcher, even one killed with SIGKILL (`make stray-test`) |
-| [../tools/fetch-labels.py](../tools/fetch-labels.py) | Refreshes the label catalogue from the vendor cloud (`make labels`); standard library only, run through `uv` |
+| [../tools/fetch-labels.py](../tools/fetch-labels.py) | Writes the label catalogue, its embedded copy and its page: refreshed from the vendor cloud (`make labels`), with the rolls a server saved added (`make add-rolls`), checked (`make labels-check`); standard library only, run through `uv` |
 | [../tools/linux-dist.sh](../tools/linux-dist.sh) | Builds one Linux release: the static binary, its tarball, and the `.deb` and `.rpm` |
 | [../tools/linux-package-check.sh](../tools/linux-package-check.sh) | Installs a `.deb` or `.rpm` in a clean container and checks what it installed and that it starts |
 | [../tools/get-nfpm.sh](../tools/get-nfpm.sh) | Puts the pinned, checksum-checked nfpm that makes the packages in a folder |
