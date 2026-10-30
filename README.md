@@ -299,7 +299,7 @@ gh attestation verify niimbench-macos.zip --repo ywy50/niimbench
 | `src/example_source.zig` | The example JSON source, a plugin |
 | `tools/` | The browser and node checks `make test` runs, and the page lint |
 | `tools/with-server.sh`, `tools/drive.js`, `tools/trace.sh`, `tools/harness.patch.yml` | The throwaway-server and browser-driving harness |
-| `tools/fetch-labels.py` | The label catalogue fetcher |
+| `tools/fetch-labels.py` | Writes the label catalogue, its embedded copy and its page |
 | `tools/linux-dist.sh`, `tools/linux-package-check.sh`, `tools/get-nfpm.sh` | The Linux release and package builds, and their checks |
 | `tools/aur.sh`, `tools/aur-check.sh`, `tools/aur-push.sh` | The Arch package's build, check and AUR publishing |
 | `tools/macos-app.sh`, `tools/macos-app-check.sh` | The Mac app's build and check |

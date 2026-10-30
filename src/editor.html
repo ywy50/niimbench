@@ -446,7 +446,7 @@
         </label>
         <label>Address <input id="addr" placeholder="/dev/ttyACM0 or Bluetooth address"></label>
         <div class="cloud-row span">
-          <label class="check" title="The label catalogue is compiled in. Tick this to let a barcode it does not know be looked up in Niimbot's cloud.">
+          <label class="check" title="The label catalogue is compiled in. Tick this to let a barcode it does not know be looked up in Niimbot's cloud. The answer is saved, so that roll is known offline from then on.">
             <input id="cloud-lookup" type="checkbox"> Ask the cloud for unknown label rolls
           </label>
           <button type="button" id="cloud-fetch" title="Read the loaded roll and ask Niimbot's cloud for its size now, even when the built-in catalogue knows it: the fallback for a roll the catalogue lists wrong.">Fetch</button>
@@ -3106,7 +3106,7 @@
         const payload = await readJson(response);
         if (!response.ok) {
           status.textContent = payload.error === "unknown roll"
-            ? "roll not in the catalogue \u2014 tick \"Ask the cloud\" to look it up"
+            ? "roll not in the catalogue \u2014 tick \"Ask the cloud\" to look it up once"
             : payload.error || "no roll";
           return;
         }
@@ -3134,7 +3134,7 @@
           : null;
         refreshPrinterStatus();
         status.textContent = payload.width_mm + "\u00d7" + payload.height_mm + " mm roll"
-          + (payload.source === "cloud" ? " (cloud)" : "") + (labelsLeft(addr) ? " · " + labelsLeft(addr) : "");
+          + ({ cloud: " (cloud)", saved: " (saved)" }[payload.source] || "") + (labelsLeft(addr) ? " · " + labelsLeft(addr) : "");
       } catch (error) {
         status.textContent = "roll unread";
       }
