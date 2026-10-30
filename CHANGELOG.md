@@ -11,6 +11,8 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-30
+
 ### Added
 
 - **Dithering for pictures.** **Ink**, in the Image panel, picks **Threshold**, as before, one of five error diffusions (Floyd–Steinberg, Atkinson, Jarvis–Judice–Ninke, Stucki, Sierra) run back and forth along the rows, a Bayer pattern, or halftone dots, which a thermal head prints most evenly. **Brightness**, **Contrast**, **Gamma** and **Sharpen** adjust a picture first, only the pictures are changed, a large photo is shrunk with the browser's best filter, and the settings are remembered in the browser. The printer has no greys of its own: it takes one bit per dot, and its heat, **Density**, is one setting for the whole label.
@@ -271,7 +273,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/ywy50/niimbench/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/ywy50/niimbench/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/ywy50/niimbench/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/ywy50/niimbench/compare/v0.8.1...v0.8.2
