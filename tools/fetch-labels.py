@@ -2,12 +2,13 @@
 # /// script
 # requires-python = ">=3.11"
 # ///
-"""Keep the NIIMBOT label catalogue: docs/labels/catalogue.json, the copy the
-binary embeds in src/catalogue.json, and the page docs/labels/README.md.
+"""Keep the NIIMBOT label catalogue: docs/labels/catalogue.json, what the
+binary embeds of it in src/catalogue.txt, and the page docs/labels/README.md.
 
-The vendor cloud groups its label templates by series and page size, and counts
-them by the barcode an RFID tag on the roll carries. A refresh walks the size
-list, queries each size in both orientations, and keeps one record per barcode.
+A roll's RFID tag carries a barcode. A refresh sweeps the vendor's listing of
+every label paper, in its English and its Chinese views, keeps the rolls for a
+printer this bench drives, one row per barcode with the roll's other codes,
+and adds the rows of the older size listing the sweep lacks.
 
 A roll can carry a barcode that listing does not hold. The server saves the
 rolls the cloud answered for in `.niimbench.rolls.json`; `--add` asks the
@@ -25,6 +26,7 @@ same bytes.
 """
 
 import collections
+import http.client
 import json
 import math
 import pathlib
@@ -43,7 +45,7 @@ PAUSE = 0.15
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CATALOGUE = ROOT / "docs/labels/catalogue.json"
 ADDED = ROOT / "docs/labels/added.json"
-EMBEDDED = ROOT / "src/catalogue.json"
+EMBEDDED = ROOT / "src/catalogue.txt"
 PAGE_MD = ROOT / "docs/labels/README.md"
 
 PAPER = {1: "gap", 2: "black", 5: "transparent", 10: "black mark gap"}
@@ -108,7 +110,88 @@ def collect():
     return records.values()
 
 
+# The phone app's own listing: every label paper, and the templates laid out
+# on them, in one language's view at a time. English holds the rolls sold
+# outside China; the Chinese view holds many more. Past about 7300 rows a
+# query answers empty pages, and the server gives up on a query it cannot
+# answer in about 3 s, which an unnarrowed Chinese query is, so a view is
+# narrowed by height, by industry and by width until each slice fits.
+CAP = 7000
+INDUSTRIES = (39, 270, 31, 36, 21, 1033, 275)
 ALIASES = ("amazonCodeBeijing", "amazonCodeWuhan", "sparedCode", "virtualBarCode")
+
+
+def std_page(filters, page):
+    answer = {}
+    for attempt in range(5):
+        try:
+            answer = post("/api/stdTemplate/page", {"page": page, "limit": PAGE} | filters)
+        except (OSError, ValueError, http.client.HTTPException) as err:
+            answer = {"message": str(err)}
+        if answer.get("code") == 1:
+            time.sleep(PAUSE)
+            return answer.get("data") or {}
+        time.sleep(2 + 2 * attempt)
+    sys.exit(f"stdTemplate/page {filters} page {page}: {answer.get('message')}")
+
+
+# ponytail: a slice is narrowed only by the values the industries and the
+# sizes already seen offer, so a row in no industry, about 1 in 1000, or of a
+# height no listing shows, is missed when its slice is too big.
+def walk(filters, splits, keep):
+    first = std_page(filters, 1)
+    total = first.get("total") or 0
+    if total > CAP and splits:
+        (key, values), rest = splits[0], splits[1:]
+        for value in values:
+            walk(filters | {key: value}, rest, keep)
+        return
+    if total > CAP:
+        print(f"  {filters}: {total} rows, only the first {CAP}", file=sys.stderr)
+    for item in first.get("list") or []:
+        keep(item)
+    for page in range(2, math.ceil(min(total, CAP) / PAGE) + 1):
+        for item in std_page(filters, page).get("list") or []:
+            keep(item)
+    if total:
+        print(f"  {filters}: {total}", file=sys.stderr)
+
+
+def slim(item):
+    """What a row is made from, without the template's layout."""
+    profile = item.get("profile") or {}
+    extrain = profile.get("extrain") or {}
+    keys = ("id", "barcode", "name", "names", "width", "height", "paperType", "consumableType")
+    return {k: item.get(k) for k in keys} | {
+        "profile": {
+            "machineName": profile.get("machineName"),
+            "extrain": {k: extrain.get(k) for k in ALIASES + ("templateClass", "barcodeCategoryMap")},
+        }
+    }
+
+
+def sweep():
+    """Every label for a printer this bench drives, from the English and the
+    Chinese views, slimmed."""
+    items = {}
+
+    def keep(item):
+        if item.get("id") and row(item)["ours"]:
+            items[item["id"]] = slim(item)
+
+    every = []
+
+    def seen(item):
+        every.append((item.get("width"), item.get("height")))
+        keep(item)
+
+    walk({"languageCode": "en"}, [("industryId", INDUSTRIES)], seen)
+    sizes = get("/api/industryTemplate/sizes")["data"]
+    every += [(s["width"], s["height"]) for series in sizes for s in series.get("sizes", [])]
+    values = sorted({v for pair in every for v in pair if v})
+    for height in values:
+        walk({"languageCode": "zh-cn", "height": height}, [("industryId", INDUSTRIES), ("width", values)], keep)
+    return items.values()
 
 
 def codes(item):
@@ -118,6 +201,29 @@ def codes(item):
     found = {extrain.get(k) for k in ALIASES}
     found |= {v for k, v in (extrain.get("barcodeCategoryMap") or {}).items() if k != "materialModelSn"}
     return {c for c in found if isinstance(c, str) and c.isdigit() and c != item.get("barcode")}
+
+
+def rows_of(items):
+    """One row per barcode, with the other codes that name it. A label paper
+    wins over a template laid out on it, a barcode wins over another row's
+    alias, and an alias two rows claim goes to the first in order."""
+    best = {}
+    others = {}
+    for item in items:
+        barcode = item.get("barcode")
+        if not barcode or any(c.isspace() for c in barcode) or not whole(item.get("width") or 0) or not whole(item.get("height") or 0):
+            continue
+        rank = (((item.get("profile") or {}).get("extrain") or {}).get("templateClass") != 0, item.get("id") or 0)
+        if barcode not in best or rank < best[barcode][0]:
+            best[barcode] = (rank, item)
+        others.setdefault(barcode, set()).update(codes(item))
+    rows = ordered([row(item) for _, item in best.values()])
+    taken = {r["barcode"] for r in rows}
+    for r in rows:
+        mine = sorted(others[r["barcode"]] - taken)
+        taken.update(mine)
+        r["codes"] = mine
+    return rows
 
 
 def row(item):
@@ -192,9 +298,9 @@ def page(rows):
     out = [
         "# Label catalogue",
         "",
-        "Every label the vendor cloud offers in the sizes its own template endpoint groups by series, and the rolls added from a tag the cloud answered for, keyed on the barcodes an RFID tag on the roll can carry. The app reads a roll's barcode from the tag and looks it up here to size the canvas, so this is the reference for what a roll can be. [catalogue.json](catalogue.json) beside this page holds every roll; this page counts them.",
+        "Every label roll the vendor's cloud lists for a printer this bench drives, and the rolls added from a tag the cloud answered for, keyed on the barcodes an RFID tag on the roll can carry. The app reads a roll's barcode from the tag and looks it up here to size the canvas, so this is the reference for what a roll can be. [catalogue.json](catalogue.json) beside this page holds every roll; this page counts them.",
         "",
-        "`catalogue.json`, the copy the binary embeds and this page are written by [tools/fetch-labels.py](../../tools/fetch-labels.py); do not edit them by hand. [Regenerating](#regenerating) says how.",
+        "`catalogue.json`, what the binary embeds of it and this page are written by [tools/fetch-labels.py](../../tools/fetch-labels.py); do not edit them by hand. [Regenerating](#regenerating) says how.",
         "",
         "## Coverage",
         "",
@@ -206,7 +312,7 @@ def page(rows):
         "|---|---|",
         *[f"| {m} | {per_model[m]} |" for m in models],
         "",
-        "A roll counts for a model when the vendor lists it for a B1, B18, B21, D11 or D110, its variants included: a D110_M is a D110 here, and a D11S a D11. A roll listed for none of them is kept, and its size may still be printable if a roll measures that way.",
+        "A roll is here when the vendor lists it for a B1, B18, B21, D11 or D110, its variants included: a D110_M is a D110 here, and a D11S a D11.",
         "",
         "## A row",
         "",
@@ -223,7 +329,7 @@ def page(rows):
         "| `machines` | The printers the vendor lists the roll for |",
         "| `ours` | The models this bench drives among them |",
         "",
-        "`src/catalogue.json`, the copy the binary embeds, keeps `barcode`, `codes`, `name`, the size and `paper_type`, with the Chinese name where there is no English one.",
+        "`src/catalogue.txt` is what the binary embeds of it: one roll per line, the barcode, the width and the height, then the other codes, separated by spaces. A lookup needs nothing else, and the text is a fraction of the JSON's size.",
         "",
         "## Looking up a roll",
         "",
@@ -251,7 +357,7 @@ def page(rows):
         "make labels",
         "```",
         "",
-        "The script walks `industryTemplate/sizes` and then pages through `industryTemplate/page` for each size in both orientations. It needs no key and no account. It keeps one row per barcode and writes the JSON, the embedded copy and this page. The rows in `added.json` whose barcode the listing does not answer for are kept.",
+        "The script pages through `stdTemplate/page`, the phone app's own listing of every label paper and the templates laid out on them, in the English view and then the Chinese one, which holds many more. A query stops answering past about 7300 rows and gives up after about 3 seconds, so the Chinese view is asked one height at a time, and a height with more rows than that is narrowed by industry and then by width. That is a few thousand requests, under an hour. It needs no key and no account. It keeps the rolls for a printer this bench drives and one row per barcode, a label paper over a template laid out on it. It then walks the older `industryTemplate` listing, by size, for the rows the sweep lacks, keeps the rows in `added.json` whose barcode nothing answers for, and writes the JSON, the embedded text and this page.",
         "",
         "Add the rolls a server saved from the cloud, from `.niimbench.rolls.json` in the folder it runs from:",
         "",
@@ -271,15 +377,17 @@ def page(rows):
 
 
 def embedded(rows):
-    """What the binary reads of a row."""
-    keys = ("barcode", "codes", "name", "width_mm", "height_mm", "paper_type")
-    return [{k: r.get(k, []) for k in keys} | {"name": r["name"] or r["name_zh"]} for r in rows]
+    """What the binary reads of the catalogue: per roll, the barcode, the
+    width and the height, then the other codes."""
+    return "".join(
+        " ".join([r["barcode"], str(r["width_mm"]), str(r["height_mm"]), *r.get("codes", [])]) + "\n" for r in rows
+    )
 
 
 def write(rows):
     rows = ordered(rows)
     CATALOGUE.write_text(lines(rows))
-    EMBEDDED.write_text(lines(embedded(rows)))
+    EMBEDDED.write_text(embedded(rows))
     PAGE_MD.write_text(page(rows))
     print(f"{len(rows)} labels", file=sys.stderr)
 
@@ -327,7 +435,7 @@ def add(args):
 def check():
     rows = read(CATALOGUE)
     problems = []
-    if EMBEDDED.read_text() != lines(embedded(rows)):
+    if EMBEDDED.read_text() != embedded(rows):
         problems.append(f"{EMBEDDED.relative_to(ROOT)} is not what the binary reads of {CATALOGUE.relative_to(ROOT)}")
     if CATALOGUE.read_text() != lines(ordered(rows)):
         problems.append(f"{CATALOGUE.relative_to(ROOT)} is not sorted one row per line")
@@ -356,7 +464,8 @@ def main():
     elif args == ["--check"]:
         check()
     elif not args:
-        write(merged([row(item) for item in collect()], read(ADDED)))
+        listed = [r for r in (row(item) for item in collect()) if r["ours"]]
+        write(merged(merged(rows_of(sweep()), listed), read(ADDED)))
     else:
         sys.exit(__doc__)
 
