@@ -2782,10 +2782,11 @@ test "the catalogue answers by default and the cloud needs opting in" {
 
     // A roll the catalogue carries is answered locally whether or not the
     // caller allowed the cloud, so it can never reach the network by accident.
+    // The vendor lists this roll length first; `facingTheHead` turns it.
     switch (rollSource(&catalogue, "01222281", false, false)) {
         .catalogue => |mm| {
-            try std.testing.expectEqual(@as(u16, 12), mm.width_mm);
-            try std.testing.expectEqual(@as(u16, 40), mm.height_mm);
+            try std.testing.expectEqual(@as(u16, 40), mm.width_mm);
+            try std.testing.expectEqual(@as(u16, 12), mm.height_mm);
             try std.testing.expectEqualStrings("catalogue", mm.source);
         },
         else => return error.ExpectedCatalogue,

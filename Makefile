@@ -24,7 +24,7 @@ help:
 		'  make test            every check below, then zig build test' \
 		'  make build           zig build' \
 		'  make print           print a binary P5 PGM (see PRINT)' \
-		'  make labels          refresh the label catalogue from the vendor cloud' \
+		'  make labels          refresh the label catalogue from the vendor cloud, under an hour' \
 		'  make add-rolls       add the rolls a server saved from the cloud (see ROLLS)' \
 		'  make labels-check    check the catalogue JSON, its embedded copy and its page agree' \
 		'  make lint            lint the editor script, check references and doc links' \
@@ -162,10 +162,11 @@ print:
 	@test -n "$(ADDR)" || { echo "set ADDR= to a tty path or a Bluetooth address"; exit 1; }
 	$(ZIG) build run -- print --image "$(IMAGE)" --addr "$(ADDR)" --model "$(MODEL)" --conn "$(CONN)" --density "$(DENSITY)" --rotate "$(ROTATE)" $(ARGS)
 
-# The label catalogue: `docs/labels/catalogue.json`, the copy the binary
-# embeds in `src/catalogue.json`, and the page `docs/labels/README.md`, all
-# written by one script. The vendor's endpoints need no key. A refresh keeps
-# the rolls added from a tag, which `docs/labels/added.json` holds.
+# The label catalogue: `docs/labels/catalogue.json`, what the binary embeds
+# of it in `src/catalogue.txt`, and the page `docs/labels/README.md`, all
+# written by one script. The vendor's endpoints need no key. A refresh sweeps
+# the vendor's whole listing, a few thousand requests and under an hour, and
+# keeps the rolls added from a tag, which `docs/labels/added.json` holds.
 labels:
 	uv run tools/fetch-labels.py
 

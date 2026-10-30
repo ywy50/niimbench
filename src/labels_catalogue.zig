@@ -1,12 +1,14 @@
 const std = @import("std");
 
-/// The vendor's label catalogue, compiled into the binary from
-/// `docs/labels/catalogue.json`. A roll's RFID tag carries a barcode and not
-/// its size, and the printer does not report the size either, so the barcode is
-/// the only handle a caller has. With the catalogue in the binary that handle
+/// The vendor's label catalogue, compiled into the binary from what
+/// `tools/fetch-labels.py` writes of `docs/labels/catalogue.json`: one roll
+/// per line, its barcode, width and height in millimetres, then its other
+/// codes, separated by spaces. A roll's RFID tag carries a barcode and not its
+/// size, and the printer does not report the size either, so the barcode is the
+/// only handle a caller has. With the catalogue in the binary that handle
 /// resolves offline, which is what lets a printer's roll set the canvas without
 /// asking the cloud or the person at the keyboard.
-pub const catalogue_json = @embedFile("catalogue.json");
+pub const catalogue_text = @embedFile("catalogue.txt");
 
 /// Rolls the vendor's cloud answered for that the compiled-in list lacks,
 /// kept in the folder the server runs from, beside its token file. A roll
@@ -26,28 +28,23 @@ pub const Label = struct {
 pub const Catalogue = struct {
     allocator: std.mem.Allocator,
     entries: std.StringHashMap(Label),
-    storage: std.json.Parsed([]const Raw),
     /// Rolls saved from the cloud, read from `saved_path` on first use and
     /// written back whole when one is added. Their strings live in `arena`.
     saved: std.StringArrayHashMapUnmanaged(Label) = .empty,
     arena: std.heap.ArenaAllocator,
     saved_read: bool = false,
 
+    /// A saved roll, as `save` writes it.
     const Raw = struct {
         barcode: []const u8 = "",
         name: []const u8 = "",
-        name_zh: []const u8 = "",
         width_mm: u16 = 0,
         height_mm: u16 = 0,
         paper_type: u8 = 1,
-        machines: []const []const u8 = &.{},
-        ours: []const []const u8 = &.{},
-        codes: []const []const u8 = &.{},
     };
 
     pub fn deinit(self: *Catalogue) void {
         self.entries.deinit();
-        self.storage.deinit();
         self.arena.deinit();
     }
 
@@ -73,7 +70,13 @@ pub const Catalogue = struct {
         const rolls = try std.json.parseFromSliceLeaky([]const Raw, arena, text, .{ .ignore_unknown_fields = true });
         for (rolls) |raw| {
             if (raw.barcode.len == 0 or raw.width_mm == 0 or raw.height_mm == 0) continue;
-            try self.saved.put(arena, raw.barcode, labelOf(raw));
+            try self.saved.put(arena, raw.barcode, .{
+                .barcode = raw.barcode,
+                .width_mm = raw.width_mm,
+                .height_mm = raw.height_mm,
+                .paper_type = raw.paper_type,
+                .name = raw.name,
+            });
         }
     }
 
@@ -109,45 +112,39 @@ pub const Catalogue = struct {
 };
 
 /// Parse the embedded catalogue. It is read once, at plugin apply, and a
-/// malformed file is an error there rather than a surprise at the first print.
+/// malformed line is an error there rather than a surprise at the first print.
+/// The entries borrow from the text, which lives as long as the binary.
 pub fn load(allocator: std.mem.Allocator) !Catalogue {
-    return parse(allocator, catalogue_json);
+    return parse(allocator, catalogue_text);
 }
 
-fn parse(allocator: std.mem.Allocator, json: []const u8) !Catalogue {
-    const storage = try std.json.parseFromSlice([]const Catalogue.Raw, allocator, json, .{
-        .ignore_unknown_fields = true,
-    });
-    errdefer storage.deinit();
+fn parse(allocator: std.mem.Allocator, text: []const u8) !Catalogue {
     var entries = std.StringHashMap(Label).init(allocator);
     errdefer entries.deinit();
-    for (storage.value) |raw| {
-        // A roll with no barcode cannot be looked up, and a zero dimension is
-        // not a label.
-        if (raw.barcode.len == 0 or raw.width_mm == 0 or raw.height_mm == 0) continue;
-        try entries.put(raw.barcode, labelOf(raw));
+    var lines = std.mem.tokenizeScalar(u8, text, '\n');
+    while (lines.next()) |line| {
+        var fields = std.mem.tokenizeScalar(u8, line, ' ');
+        const barcode = fields.next() orelse continue;
+        const label: Label = .{
+            .barcode = barcode,
+            .width_mm = std.fmt.parseInt(u16, fields.next() orelse "", 10) catch return error.BadCatalogue,
+            .height_mm = std.fmt.parseInt(u16, fields.next() orelse "", 10) catch return error.BadCatalogue,
+            .paper_type = 1,
+            .name = "",
+        };
+        // A zero dimension is not a label.
+        if (label.width_mm == 0 or label.height_mm == 0) continue;
+        try entries.put(barcode, label);
         // The other barcodes the vendor gives the same roll, any of which its
         // tag may carry.
-        for (raw.codes) |code| try entries.put(code, labelOf(raw));
+        while (fields.next()) |code| try entries.put(code, label);
     }
-    return .{ .allocator = allocator, .entries = entries, .storage = storage, .arena = .init(allocator) };
-}
-
-fn labelOf(raw: Catalogue.Raw) Label {
-    return .{
-        .barcode = raw.barcode,
-        .width_mm = raw.width_mm,
-        .height_mm = raw.height_mm,
-        .paper_type = raw.paper_type,
-        .name = if (raw.name.len > 0) raw.name else raw.name_zh,
-    };
+    return .{ .allocator = allocator, .entries = entries, .arena = .init(allocator) };
 }
 
 test "a roll is found by any of its codes" {
     const gpa = std.testing.allocator;
-    var catalogue = try parse(gpa,
-        \\[{"barcode":"6971501224551","codes":["6972842743558","09132052"],"name":"RP12*22-260","width_mm":22,"height_mm":12,"paper_type":1}]
-    );
+    var catalogue = try parse(gpa, "01222281 40 12\n6971501224551 22 12 6972842743558 09132052\n");
     defer catalogue.deinit();
     for ([_][]const u8{ "6971501224551", "6972842743558", "09132052" }) |code| {
         const roll = catalogue.find(code) orelse return error.NoRoll;
@@ -155,20 +152,26 @@ test "a roll is found by any of its codes" {
         try std.testing.expectEqualStrings("6971501224551", roll.barcode);
     }
     try std.testing.expect(catalogue.find("07132101") == null);
+    try std.testing.expectError(error.BadCatalogue, parse(gpa, "01222281 40\n"));
 }
 
 test "the embedded catalogue holds the roll this bench prints to" {
     const gpa = std.testing.allocator;
     var catalogue = try load(gpa);
     defer catalogue.deinit();
-    try std.testing.expect(catalogue.count() > 100);
+    try std.testing.expect(catalogue.count() > 10000);
 
     // The 12x40 white roll a D110_M ships with, and the barcode its tag
-    // answered with on this machine.
+    // answered with on this machine. The vendor lists it length first; the
+    // roll route turns it to face the head.
     const roll = catalogue.find("01222281") orelse return error.NoRoll;
-    try std.testing.expectEqual(@as(u16, 12), roll.width_mm);
-    try std.testing.expectEqual(@as(u16, 40), roll.height_mm);
-    try std.testing.expectEqual(@as(u8, 1), roll.paper_type);
+    try std.testing.expectEqual(@as(u16, 40), roll.width_mm);
+    try std.testing.expectEqual(@as(u16, 12), roll.height_mm);
+
+    // A 12x22 roll whose tag carries one of the roll's other codes.
+    const other = catalogue.find("6972842743558") orelse return error.NoRoll;
+    try std.testing.expectEqual(@as(u16, 22), other.width_mm);
+    try std.testing.expectEqual(@as(u16, 12), other.height_mm);
 
     try std.testing.expect(catalogue.find("99999999") == null);
 }
@@ -181,11 +184,12 @@ test "a catalogue roll sizes a canvas for the head" {
     defer catalogue.deinit();
 
     const roll = catalogue.find("01222281") orelse return error.NoRoll;
-    // 12x40 mm at 203 dpi is 96x320 dots. This is the label the roll route
-    // hands the editor when a printer answers with this barcode; the 2 mm the
-    // D-series keeps back from the gap comes off when the page is printed.
-    const width: usize = roll.width_mm * raster.dots_per_mm;
-    const height: usize = roll.height_mm * raster.dots_per_mm;
+    // 12x40 mm at 203 dpi is 96x320 dots, the narrower side across the head
+    // as the roll route turns it. This is the label the route hands the
+    // editor when a printer answers with this barcode; the 2 mm the D-series
+    // keeps back from the gap comes off when the page is printed.
+    const width: usize = @as(usize, @min(roll.width_mm, roll.height_mm)) * raster.dots_per_mm;
+    const height: usize = @as(usize, @max(roll.width_mm, roll.height_mm)) * raster.dots_per_mm;
     try std.testing.expectEqual(@as(usize, 96), width);
     try std.testing.expectEqual(@as(usize, 320), height);
 

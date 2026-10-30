@@ -294,7 +294,7 @@ gh attestation verify niimbench-macos.zip --repo ywy50/niimbench
 | `src/ble.zig`, `src/dbus.zig` | Linux: the BLE print channel, and the BlueZ D-Bus client it and the finder use |
 | `src/corebluetooth.zig` | macOS: the Bluetooth finder and print channel, through CoreBluetooth |
 | `src/discovery.zig` | Found-device list, the finder registry, and the model lookup |
-| `src/labels_catalogue.zig`, `src/catalogue.json` | The label roll catalogue compiled into the binary |
+| `src/labels_catalogue.zig`, `src/catalogue.txt` | The label roll catalogue compiled into the binary |
 | `src/trace.zig` | The in-memory log, published as the `trace` service |
 | `src/example_source.zig` | The example JSON source, a plugin |
 | `tools/` | The browser and node checks `make test` runs, and the page lint |
