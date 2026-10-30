@@ -174,6 +174,11 @@ function judge(report) {
   // narrows the label to the head.
   check("the status follows the picked printer and the last job keeps its own line",
     Boolean(report.printer) && report.printer.ok === true, JSON.stringify(report.printer));
+  // A roll swapped in the printer: the same roll read again changes only the
+  // count, another roll sets the page, and an unreachable printer ends the
+  // watching.
+  check("a swapped roll is noticed and the same roll read again changes nothing",
+    Boolean(report.watch) && report.watch.ok === true, JSON.stringify(report.watch));
   // Every font the renderer carries is offered in the row's font menu.
   check("a row offers every font the server carries",
     Boolean(report.fonts) && report.fonts.served > 1 && report.fonts.offered === report.fonts.served,

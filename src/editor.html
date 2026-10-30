@@ -598,7 +598,7 @@
     /// `tools/canvas.test.js` reads this list out of the page and fails when a
     /// name on it has no check there, so a new fact about the page cannot
     /// arrive without something watching it.
-    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "density", "fit", "rotate", "image", "dither", "select", "undo", "printer"];
+    const harnessChecks = ["ink", "outline", "view", "errors", "drag", "row", "resize", "edit", "fonts", "vertical", "roll", "turned", "density", "fit", "rotate", "image", "dither", "select", "undo", "printer", "watch"];
 
     /// The protocol: every step a boot must record, and the reason it cannot
     /// fall behind. `tools/trace-test.js` reads this array out of the page and
@@ -3087,14 +3087,24 @@
       line.classList.toggle("failed", failed);
     }
 
+    // What the last read of the roll found: the printer and the barcode, or
+    // the printer and why there was none. A read that finds the same leaves
+    // the canvas alone. `rollWatch` says whether to keep reading it.
+    let rollSeen = "";
+    let rollWatch = false;
+    let rollReading = false;
+
     /// The printer's tag names the roll. The size comes back as millimetres
     /// and selects the matching label, when one is known.
     /// `fromCloud` asks Niimbot's cloud for the size even for a roll the
-    /// catalogue knows, for **Fetch**.
-    async function readRoll(fromCloud = false) {
+    /// catalogue knows, for **Fetch**. `watching` is the read repeated to
+    /// notice a roll swapped in the printer: it changes the canvas only when
+    /// the roll changed, and keeps the server's trace quiet otherwise.
+    async function readRoll(fromCloud = false, watching = false) {
       const addr = document.querySelector("#addr").value;
       if (!addr) return;
-      status.textContent = "reading the roll";
+      if (!watching) status.textContent = "reading the roll";
+      rollReading = true;
       try {
         const response = await post("/api/label/roll", {
           conn: document.querySelector("#conn").value,
@@ -3102,8 +3112,25 @@
           model: document.querySelector("#model").value,
           allow_cloud: document.querySelector("#cloud-lookup").checked,
           from_cloud: fromCloud,
+          quiet: watching,
         });
         const payload = await readJson(response);
+        const seen = addr + " " + (payload.barcode || payload.error || "");
+        const same = watching && seen === rollSeen;
+        rollSeen = seen;
+        // An unknown roll, or none with the lid open, is read again to
+        // notice the next one. A printer that cannot be reached is not,
+        // until it is picked again or Fetch asks.
+        rollWatch = response.ok || payload.error === "no roll" || payload.error === "unknown roll";
+        if (same) {
+          // The same roll: only its count moves, as the printer feeds labels.
+          if (response.ok && Number.isInteger(payload.labels_total) && Number.isInteger(payload.labels_used)) {
+            rollCount = { addr, total: payload.labels_total, used: payload.labels_used };
+            refreshPrinterStatus();
+          }
+          return;
+        }
+        if (watching) traceLine("info", "roll changed: " + (payload.barcode || payload.error));
         if (!response.ok) {
           status.textContent = payload.error === "unknown roll"
             ? "roll not in the catalogue \u2014 tick \"Ask the cloud\" to look it up once"
@@ -3133,12 +3160,24 @@
           ? { addr, total: payload.labels_total, used: payload.labels_used }
           : null;
         refreshPrinterStatus();
-        status.textContent = payload.width_mm + "\u00d7" + payload.height_mm + " mm roll"
+        status.textContent = (watching ? "roll changed: " : "") + payload.width_mm + "\u00d7" + payload.height_mm + " mm roll"
           + ({ cloud: " (cloud)", saved: " (saved)" }[payload.source] || "") + (labelsLeft(addr) ? " · " + labelsLeft(addr) : "");
       } catch (error) {
-        status.textContent = "roll unread";
+        rollWatch = false;
+        if (!watching) status.textContent = "roll unread";
+      } finally {
+        rollReading = false;
       }
     }
+
+    // A roll swapped in the printer: while the page is in view and no job is
+    // printing, the tag is read again every five seconds, a tenth of a second
+    // over a link already up, and the canvas follows only when the roll
+    // changed.
+    window.setInterval(() => {
+      if (!rollWatch || rollReading || document.hidden || document.querySelector("#print").disabled) return;
+      readRoll(false, true);
+    }, 5000);
 
     // ---- wiring ----------------------------------------------------------
 
@@ -4715,6 +4754,58 @@
       return verdict;
     }
 
+    /// A roll swapped in the printer, with the roll answers stubbed: a read
+    /// that finds the roll the page already has leaves the canvas and the
+    /// status alone and only moves the count, one that finds another roll sets
+    /// the page to it, and a printer that stops answering ends the watching.
+    /// Then put everything back.
+    async function selfCheckWatch() {
+      const was = snapshot();
+      const fetchWas = window.fetch;
+      const roll = (barcode, width, height, used) => ({
+        status: 200,
+        body: { barcode, width_mm: width / 8, height_mm: height / 8, source: "catalogue", width, height, id: null, labels_total: 186, labels_used: used },
+      });
+      const answers = [];
+      let last = null;
+      // A tick of the watch's own timer between the steps gets the last answer
+      // again, which is the same roll and changes nothing.
+      window.fetch = (url, options) => {
+        if (!String(url).includes("/api/label/roll")) return fetchWas(url, options);
+        if (answers.length) last = answers.shift();
+        return Promise.resolve(new window.Response(JSON.stringify(last.body), { status: last.status, headers: { "content-type": "application/json" } }));
+      };
+      const verdict = {};
+      try {
+        document.querySelector("#conn").value = "usb";
+        document.querySelector("#addr").value = "/nonexistent/niimbench-watch";
+        answers.push(roll("01222281", 96, 320, 35));
+        await readRoll();
+        verdict.first = { height: Number(document.querySelector("#height").value), watching: rollWatch };
+        status.textContent = "unchanged";
+        answers.push(roll("01222281", 96, 320, 40));
+        await readRoll(false, true);
+        verdict.same = { status: status.textContent, height: Number(document.querySelector("#height").value), left: labelsLeft("/nonexistent/niimbench-watch") };
+        answers.push(roll("6972842743558", 96, 176, 0));
+        await readRoll(false, true);
+        verdict.swapped = { status: status.textContent, height: Number(document.querySelector("#height").value) };
+        answers.push({ status: 400, body: { error: "ConnectionTimedOut" } });
+        await readRoll(false, true);
+        verdict.gone = { watching: rollWatch };
+      } finally {
+        window.fetch = fetchWas;
+      }
+      verdict.ok = verdict.first.height === 320 && verdict.first.watching &&
+        verdict.same.status === "unchanged" && verdict.same.height === 320 && verdict.same.left === "146 of 186 labels left" &&
+        verdict.swapped.status.startsWith("roll changed: 12\u00d722 mm roll") && verdict.swapped.height === 176 &&
+        verdict.gone.watching === false;
+      rollSeen = "";
+      rollCount = null;
+      restore(was, true);
+      await refresh();
+      return verdict;
+    }
+
     /// Write the report into the page, where `--dump-dom` can read it. A
     /// `--dump-dom` run is a plain subprocess with no protocol to time out.
     window.__niimbenchSelfCheck = async function selfCheck() {
@@ -4745,6 +4836,7 @@
         report.select = harness ? await selfCheckSelect() : null;
         report.undo = harness ? await selfCheckUndo() : null;
         report.printer = harness ? await selfCheckPrinter() : null;
+        report.watch = harness ? await selfCheckWatch() : null;
       }
       const view = viewSize();
       report.view = { width: view.width, height: view.height };
@@ -4793,7 +4885,8 @@
         " dither " + (report.dither ? (report.dither.ok ? "ok" : "BROKEN") : "not exercised") +
         " select " + (report.select ? (report.select.ok ? "ok" : "BROKEN") : "not exercised") +
         " undo " + (report.undo ? (report.undo.ok ? "ok" : "BROKEN") : "not exercised") +
-        " printer " + (report.printer ? (report.printer.ok ? "ok" : "BROKEN") : "not exercised"));
+        " printer " + (report.printer ? (report.printer.ok ? "ok" : "BROKEN") : "not exercised") +
+        " watch " + (report.watch ? (report.watch.ok ? "ok" : "BROKEN") : "not exercised"));
     });
   </script>
 </body>

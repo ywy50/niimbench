@@ -775,6 +775,10 @@ const RollBody = struct {
     /// Ask the cloud first, even for a roll the catalogue holds: the fallback
     /// when the catalogue's copy of a roll is wrong. Asking is consent.
     from_cloud: bool = false,
+    /// A read the page repeats every few seconds to notice a roll swapped in
+    /// the printer. The answer is the same; the trace leaves out the lines
+    /// that would repeat with it, and keeps failures and saves.
+    quiet: bool = false,
 };
 
 const InfoBody = struct {
@@ -914,6 +918,7 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
         return .{ .status = .bad_request, .body = "{\"error\":\"no roll\"}" };
     };
     defer service.allocator.free(barcode);
+    const said = if (parsed.value.quiet) null else tracer(service);
 
     service.catalogue.readSaved(req.io, std.Io.Dir.cwd()) catch |err| {
         if (tracer(service)) |t| t.warn("roll", "{s}: {s}", .{ labels.saved_path, @errorName(err) });
@@ -938,7 +943,7 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
     };
     const mm = facingTheHead(model, listed);
     if (mm.width_mm != listed.width_mm) {
-        if (tracer(service)) |t| t.info("roll", "{s} is listed {d}x{d} mm, turned to {d}x{d}", .{ barcode, listed.width_mm, listed.height_mm, mm.width_mm, mm.height_mm });
+        if (said) |t| t.info("roll", "{s} is listed {d}x{d} mm, turned to {d}x{d}", .{ barcode, listed.width_mm, listed.height_mm, mm.width_mm, mm.height_mm });
     }
 
     var out: std.ArrayList(u8) = .empty;
@@ -955,9 +960,9 @@ pub fn readRoll(service: *HttpService, req: RequestView) !Response {
     // is what the printer goes by when it refuses a roll as finished.
     if (roll.?.counts) |counts| {
         try out.print(service.allocator, ",\"labels_total\":{d},\"labels_used\":{d}", .{ counts.total, counts.used });
-        if (tracer(service)) |t| t.info("roll", "{s}: {d} of {d} labels used", .{ barcode, counts.used, counts.total });
+        if (said) |t| t.info("roll", "{s}: {d} of {d} labels used", .{ barcode, counts.used, counts.total });
     }
-    if (tracer(service)) |t| t.info("roll", "{s} -> {d}x{d} mm {d}x{d} dots from the {s}", .{
+    if (said) |t| t.info("roll", "{s} -> {d}x{d} mm {d}x{d} dots from the {s}", .{
         barcode, mm.width_mm, mm.height_mm, pxWidth(model, mm), pxHeight(model, mm), mm.source,
     });
     try out.append(service.allocator, '}');
