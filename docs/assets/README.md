@@ -15,7 +15,7 @@ The mark is a die-cut label with an `n` in square thermal dots. The wordmark is 
 | [icon.svg](icon.svg) | The mark's dots on a filled blue tile, which reads on any background and at 16 pixels: the favicon, which the editor inlines, an app icon, an avatar |
 | [icon-512.png](icon-512.png), [apple-touch-icon.png](apple-touch-icon.png) | `icon.svg` at 512 and 180 pixels, for places that take no SVG |
 | [social-preview.png](social-preview.png), [social-preview.svg](social-preview.svg) | The 1280×640 card GitHub shows for a shared link. It is set by hand, under the repository's Settings → Social preview |
-| [editor.png](editor.png), [editor.drive.js](editor.drive.js) | The README's screenshot, and the steps `make drive` runs to take it |
+| [editor.png](editor.png), [editor.drive.js](editor.drive.js) | The README's screenshot, a D110_M connected with its roll read, and the steps `make drive` runs to take it |
 
 The colours are the editor's own: accent `#0b62d4` and ink `#1b1c1f` on light, accent `#6ba6ff` and ink `#e7e9ee` on dark. The two dots over the `i`s always take the frame's colour. Leave clear space round the logo at least the frame's corner radius.
 
@@ -36,8 +36,8 @@ The social card, whose two lines of text are set in Noto Sans and Noto Sans Mono
 rsvg-convert -w 1280 -h 640 social-preview.svg -o social-preview.png
 ```
 
-The README screenshot, from the repository root:
+The README screenshot is taken with a D110 or D110_M on and in reach, paired over Bluetooth, and a 12x40 mm roll in it. `NIIMBENCH_PRINTERS=1` boots the throwaway server with its printer plugins, so the startup scan finds the printer and reads its roll. From the repository root:
 
 ```sh
-make drive STEPS=docs/assets/editor.drive.js SIZE=1440x900 DRIVE_OUT=docs/assets
+NIIMBENCH_PRINTERS=1 make drive STEPS=docs/assets/editor.drive.js SIZE=1440x900 DRIVE_OUT=docs/assets
 ```
