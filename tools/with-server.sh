@@ -18,6 +18,10 @@
 # plugged in or paired cannot change what the command sees, and nothing it does
 # reaches a printer.
 #
+# NIIMBENCH_PRINTERS=1 boots the built-in list instead, printer plugins
+# included, for a run that is meant to reach the printer at hand, such as the
+# README's screenshot.
+#
 # It cannot be left running. It is started with `--parent`, so the kernel kills
 # it when this script exits, even when this script is killed with SIGKILL and
 # never runs the cleanup below. `make stray-test` holds that in place.
@@ -42,7 +46,7 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-cp "$root/tools/harness.patch.yml" "$dir/cordis.patch.yml"
+[ -n "${NIIMBENCH_PRINTERS:-}" ] || cp "$root/tools/harness.patch.yml" "$dir/cordis.patch.yml"
 # `exec`, so `$!` is the server and not a shell wrapped round it. Killing the
 # wrapper instead orphaned the server, which is how sixty of them piled up.
 # `$$` is this script, which `exec` makes the server's parent.
