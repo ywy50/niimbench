@@ -126,7 +126,7 @@ Everything below is detail.
 ## What it is
 
 <p align="center">
-  <img src="docs/assets/editor.png" alt="The niimbench label editor for Niimbot printers: a 50×30 mm label in the preview with three text fields in their dashed boxes, beside the label and printer panel" width="900">
+  <img src="docs/assets/editor.png" alt="The niimbench label editor with a D110_M connected over Bluetooth: its 12×40 mm roll read, 113 of 186 labels left, and niimbench fitted across the label in the vertical view" width="900">
 </p>
 
 One process serves the editor page on `127.0.0.1`, renders labels, and prints them over USB serial or Bluetooth Low Energy, through BlueZ on Linux and CoreBluetooth on macOS. The browser is a client of that server, and so is anything else that calls its HTTP API.
