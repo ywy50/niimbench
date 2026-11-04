@@ -13,13 +13,14 @@ DRIVE_OUT ?= zig-out/drive
 ROLLS ?= .niimbench.rolls.json
 
 .DEFAULT_GOAL := run
-.PHONY: help test build run serve trace print labels add-rolls labels-check lint protocol-test view-test box-test panel-test dither-test canvas-test trace-test stray-test drive screens-test macos-app macos-app-check
+.PHONY: help test build run serve serve-insecure trace print labels add-rolls labels-check lint protocol-test view-test box-test panel-test dither-test canvas-test trace-test stray-test drive screens-test macos-app macos-app-check
 
 help:
 	@printf '%s\n' \
 		'TARGETS' \
 		'  make                 serve the editor and open it' \
 		'  make serve           serve on 127.0.0.1 without opening a browser' \
+		'  make serve-insecure  serve on every network with no token: anyone on them can print' \
 		'  make trace           print the log of the server running in this checkout' \
 		'  make test            every check below, then zig build test' \
 		'  make build           zig build' \
@@ -68,6 +69,12 @@ run:
 
 serve:
 	$(ZIG) build run -- --no-open $(if $(PORT),--port $(PORT),) $(ARGS)
+
+# For a phone or another computer on the network: every address, no token.
+# Anything that reaches the port can print and stop the server, so this is for
+# a network you trust. PORT defaults to 8080 here, so the address stays put.
+serve-insecure:
+	$(ZIG) build run -- --no-open --host 0.0.0.0 --no-token --port $(or $(PORT),8080) $(ARGS)
 
 trace:
 	@test -r .niimbench.token || { echo "no .niimbench.token here: start the server with make or make serve"; exit 1; }

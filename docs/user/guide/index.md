@@ -16,6 +16,16 @@ The page opens with one text field that says `niimbench`, centred on the label i
 - **Closing the tab is enough.** An open page checks in every half minute; when none has for 30 minutes, the server stops by itself. Start it with `--idle-minutes N` for another time, or `--idle-minutes 0` to keep it running.
 - **Starting niimbench again from the same folder while it runs** opens the running one in the browser instead of a second server. With `--no-open` it says what is running and exits instead. On a Mac, opening `niimbench.app` again does the same, and so does choosing the **niimbench** menu entry again on Linux.
 
+## Open it from another device
+
+The server listens on this machine only, and the startup URL carries a token the page needs. To open the editor from a phone or another computer on the same network instead, start it with every address and no token:
+
+```bash
+make serve-insecure
+```
+
+Then open `http://` and this machine's address, port 8080, on the other device, for example `http://192.168.0.10:8080/`; the startup line says the port. Anything that reaches that port can print and stop the server, so do this only on a network you trust. Use the address, not a name such as `box.local`, which is refused. The binary takes the same as `--host 0.0.0.0 --no-token`, and `--host` alone keeps the token: open the startup URL with the machine's address in place of `127.0.0.1`.
+
 ## Arrange the panels
 
 The page is four panels on a grid: **Preview**, **Label and printer**, **Text** and **Image**. Drag a panel by its title to move it, and drag the striped corner at its bottom right to resize it. Both snap to the grid, which is 24 columns across the window.

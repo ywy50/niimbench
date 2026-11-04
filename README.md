@@ -147,7 +147,7 @@ The documentation index is [docs/README.md](docs/README.md).
 - **Start.** `make`, the desktop menu entry, the Mac app or the binary itself. niimbench listens on `127.0.0.1` with an ephemeral port, prints a URL that carries the session token, and opens it with `xdg-open` (`open` on macOS).
 - **Stop.** Pick **Quit niimbench…** in the menu on the **niimbench** name. It also stops by itself once no page has been open for 30 minutes.
 - **Start it again while it runs.** That opens the running one instead of a second server ([docs/user/guide/index.md](docs/user/guide/index.md#stop-and-start-again)).
-- **Other ways to run it.** `make serve` leaves the URL for a browser you already have. `PORT=8080` picks the port. `make help` lists the targets and variables.
+- **Other ways to run it.** `make serve` leaves the URL for a browser you already have. `PORT=8080` picks the port. `make serve-insecure` serves every network on port 8080 with no token, for a phone on a network you trust; anyone who reaches it can print. `make help` lists the targets and variables.
 
 ### The desktop menu entry
 

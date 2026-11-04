@@ -54,6 +54,9 @@ const help_text =
     \\niimbench
     \\  serve the editor (default)
     \\    --port 8080
+    \\    --host 127.0.0.1    the address to listen on; 0.0.0.0 is every network
+    \\    --no-token          serve without the token: anything that reaches the
+    \\                        port can print and stop the server
     \\    --no-open
     \\    --idle-minutes 30   stop when no page has talked to it this long; 0 never stops
     \\    --app               started by the Mac app or a desktop menu: keep the lock
@@ -175,6 +178,8 @@ test "the app folder is Application Support on a Mac and state elsewhere" {
 fn runServe(init: std.process.Init, args: []const []const u8) !void {
     var open_browser = true;
     var app = false;
+    var host: []const u8 = "127.0.0.1";
+    var no_token = false;
     var port: u16 = 0;
     var parent: ?std.posix.pid_t = null;
     var idle_minutes: u32 = 30;
@@ -184,6 +189,14 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
             open_browser = false;
         } else if (std.mem.eql(u8, args[i], "--app")) {
             app = true;
+        } else if (std.mem.eql(u8, args[i], "--no-token")) {
+            no_token = true;
+        } else if (std.mem.eql(u8, args[i], "--host")) {
+            i += 1;
+            if (i >= args.len) return error.MissingHost;
+            // An address, not a name: it is what the listener binds.
+            _ = std.Io.net.IpAddress.parse(args[i], 0) catch return error.BadHost;
+            host = args[i];
         } else if (std.mem.startsWith(u8, args[i], "-psn_")) {
             // A process serial number, which macOS may pass an app it starts.
         } else if (std.mem.eql(u8, args[i], "--port")) {
@@ -226,10 +239,12 @@ fn runServe(init: std.process.Init, args: []const []const u8) !void {
     var ctx = cordis.Context.init(init.gpa);
     defer ctx.deinit();
     ctx.http_port = port;
+    ctx.http_host = host;
     try load.loadDefault(&ctx, init.io);
     // A boot list whose `http` row could not start leaves no server: say so,
     // rather than stopping on a missing service.
     const http: *server.HttpService = @ptrCast(@alignCast(ctx.get("http") orelse return error.HttpInactive));
+    http.no_token = no_token;
     switch (try server.serve(http, init.io, open_browser, idle_minutes)) {
         .quit => std.debug.print("niimbench stopped: quit from the page\n", .{}),
         .idle => std.debug.print("niimbench stopped: no page for {d} minutes\n", .{idle_minutes}),

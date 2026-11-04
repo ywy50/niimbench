@@ -219,6 +219,9 @@ pub const RequestView = struct {
     body: []const u8,
     /// Raw `Cookie` header. Empty when the caller did not send one.
     cookie: []const u8 = "",
+    /// Raw `Host` and `Origin` headers, read only with `no_token`.
+    host: []const u8 = "",
+    origin: []const u8 = "",
 };
 
 pub const Response = struct {
@@ -247,13 +250,25 @@ pub const HttpService = struct {
     catalogue: labels.Catalogue,
     /// Set by `POST /api/quit`. `serve` returns after the request that set it.
     quit_requested: bool = false,
+    /// `--no-token`: a request is served without the token, so another
+    /// device on the network opens the page by address alone. The Host and
+    /// Origin checks in `dispatch` still keep web pages in a browser out.
+    no_token: bool = false,
 
     pub fn dispatch(self: *HttpService, req: RequestView) !Response {
         const from_query = queryValue(req.query, "token");
         var cookie_name_buf: [24]u8 = undefined;
         const presented = from_query orelse cookieValue(req.cookie, cookieName(&cookie_name_buf, self.port)) orelse
             cookieValue(req.cookie, "niimbench") orelse "";
-        if (!std.mem.eql(u8, presented, &self.token_hex)) {
+        if (self.no_token) {
+            // Without the token, these are what keep a web page out. A page
+            // that rebinds its own name to this address arrives under that
+            // name, so a request must name the server by its address; a page
+            // on another site posting here sends its own origin.
+            if (!byAddress(req.host) or (req.origin.len > 0 and !sameOrigin(req.origin, req.host))) {
+                return .{ .status = .forbidden, .body = "{\"error\":\"not this server's page\"}" };
+            }
+        } else if (!std.mem.eql(u8, presented, &self.token_hex)) {
             return .{ .status = .unauthorized, .body = "{\"error\":\"bad token\"}" };
         }
         // The startup URL carries the token once. A browser that opens it
@@ -1513,9 +1528,10 @@ pub fn serve(service: *HttpService, io: std.Io, open_browser: bool, idle_minutes
     // The port the cookie is named after, which `--port 0` leaves to the system.
     service.port = port;
 
+    var host_buf: [64]u8 = undefined;
     var url_buf: [128]u8 = undefined;
     const url = try std.fmt.bufPrint(&url_buf, "http://{s}:{d}/?token={s}\n", .{
-        service.host, port, service.token_hex,
+        urlHost(&host_buf, service.host), port, service.token_hex,
     });
     var stdout_buffer: [256]u8 = undefined;
     // Streaming, not positional: stdout is often a log file that stderr
@@ -1524,6 +1540,14 @@ pub fn serve(service: *HttpService, io: std.Io, open_browser: bool, idle_minutes
     var stdout_file: std.Io.File.Writer = .initStreaming(.stdout(), io, &stdout_buffer);
     try stdout_file.interface.writeAll(url);
     try stdout_file.interface.flush();
+    if (!std.mem.startsWith(u8, service.host, "127.") and !std.mem.eql(u8, service.host, "::1")) {
+        std.debug.print("niimbench: listening on {s} port {d}; from another device open http://<this machine's address>:{d}/{s}{s}\n", .{
+            service.host, port, port, if (service.no_token) "" else "?token=", if (service.no_token) "" else &service.token_hex,
+        });
+    }
+    if (service.no_token) {
+        std.debug.print("niimbench: --no-token: anything that reaches this port can print and stop the server\n", .{});
+    }
     // The server still runs without the file; only `make trace` needs it.
     const wrote_token = if (writeTokenFile(io, .cwd(), url)) true else |err| blk: {
         std.log.warn("{s}: {s}", .{ token_path, @errorName(err) });
@@ -1603,6 +1627,11 @@ fn handle(service: *HttpService, io: std.Io, stream: std.Io.net.Stream) void {
     const cookie_len = @min(request_cookie.len, request_cookie_buf.len);
     @memcpy(request_cookie_buf[0..cookie_len], request_cookie[0..cookie_len]);
     const cookie = request_cookie_buf[0..cookie_len];
+    // Copied for the same reason, and only read with `--no-token`.
+    var host_buf: [256]u8 = undefined;
+    var origin_buf: [256]u8 = undefined;
+    const host = copyHeader(&host_buf, headerValue(&request, "host"));
+    const origin = copyHeader(&origin_buf, headerValue(&request, "origin"));
 
     var body: []u8 = &.{};
     defer if (body.len != 0) service.allocator.free(body);
@@ -1638,6 +1667,8 @@ fn handle(service: *HttpService, io: std.Io, stream: std.Io.net.Stream) void {
         .query = query,
         .body = body,
         .cookie = cookie,
+        .host = host,
+        .origin = origin,
     }) catch |err| Response{
         .status = .internal_server_error,
         .body = @errorName(err),
@@ -1668,6 +1699,62 @@ fn handle(service: *HttpService, io: std.Io, stream: std.Io.net.Stream) void {
         .keep_alive = false,
         .extra_headers = headers[0..count],
     }) catch {};
+}
+
+/// A header too long for `buf` is cut, which no address or origin is.
+fn copyHeader(buf: []u8, value: []const u8) []const u8 {
+    const len = @min(value.len, buf.len);
+    @memcpy(buf[0..len], value[0..len]);
+    return buf[0..len];
+}
+
+/// A `Host` header that names this server by an address, `192.168.1.5:8080`
+/// or `[::1]:8080`, or as `localhost`, with or without its port. A name is
+/// refused: DNS can point any name at this address, and a page served under
+/// that name would be a page of this server to the browser.
+fn byAddress(host: []const u8) bool {
+    if (host.len == 0) return false;
+    const name = if (host[0] == '[')
+        host[1 .. std.mem.indexOfScalar(u8, host, ']') orelse return false]
+    else if (std.mem.indexOfScalar(u8, host, ':')) |colon| host[0..colon] else host;
+    if (std.ascii.eqlIgnoreCase(name, "localhost")) return true;
+    _ = std.Io.net.IpAddress.parse(name, 0) catch return false;
+    return true;
+}
+
+/// An `Origin` of the same scheme-less host and port the request names.
+fn sameOrigin(origin: []const u8, host: []const u8) bool {
+    const rest = if (std.mem.startsWith(u8, origin, "http://")) origin["http://".len..] else return false;
+    return std.ascii.eqlIgnoreCase(rest, host);
+}
+
+/// The host to put in a URL for `listen`: the loopback address for a
+/// wildcard, which a browser on this machine reaches and will not open as
+/// such, and brackets round any other IPv6 address.
+fn urlHost(buf: []u8, listen: []const u8) []const u8 {
+    if (std.mem.eql(u8, listen, "0.0.0.0")) return "127.0.0.1";
+    if (std.mem.eql(u8, listen, "::")) return "[::1]";
+    if (std.mem.indexOfScalar(u8, listen, ':') != null) return std.fmt.bufPrint(buf, "[{s}]", .{listen}) catch listen;
+    return listen;
+}
+
+test "without the token a request must name the server by its address" {
+    try std.testing.expect(byAddress("127.0.0.1:8080"));
+    try std.testing.expect(byAddress("192.168.1.5:8080"));
+    try std.testing.expect(byAddress("192.168.1.5"));
+    try std.testing.expect(byAddress("[::1]:8080"));
+    try std.testing.expect(byAddress("localhost:8080"));
+    try std.testing.expect(!byAddress("evil.example:8080"));
+    try std.testing.expect(!byAddress("printer.local:8080"));
+    try std.testing.expect(!byAddress(""));
+    try std.testing.expect(sameOrigin("http://192.168.1.5:8080", "192.168.1.5:8080"));
+    try std.testing.expect(!sameOrigin("http://evil.example", "192.168.1.5:8080"));
+    try std.testing.expect(!sameOrigin("null", "192.168.1.5:8080"));
+    var buf: [64]u8 = undefined;
+    try std.testing.expectEqualStrings("127.0.0.1", urlHost(&buf, "0.0.0.0"));
+    try std.testing.expectEqualStrings("[::1]", urlHost(&buf, "::"));
+    try std.testing.expectEqualStrings("[fe80::1]", urlHost(&buf, "fe80::1"));
+    try std.testing.expectEqualStrings("192.168.1.5", urlHost(&buf, "192.168.1.5"));
 }
 
 fn headerValue(request: *std.http.Server.Request, name: []const u8) []const u8 {
@@ -2618,6 +2705,23 @@ test "the startup url sets a cookie and the address drops the token" {
         .cookie = "niimbench=nope",
     });
     try std.testing.expectEqual(std.http.Status.unauthorized, rejected.status);
+}
+
+test "without the token a request is served by address and refused by name" {
+    const gpa = std.testing.allocator;
+    var ctx = cordis.Context.init(gpa);
+    defer ctx.deinit();
+    try mountHttp(&ctx);
+    const http = ctx.require(HttpService, "http");
+    http.no_token = true;
+    const served = try http.dispatch(.{ .io = undefined, .method = .GET, .path = "/api/health", .query = "", .body = "", .host = "192.168.1.5:8080" });
+    defer if (served.owned) gpa.free(served.body);
+    try std.testing.expectEqual(std.http.Status.ok, served.status);
+    const renamed = try http.dispatch(.{ .io = undefined, .method = .GET, .path = "/api/health", .query = "", .body = "", .host = "evil.example:8080" });
+    try std.testing.expectEqual(std.http.Status.forbidden, renamed.status);
+    const posted = try http.dispatch(.{ .io = undefined, .method = .POST, .path = "/api/quit", .query = "", .body = "", .host = "127.0.0.1:8080", .origin = "http://evil.example" });
+    try std.testing.expectEqual(std.http.Status.forbidden, posted.status);
+    try std.testing.expect(!http.quit_requested);
 }
 
 test "dispatch rejects a missing token" {

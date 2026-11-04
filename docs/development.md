@@ -14,6 +14,12 @@ Serve the editor on a fixed port without opening a browser:
 make serve PORT=8080
 ```
 
+Serve it to every device on the network, without the token, on port 8080, for a phone or another computer on a network you trust; anything that reaches the port can print and stop the server:
+
+```bash
+make serve-insecure
+```
+
 Print a binary PGM over USB:
 
 ```bash
