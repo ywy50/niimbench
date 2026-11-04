@@ -133,7 +133,7 @@ One process serves the editor page on `127.0.0.1`, renders labels, and prints th
 
 - **What you see is what prints.** The preview is the grayscale the printer will get: preview and print share one drawing path on the server.
 - **It finds the printer.** A scan of the serial ports and of Bluetooth fills in the connection, the address and the model, and the roll the printer reports.
-- **Text in real fonts.** Fifteen free fonts are embedded and drawn by niimbench's own TrueType rasteriser, so a print never depends on what is installed.
+- **Text in real fonts.** Seventeen free fonts are embedded and drawn by niimbench's own TrueType rasteriser, so a print never depends on what is installed. Korean and Chinese are drawn in any of them.
 - **Pictures in one ink.** An imported picture is reduced to black and white at a threshold, or dithered (five error diffusions, a Bayer pattern or halftone dots) after brightness, contrast, gamma and sharpening, so a photo keeps its greys as dots. Then it is moved, scaled and turned on the label.
 - **A board, not a form.** Preview, printer, text and image are panels you drag by their titles and resize from a corner. This browser remembers where you put them.
 - **Checked by driving it.** `make test` drives the page in a headless browser, and no server a test starts can outlive the run.
@@ -199,7 +199,7 @@ How finding works is [docs/subsystems/printer.md](docs/subsystems/printer.md#dis
 
 ## Fonts
 
-Text is drawn by niimbench's own TrueType rasteriser from fonts embedded in the binary, so a print never depends on what is installed. Fifteen free fonts ship with it:
+Text is drawn by niimbench's own TrueType rasteriser from fonts embedded in the binary, so a print never depends on what is installed. Seventeen free fonts ship with it:
 
 | Family | Faces |
 |---|---|
@@ -209,8 +209,10 @@ Text is drawn by niimbench's own TrueType rasteriser from fonts embedded in the 
 | Open Sans | Regular, Bold |
 | Noto | Sans, Serif |
 | Hack | Regular, monospaced |
+| Nanum Gothic | Regular, Korean |
+| Droid Sans Fallback | Chinese and Japanese |
 
-Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), and how text is drawn is [docs/subsystems/text.md](docs/subsystems/text.md).
+A character a font lacks is drawn from DejaVu Sans, then Nanum Gothic, then Droid Sans Fallback, so Korean and Chinese work in every font. Their licences and origins are in [src/fonts/README.md](src/fonts/README.md), and how text is drawn is [docs/subsystems/text.md](docs/subsystems/text.md).
 
 ## Windows and macOS
 
