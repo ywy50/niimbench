@@ -11,6 +11,11 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+### Added
+
+- `--host ADDR` picks the address the server listens on, `0.0.0.0` for every network; the startup URL keeps a loopback address for a wildcard, and stderr says how another device opens the page.
+- `--no-token` serves without the token, so another device opens the page by address alone; anything that reaches the port can print and stop the server. A request must still name the server by an address and come from no other site's page, which keeps web pages in a browser out. `make serve-insecure` starts it with both, on port 8088.
+
 ## [0.12.0] - 2026-10-31
 
 ### Added

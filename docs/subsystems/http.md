@@ -31,13 +31,17 @@ The `editor` plugin injects `http` and registers `GET /`. Disposing that fiber r
 
 ## Session
 
-The listen address is `127.0.0.1` and the port comes from `ctx.http_port` (`0` asks the kernel for a free port). Startup writes one line to stdout:
+The listen address is `ctx.http_host`, `127.0.0.1` unless `--host ADDR` names another address, and the port comes from `ctx.http_port` (`0` asks the kernel for a free port). Startup writes one line to stdout, with the loopback address in place of a wildcard, `0.0.0.0` or `::`, which a browser on this machine reaches and will not open as such:
 
 ```text
 http://127.0.0.1:<port>/?token=<32 hex chars>
 ```
 
 `--port N` picks the port. Pass `--no-open` to skip opening the page with `xdg-open` (Linux) or `open` (macOS). `--parent PID` makes the server die with its parent, which is how the harnesses start it ([../development.md](../development.md#throwaway-servers)). The token is random for that process only, from `getrandom` on Linux and `arc4random_buf` on macOS.
+
+A listen address that is not loopback adds a line to stderr saying how another device opens the page.
+
+`--no-token` serves every request without the token, so a phone or another computer opens `http://<address>:<port>/` with nothing else. Anything that reaches the port can then print, sync the clock and stop the server, and stderr says so at startup. Two checks still keep web pages in a browser out, which would otherwise reach the server through the browser of whoever runs it: the request's `Host` must name the server by an IP address or `localhost`, port or not, because DNS can point any name at the address and a page served under that name would count as the server's own; and an `Origin`, when there is one, must be `http://` and that same host, because a page on another site posting here sends its own. Either failing is `403`, `not this server's page`. A name such as `box.local` is refused for that reason: use the address. `make serve-insecure` starts it with `--host 0.0.0.0 --no-token` on port 8088.
 
 `GET /?token=` answers `302` with `Set-Cookie: niimbench-<port>=<token>; HttpOnly; Path=/; SameSite=Strict` and `Location: /`, so the address bar no longer shows the token. The cookie's name carries the port because a browser keeps one cookie per name for `127.0.0.1` whatever the port, and two servers running at once would otherwise each sign the other's page out. The next request sends that cookie and receives the page, with the token written into it, and the page's own API calls carry it as `?token=`. A cookie named plain `niimbench` is still read. A request with neither a matching query token nor such a cookie is `401`.
 
