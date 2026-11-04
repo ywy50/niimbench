@@ -24,7 +24,7 @@ The server listens on this machine only, and the startup URL carries a token the
 make serve-insecure
 ```
 
-Then open `http://` and this machine's address, port 8080, on the other device, for example `http://192.168.0.10:8080/`; the startup line says the port. Anything that reaches that port can print and stop the server, so do this only on a network you trust. Use the address, not a name such as `box.local`, which is refused. The binary takes the same as `--host 0.0.0.0 --no-token`, and `--host` alone keeps the token: open the startup URL with the machine's address in place of `127.0.0.1`.
+Then open `http://` and this machine's address, port 8088, on the other device, for example `http://192.168.0.10:8088/`; the startup line says the port. Anything that reaches that port can print and stop the server, so do this only on a network you trust. Use the address, not a name such as `box.local`, which is refused. The binary takes the same as `--host 0.0.0.0 --no-token`, and `--host` alone keeps the token: open the startup URL with the machine's address in place of `127.0.0.1`.
 
 ## Arrange the panels
 

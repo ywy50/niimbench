@@ -72,9 +72,9 @@ serve:
 
 # For a phone or another computer on the network: every address, no token.
 # Anything that reaches the port can print and stop the server, so this is for
-# a network you trust. PORT defaults to 8080 here, so the address stays put.
+# a network you trust. PORT defaults to 8088 here, so the address stays put.
 serve-insecure:
-	$(ZIG) build run -- --no-open --host 0.0.0.0 --no-token --port $(or $(PORT),8080) $(ARGS)
+	$(ZIG) build run -- --no-open --host 0.0.0.0 --no-token --port $(or $(PORT),8088) $(ARGS)
 
 trace:
 	@test -r .niimbench.token || { echo "no .niimbench.token here: start the server with make or make serve"; exit 1; }
