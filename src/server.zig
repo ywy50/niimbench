@@ -639,7 +639,11 @@ pub fn labelMetrics(service: *HttpService, _: RequestView) !Response {
     const gpa = service.allocator;
     var out: std.ArrayList(u8) = .empty;
     errdefer out.deinit(gpa);
-    try out.print(gpa, "{{\"default\":\"{s}\",\"max_size\":{d},\"fonts\":[", .{ font.default_id, label.max_size });
+    try out.print(gpa, "{{\"default\":\"{s}\",\"max_size\":{d},\"fallbacks\":[", .{ font.default_id, label.max_size });
+    // Where a character a font lacks is measured and drawn from, first match
+    // first: the editor measures it the way `font.advanceIn` does.
+    for (font.fallback_ids, 0..) |id, i| try out.print(gpa, "{s}\"{s}\"", .{ if (i == 0) "" else ",", id });
+    try out.appendSlice(gpa, "],\"fonts\":[");
     const Runs = struct {
         out: *std.ArrayList(u8),
         gpa: std.mem.Allocator,
@@ -2585,6 +2589,7 @@ test "the label metrics route reports every font's advance table" {
     const Parsed = struct {
         default: []const u8,
         max_size: usize,
+        fallbacks: []const []const u8,
         fonts: []const Table,
     };
     const parsed = try std.json.parseFromSlice(Parsed, gpa, response.body, .{});
@@ -2592,19 +2597,38 @@ test "the label metrics route reports every font's advance table" {
     try std.testing.expectEqual(@as(usize, label.max_size), parsed.value.max_size);
     try std.testing.expectEqualStrings(font.default_id, parsed.value.default);
     try std.testing.expectEqual(font.fonts.len, parsed.value.fonts.len);
-    // The editor's arithmetic on each table gives the width the renderer draws.
-    const text = "Niimbench \u{e9}\u{2603}";
-    for (parsed.value.fonts, &font.fonts) |table, *entry| {
+    try std.testing.expectEqual(font.fallback_ids.len, parsed.value.fallbacks.len);
+    // The editor's arithmetic on each table gives the width the renderer
+    // draws, a character the font lacks measured from the first fallback
+    // that has it, scaled by line height and rounded.
+    const text = "Niimbench \u{e9}\u{2603} \u{d55c}\u{4e2d}";
+    const maps = try gpa.alloc(std.AutoHashMapUnmanaged(u64, u64), parsed.value.fonts.len);
+    defer {
+        for (maps) |*m| m.deinit(gpa);
+        gpa.free(maps);
+    }
+    for (parsed.value.fonts, maps) |table, *map| {
+        map.* = .empty;
+        for (table.advances) |run| {
+            for (run[1..], 0..) |units, i| try map.put(gpa, run[0] + i, units);
+        }
+    }
+    for (parsed.value.fonts, &font.fonts, maps) |table, *entry, map| {
         try std.testing.expectEqualStrings(entry.id, table.id);
         try std.testing.expectEqualStrings(entry.name, table.name);
-        var advances: std.AutoHashMapUnmanaged(u64, u64) = .empty;
-        defer advances.deinit(gpa);
-        for (table.advances) |run| {
-            for (run[1..], 0..) |units, i| try advances.put(gpa, run[0] + i, units);
-        }
         var units: u64 = 0;
         var it = (try std.unicode.Utf8View.init(text)).iterator();
-        while (it.nextCodepoint()) |cp| units += advances.get(cp) orelse table.missing;
+        while (it.nextCodepoint()) |cp| {
+            units += map.get(cp) orelse fallback: {
+                for (parsed.value.fallbacks) |id| {
+                    for (parsed.value.fonts, maps) |other, other_map| {
+                        if (!std.mem.eql(u8, other.id, id)) continue;
+                        if (other_map.get(cp)) |found| break :fallback (found * table.line_units + other.line_units / 2) / other.line_units;
+                    }
+                }
+                break :fallback table.missing;
+            };
+        }
         for ([_]usize{ 7, 16, 23, 64 }) |size| {
             const editor_width = (units * size + table.line_units - 1) / table.line_units;
             try std.testing.expectEqual(label.lineWidth(&entry.face, text, size), editor_width);

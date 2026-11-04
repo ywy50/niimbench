@@ -18,7 +18,9 @@ Fonts reserve different room above and below their letters, so the same `size` d
 
 A line is as wide as the advances of its characters, scaled to the size and rounded up to a whole dot: `ceil(units * size / line_units)`, where `units` is the sum of the font's advance widths for the line's code points and `line_units` is the font's line height in its own units. A block is as wide as its widest line. There is no kerning: the editor measures with the same advance tables (see [http.md](http.md#metrics)), and a second table would be a second thing for it to agree with.
 
-A character the font does not map — including every code point above U+FFFF — draws the font's missing-glyph box and measures as that box.
+A character the font does not map is drawn from the first fallback font that maps it: DejaVu Sans for Latin, Greek and Cyrillic, then Nanum Gothic for Korean, then Droid Sans Fallback for Chinese and Japanese (`font.fallback_ids`). Its advance is scaled from that font's line height to this one's and rounded to the nearest unit, in integers, `(advance * line_units + fallback_line_units / 2) / fallback_line_units`, and the glyph is drawn scaled the same way, on its own font's baseline in the line, so a Korean word in Fira Sans is as tall as the line and the box still fits it. One no font maps, including every code point above U+FFFF, draws the chosen font's missing-glyph box and measures as that box.
+
+A white speck a thin stroke leaves inside a letter at a small size is closed, keeping as many holes as the letter's outline has. That rule is for letters only: in CJK, Hangul and kana, from U+2E80 up, strokes that nearly touch at a label size close off white that is the character's own, and a glyph there is drawn as outlined.
 
 ### Placement and turning
 

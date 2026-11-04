@@ -164,13 +164,14 @@ After a successful print the context emits `print/done`.
 {
   "default": "fira-sans-bold",
   "max_size": 1024,
+  "fallbacks": ["dejavu-sans", "nanum-gothic", "droid-sans-fallback"],
   "fonts": [
     { "id": "fira-sans", "name": "Fira Sans", "line_units": 1200, "missing": 666, "advances": [[32, 268, 241, 390]] }
   ]
 }
 ```
 
-`id` is what a field's `font` names and `name` is what the editor shows. `line_units` is the font's line height in its own units and `missing` is the advance of its missing-glyph box. `advances` is a list of runs: `[first, a0, a1, ...]` is the advance of code point `first`, then of `first + 1`, and so on, for every character the font maps. A line's width in dots is `ceil(units * size / line_units)`, where `units` sums the advances of its code points, `missing` for one the table lacks. That is the integer `label.zig` computes ([text.md](text.md#width)).
+`id` is what a field's `font` names and `name` is what the editor shows. `line_units` is the font's line height in its own units and `missing` is the advance of its missing-glyph box. `advances` is a list of runs: `[first, a0, a1, ...]` is the advance of code point `first`, then of `first + 1`, and so on, for every character the font maps. A line's width in dots is `ceil(units * size / line_units)`, where `units` sums the advances of its code points. A code point the table lacks takes the advance of the first font in `fallbacks` whose table has it, scaled to this font's `line_units` and rounded, and `missing` when none has it. That is the integer `label.zig` computes ([text.md](text.md#width)). The answer is about 350 KB, most of it the two CJK fonts' tables, and the editor fetches it once.
 
 ## Tracking
 

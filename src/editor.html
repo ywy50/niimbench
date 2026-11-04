@@ -635,6 +635,7 @@
     let metrics = {
       default: "fira-sans-bold",
       max_size: 1024,
+      fallbacks: [],
       fonts: [{ id: "fira-sans-bold", name: "Fira Sans Bold", line_units: 10, missing: 6, advances: [] }],
     };
     let fontTables = tablesFrom(metrics);
@@ -762,8 +763,23 @@
     function textWidth(text, size, font) {
       const table = fontTables[font] || fontTables[metrics.default];
       let units = 0;
-      for (const ch of String(text)) units += table.advances.get(ch.codePointAt(0)) ?? table.missing;
+      for (const ch of String(text)) units += advanceIn(table, ch.codePointAt(0));
       return Math.ceil(units * size / table.line_units);
+    }
+
+    /// A code point's advance in `table`'s units, as `font.advanceIn`: its
+    /// own, or the first fallback's that has one, scaled from that font's line
+    /// height to this one's and rounded, in integers; Korean and Chinese come
+    /// from the fallbacks in any font.
+    function advanceIn(table, codepoint) {
+      const own = table.advances.get(codepoint);
+      if (own !== undefined) return own;
+      for (const id of metrics.fallbacks || []) {
+        const other = fontTables[id];
+        const units = other && other.advances.get(codepoint);
+        if (units !== undefined) return Math.floor((units * table.line_units + Math.floor(other.line_units / 2)) / other.line_units);
+      }
+      return table.missing;
     }
 
     /// A newline starts the next line, so a field is a block of lines. These

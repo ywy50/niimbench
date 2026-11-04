@@ -38,6 +38,7 @@ const source = [
   lift("    function previewText(", "\n    }"),
   lift("    function tablesFrom(", "\n      return tables;\n    }"),
   lift("    function textWidth(", "\n    }"),
+  lift("    function advanceIn(", "\n    }"),
   lift("    function blockWidth(", "\n    }"),
   lift("    function blockHeight(", "\n    }"),
   lift("    function blockLines(", "\n    }"),
@@ -56,12 +57,16 @@ const roll = { width: 96, height: 304 };
 // `wide` every character is six tenths of a line, so a width is easy to work
 // out by hand; `narrow` makes an `i` half that, to show a box follows its
 // field's font. A stand-in that lacks a field silently makes every width NaN.
+// `hangul` is a fallback with a line twice as tall in its own units: its
+// 한 (U+D55C), 15 of its 20, measures 8 of a 10-unit line, rounded from 7.5.
 const metrics = {
   default: "wide",
   max_size: 1024,
+  fallbacks: ["hangul"],
   fonts: [
     { id: "wide", name: "Wide", line_units: 10, missing: 6, advances: [] },
     { id: "narrow", name: "Narrow", line_units: 10, missing: 6, advances: [[105, 3]] },
+    { id: "hangul", name: "Hangul", line_units: 20, missing: 12, advances: [[0xd55c, 15]] },
   ],
 };
 const context = {
@@ -96,6 +101,13 @@ function check(name, ok, detail) {
   failures += 1;
   console.error(`  FAIL ${name}${detail ? " \u2014 " + detail : ""}`);
 }
+
+// A character the font lacks is measured from the first fallback that has
+// it, scaled to the font's line and rounded, as `font.advanceIn` does; one no
+// font has is the font's own missing width.
+check("a fallback character measures in the field's font units",
+  textWidth("\u{d55c}", 10, "wide") === 8 && textWidth("\u{d55c}i", 10, "narrow") === 11 && textWidth("\u{4e2d}", 10, "wide") === 6,
+  [textWidth("\u{d55c}", 10, "wide"), textWidth("\u{d55c}i", 10, "narrow"), textWidth("\u{4e2d}", 10, "wide")].join(" "));
 
 // The page's own block measurements, lifted, so the numbers here are the
 // page's rather than a second implementation of them.

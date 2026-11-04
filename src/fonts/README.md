@@ -19,12 +19,20 @@ The typefaces niimbench draws text in. `src/font.zig` embeds every file listed h
 | `noto-sans` | Noto Sans | `NotoSans-Regular.ttf` | 2.015 | [Noto-OFL.txt](Noto-OFL.txt): SIL Open Font License 1.1 |
 | `noto-serif` | Noto Serif | `NotoSerif-Regular.ttf` | 2.015 | [Noto-OFL.txt](Noto-OFL.txt) |
 | `hack` | Hack | `Hack-Regular.ttf` | 3.003 | [Hack-LICENSE](Hack-LICENSE): MIT, with the Bitstream Vera licence for the glyphs it derives from |
+| `nanum-gothic` | Nanum Gothic | `NanumGothic-Regular.ttf` | 3.020 | [NanumGothic-OFL.txt](NanumGothic-OFL.txt): SIL Open Font License 1.1 |
+| `droid-sans-fallback` | Droid Sans Fallback | `DroidSansFallbackFull.ttf` | 1.00c | [DroidSansFallback-NOTICE](DroidSansFallback-NOTICE): Apache License 2.0 |
 
 The id is what a field's `font` names and what a saved layout stores; the name is what the editor's menu shows.
 
 ## Where they come from
 
 The files were copied unchanged from the Arch Linux packages `ttf-dejavu`, `ttf-liberation`, `ttf-opensans`, `ttf-fira-sans`, `noto-fonts` and `ttf-hack`, which install them under `/usr/share/fonts/`. The licence files are those packages' own, except `Noto-OFL.txt`: the package ships an Apache 2.0 text, but Noto 2.015's own name table states the SIL Open Font License 1.1, so that is the text kept here, under the copyright line the fonts carry.
+
+Two came from upstream instead: `NanumGothic-Regular.ttf` and its licence from the Google Fonts repository, `ofl/nanumgothic/` on its `main` branch, and `DroidSansFallbackFull.ttf` and its `NOTICE` from the Android source, `platform/frameworks/base`, `data/fonts/` at tag `android-9.0.0_r1`, unchanged.
+
+## Fallback
+
+A character the chosen font has no glyph for is drawn from the first of `font.fallback_ids` that has one: DejaVu Sans, for Latin, Greek and Cyrillic, which the two below lack; Nanum Gothic, for Korean; Droid Sans Fallback, for Chinese and Japanese. Nanum Gothic covers all 11,172 Hangul syllables and Droid Sans Fallback the 20,902 CJK unified ideographs of the basic block, simplified and traditional, and the kana. Neither has Latin accents, which is why DejaVu Sans comes first.
 
 To refresh a font, copy the newer file over the old one from the same package, and run `make test`. The test suite draws every letter and digit of every font at label sizes and fails if a stroke breaks or a white speck appears, so a file the rasteriser cannot read, or reads badly, does not ship.
 

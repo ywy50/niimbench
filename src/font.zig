@@ -33,7 +33,16 @@ pub const fonts = [_]Font{
     embed("noto-sans", "Noto Sans", "NotoSans-Regular.ttf"),
     embed("noto-serif", "Noto Serif", "NotoSerif-Regular.ttf"),
     embed("hack", "Hack", "Hack-Regular.ttf"),
+    embed("nanum-gothic", "Nanum Gothic", "NanumGothic-Regular.ttf"),
+    embed("droid-sans-fallback", "Droid Sans Fallback", "DroidSansFallbackFull.ttf"),
 };
+
+/// Where a character the chosen font has no glyph for is drawn from: the
+/// first of these that has one. DejaVu Sans for Latin, Greek and Cyrillic,
+/// which the two below lack, then Nanum Gothic for Korean, then Droid Sans
+/// Fallback for Chinese and Japanese. Korean or Chinese in any font, and an
+/// accent in either of those two, is drawn rather than boxed.
+pub const fallback_ids = [_][]const u8{ "dejavu-sans", "nanum-gothic", "droid-sans-fallback" };
 
 /// The font a field is drawn in when it names none.
 pub const default_id = "fira-sans-bold";
@@ -171,13 +180,39 @@ pub const Face = struct {
     }
 };
 
+/// The face a code point is drawn from in `face`, and its glyph there: its
+/// own, or the first fallback's that has one, or `face`'s missing-glyph box.
+pub const Found = struct { face: *const Face, glyph: u16 };
+
+pub fn glyphFor(face: *const Face, codepoint: u21) Found {
+    const own = face.glyphIndex(codepoint);
+    if (own != 0) return .{ .face = face, .glyph = own };
+    inline for (fallback_ids) |id| {
+        const other = find(id).?;
+        const glyph = other.glyphIndex(codepoint);
+        if (glyph != 0) return .{ .face = other, .glyph = glyph };
+    }
+    return .{ .face = face, .glyph = 0 };
+}
+
+/// The advance of a code point in `face`'s units. A fallback glyph's is
+/// scaled from its own face's line height to `face`'s and rounded to the
+/// nearest unit, in integers, which the editor does the same way.
+pub fn advanceIn(face: *const Face, codepoint: u21) u64 {
+    const found = glyphFor(face, codepoint);
+    const units: u64 = found.face.advance(found.glyph);
+    if (found.face == face) return units;
+    const from: u64 = found.face.lineUnits();
+    return (units * face.lineUnits() + from / 2) / from;
+}
+
 /// Advance units of one line in `face`, summed over its code points. `text` is
 /// UTF-8; a byte that is not part of valid UTF-8 counts as the code point it
 /// spells.
 pub fn textUnits(face: *const Face, text: []const u8) u64 {
     var units: u64 = 0;
     var it = Codepoints{ .text = text };
-    while (it.next()) |cp| units += face.advance(face.glyphIndex(cp));
+    while (it.next()) |cp| units += advanceIn(face, cp);
     return units;
 }
 
@@ -235,14 +270,25 @@ pub fn drawLine(gpa: std.mem.Allocator, face: *const Face, grid: []u8, stride: u
     var pen: f32 = left;
     var it = Codepoints{ .text = text };
     while (it.next()) |cp| {
-        const glyph = face.glyphIndex(cp);
+        // A fallback glyph is drawn from its own face, scaled so its line is
+        // as tall as this one's and on its own baseline in it; the pen moves
+        // by the advance the line was measured with.
+        const found = glyphFor(face, cp);
+        const glyph_k = @as(f32, @floatFromInt(size)) / @as(f32, @floatFromInt(found.face.lineUnits()));
+        edges.face = found.face;
         edges.list.clearRetainingCapacity();
         edges.areas.clearRetainingCapacity();
-        edges.origin = .{ pen, baseline };
-        edges.k = k;
-        try outline(&edges, glyph, identity, 0);
-        try drawGlyph(gpa, grid, stride, edges.list.items, counters(edges.areas.items));
-        pen += @as(f32, @floatFromInt(face.advance(glyph))) * k;
+        edges.origin = .{ pen, if (found.face == face) baseline else top + @as(f32, @floatFromInt(found.face.ascent)) * glyph_k };
+        edges.k = glyph_k;
+        try outline(&edges, found.glyph, identity, 0);
+        // Closing specks is a rule for letters, which enclose no white but
+        // their counters. In CJK, Hangul and kana, strokes that nearly
+        // touch at a label size enclose white that is the character's own,
+        // and closing it filled whole gaps in solid; those are drawn as
+        // outlined.
+        const holes = if (cp >= 0x2E80) std.math.maxInt(usize) else counters(edges.areas.items);
+        try drawGlyph(gpa, grid, stride, edges.list.items, holes);
+        pen += @as(f32, @floatFromInt(advanceIn(face, cp))) * k;
     }
 }
 
@@ -718,8 +764,10 @@ test "every font maps text, measures it, and has a unique id" {
         const face = &font.face;
         try std.testing.expect(face.units_per_em > 0);
         try std.testing.expect(face.ascent > 0 and face.descent < 0);
-        try std.testing.expect(face.glyphIndex('A') != 0);
-        try std.testing.expect(face.glyphIndex(0xE9) != 0);
+        // Its own glyphs or a fallback's: a Korean or Chinese face takes
+        // its Latin from DejaVu Sans.
+        try std.testing.expect(glyphFor(face, 'A').glyph != 0);
+        try std.testing.expect(glyphFor(face, 0xE9).glyph != 0);
         try std.testing.expectEqual(@as(u16, 0), face.glyphIndex(0x1F600));
         // Width grows with size, and an empty line has none.
         try std.testing.expect(lineWidth(face, "Hello", 32) > lineWidth(face, "Hello", 16));
@@ -729,6 +777,36 @@ test "every font maps text, measures it, and has a unique id" {
     }
     try std.testing.expect(find(default_id) != null);
     try std.testing.expectEqual(@as(?*const Face, null), find("comic-sans"));
+}
+
+test "Korean and Chinese are drawn in any font, from the fallbacks" {
+    const gpa = std.testing.allocator;
+    const fira = find("fira-sans-bold").?;
+    // 한 from Nanum Gothic, 中 from Droid Sans Fallback, é from Fira itself.
+    try std.testing.expectEqual(find("nanum-gothic").?, glyphFor(fira, 0xD55C).face);
+    try std.testing.expectEqual(find("droid-sans-fallback").?, glyphFor(fira, 0x4E2D).face);
+    try std.testing.expectEqual(fira, glyphFor(fira, 0xE9).face);
+    // A fallback glyph measures in the chosen font's units, scaled by line
+    // height and rounded: what the editor computes too.
+    const nanum = find("nanum-gothic").?;
+    const own = nanum.advance(nanum.glyphIndex(0xD55C));
+    try std.testing.expectEqual((@as(u64, own) * fira.lineUnits() + nanum.lineUnits() / 2) / nanum.lineUnits(), advanceIn(fira, 0xD55C));
+    // Drawn, the line inks dots, and no glyph is the missing-glyph box.
+    const text = "한국어 中文 niimbench";
+    const width = lineWidth(fira, text, 32);
+    const grid = try gpa.alloc(u8, width * 32);
+    defer gpa.free(grid);
+    @memset(grid, 0);
+    try drawLine(gpa, fira, grid, width, 0, 0, 32, text, .{});
+    var ink: usize = 0;
+    for (grid) |dot| ink += dot;
+    try std.testing.expect(ink > width * 4);
+    var it = Codepoints{ .text = text };
+    while (it.next()) |cp| try std.testing.expect(glyphFor(fira, cp).glyph != 0);
+    // 签 at a label size keeps the white under its roof, which its strokes
+    // close off there; closing specks filled it in solid.
+    const sign = try glyphTopology(gpa, fira, "\u{7b7e}", 48, 0);
+    try std.testing.expect(sign.holes >= 1);
 }
 
 test "a proportional font and a monospaced one measure differently" {

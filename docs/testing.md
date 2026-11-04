@@ -47,7 +47,8 @@ What the tests lock in:
 - A runtime record can be replaced and then deleted, deleting it twice is a 404, and the delete route refuses a record a plugin owns.
 - A method the `/api/sources/<name>` prefix does not serve is a 404.
 - `/api/label/track` reports `record`, `literal`, `missing-key`, `unknown-source`, `structured`, and `dynamic` from the same resolution the renderer uses.
-- A failed render reports the label size. `/api/label/metrics` lists every embedded font in order, and the editor's arithmetic on each font's run-encoded table gives the width `label.lineWidth` draws, at several sizes.
+- A failed render reports the label size. `/api/label/metrics` lists every embedded font in order, with the fallback order, and the editor's arithmetic on each font's run-encoded table gives the width `label.lineWidth` draws, at several sizes, for a line with Korean and Chinese in it, which every font but the two CJK ones measures from a fallback.
+- Korean and Chinese are drawn in any font: 한 from Nanum Gothic and 中 from Droid Sans Fallback in Fira Sans Bold, a fallback advance scaled by line height and rounded, a mixed line that inks dots with no missing-glyph box, and 签 at 48 dots keeping the white under its roof. `make box-test` checks the page measures a fallback character the same way.
 - `POST /api/render` and `POST /api/label/track` answer 400 `UnknownFont` for a font the build does not carry, and render a font it does.
 - A field's `direction` is accepted and ignored: two bodies that differ only in `direction` draw the same page, while a different `rotation` does not.
 - `POST /api/render` keeps the roll's width and height. A field's `rotation` of 90 draws its letters along the tape, so the ink is taller than it is wide, and no two quarter turns draw the same page.
