@@ -18,6 +18,10 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 - `--host ADDR` picks the address the server listens on, `0.0.0.0` for every network; the startup URL keeps a loopback address for a wildcard, and stderr says how another device opens the page.
 - `--no-token` serves without the token, so another device opens the page by address alone; anything that reaches the port can print and stop the server. A request must still name the server by an address and come from no other site's page, which keeps web pages in a browser out. `make serve-insecure` starts it with both, on port 8088.
 
+### Fixed
+
+- The `Roll:` line could stay missing for a whole session over Bluetooth on Linux. The roll read right after connecting asked once for the printer's characteristic, which BlueZ exports only after it finishes discovering the printer's services, and failed with `PrintCharacteristicMissing`; a failed read is not tried again, so the count never came. A connection now waits up to five seconds for the characteristic. A print right after connecting had the same race.
+
 ## [0.12.0] - 2026-10-31
 
 ### Added
