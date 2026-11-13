@@ -124,8 +124,14 @@ pub fn open(allocator: std.mem.Allocator, io: std.Io, address: []const u8) !prin
     try conn.connectDevice(device_path);
     errdefer conn.disconnectDevice(device_path);
 
-    const char_path = (try conn.findCharacteristic(device_path, dbus.niimbot_le_characteristic)) orelse
-        return error.PrintCharacteristicMissing;
+    // `Connect` returns once the link is up, and BlueZ may still be
+    // discovering the printer's services then: the characteristic appears
+    // when that ends. Asked once, a read or a print right after connecting
+    // failed with PrintCharacteristicMissing.
+    const char_path = for (0..50) |_| {
+        if (try conn.findCharacteristic(device_path, dbus.niimbot_le_characteristic)) |path| break path;
+        io.sleep(.fromMilliseconds(100), .awake) catch {};
+    } else return error.PrintCharacteristicMissing;
     errdefer allocator.free(char_path);
     try conn.watchValue(char_path);
     try conn.startNotify(char_path);
