@@ -11,10 +11,11 @@ and [docs/cookbook/releasing.md](docs/cookbook/releasing.md) is the procedure.
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-13
+
 ### Added
 
 - Korean and Chinese text. Nanum Gothic and Droid Sans Fallback are in the font menu, and a character the chosen font lacks is drawn from DejaVu Sans, then Nanum Gothic, then Droid Sans Fallback, so Korean and Chinese print in every font and the field box still fits them. Japanese kana and Greek and Cyrillic in a font without them come along. `GET /api/label/metrics` adds `fallbacks`. The binary is about 6 MB larger.
-
 - `--host ADDR` picks the address the server listens on, `0.0.0.0` for every network; the startup URL keeps a loopback address for a wildcard, and stderr says how another device opens the page.
 - `--no-token` serves without the token, so another device opens the page by address alone; anything that reaches the port can print and stop the server. A request must still name the server by an address and come from no other site's page, which keeps web pages in a browser out. `make serve-insecure` starts it with both, on port 8088.
 
@@ -290,7 +291,8 @@ The first public release.
 - `make test`, which drives the page in a headless browser, and `make drive`
   for scripted looks at it; no server a test starts can outlive the run.
 
-[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/ywy50/niimbench/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/ywy50/niimbench/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/ywy50/niimbench/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/ywy50/niimbench/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/ywy50/niimbench/compare/v0.9.0...v0.10.0
